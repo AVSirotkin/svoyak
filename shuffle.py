@@ -176,7 +176,7 @@ def estimate_rate(player, state, choused = [], soft_max = True, priority_list = 
     
     cur_rate = 0
 
-    cur_rate -= state.played_games[player]*400
+    cur_rate -= state.played_games[player]*300
 
     cur_rate += state.total_games[player]*100
 
@@ -192,5 +192,5 @@ def estimate_rate(player, state, choused = [], soft_max = True, priority_list = 
 
 
 def estimate_rates(players, state, choused = [], soft_max = True, priority_list = []):
-    return {x:estimate_rate(x, state, choused, soft_max, priority_list) for x in players}
+    return {x:estimate_rate(x, state, choused, soft_max, priority_list) for x in players if not x in choused}
 

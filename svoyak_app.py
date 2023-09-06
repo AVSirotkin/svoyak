@@ -23,6 +23,11 @@ import queue
 
 from Sinchronize import my_sinch
 
+from threading import Thread
+
+from player_state import player_state
+
+from shuffle import *
 
 sinch = my_sinch()
 
@@ -31,7 +36,8 @@ game_id = 1
 sinch.init_connection()
 
 all_players_info = sinch.all_players_info
-today_sheet = sinch.today_sheet
+# today_sheet = sinch.today_sheet
+
 
 player_lines = {}
 total_players = 0
@@ -54,7 +60,7 @@ for d in all_players_info:
     
         
 
-exec(open('player_state.py').read())
+# exec(open('player_state.py').read())
 
 
 main_state = player_state()
@@ -75,27 +81,32 @@ def predict():
         if players_cb[i].get() in state.active_players:
             pre += [players_cb[i].get()]
 
-    player_in_game = main_state.shuffle_players(pre)
-    state.process_one_match(player_in_game)
+    # player_in_game = main_state.shuffle_players(pre)
+    # state.process_one_match(player_in_game)
     
-    print("predict:", state.played_games)
-    my_log(str(player_in_game))
-    
-    
-    player_in_game = state.shuffle_players()
-    state.process_one_match(player_in_game)
-    my_log(str(player_in_game))
+    # print("predict:", state.played_games)
+    # my_log(str(player_in_game))
     
     
-    player_in_game = state.shuffle_players()
-    state.process_one_match(player_in_game)
-    my_log(str(player_in_game))
-    my_log("=================")
+    # player_in_game = state.shuffle_players()
+    # state.process_one_match(player_in_game)
+    # my_log(str(player_in_game))
+    
+    
+    # player_in_game = state.shuffle_players()
+    # state.process_one_match(player_in_game)
+    # my_log(str(player_in_game))
+    # my_log("=================")
 
     
     reit = estimate_rates(main_state.active_players, main_state, choused = pre)
     s_reit = sorted(reit.items(), key=lambda x:-x[1])
     my_log(str(s_reit))
+
+    player_rates_var.set([f"{x[1]} {x[0]}" for x in s_reit])
+
+
+
 
 
 def write_log(s, f_name = "full_log.txt" ):
@@ -130,6 +141,7 @@ def fullfill():
             sub.append(i)
             
     player_in_game = main_state.shuffle_players(pre)
+
     
     n = 0
     
@@ -170,8 +182,8 @@ def save_match():
     f.write("Игра "+str(game_id) + "\n")
     s = ""
     for i in range(4):
-        today_sheet.update_cell(game_id*8-4+i,15, player_in_game[i])
-        today_sheet.update_cell(game_id*8-4+i,16, ins[i].get())
+        sinch.update_cell(game_id*8-4+i,15, player_in_game[i])
+        sinch.update_cell(game_id*8-4+i,16, ins[i].get())
         s += player_in_game[i] + "\t"+str(ins[i].get()) + "\n"
         f.write(player_in_game[i] + "\t"+str(ins[i].get()) + "\n")
         my_log(player_in_game[i] + "\t"+str(ins[i].get()))
@@ -201,13 +213,13 @@ def add_player():
         #active_players = players_list.get(0,100)
         if not val in main_state.skipped_games:
             total_players += 1
-            today_sheet.update_cell(3+total_players, 3, val)
-            today_sheet.update_cell(3+total_players, 49, game_id)
+            sinch.update_cell(3+total_players, 3, val)
+            sinch.update_cell(3+total_players, 49, game_id)
             player_lines[val] = total_players
 
             if not val in rates:
                 rates[val] = 1000
-#            today_sheet.update_cell(3+total_players, 11, rates[val])
+#            sinch.update_cell(3+total_players, 11, rates[val])
             
         main_state.add_player(val)
         
@@ -232,7 +244,7 @@ def remove_player():
         write_log("Убрали: "+str(pl_name))
         main_state.remove_player(pl_name)
         players_list.delete(idx[0])
-        today_sheet.update_cell(3+player_lines[pl_name], 50, game_id)
+        sinch.update_cell(3+player_lines[pl_name], 50, game_id)
  
     active_players = players_list.get(0,100)
     for c in players_cb:
@@ -286,8 +298,17 @@ btn_add.grid(column=0, row=1)
 btn_fill = Button(active, text="Удалить", command = remove_player)  
 btn_fill.grid(column=1, row=1)  
 
+
+player_rates_var = StringVar(value=[])
+player_rates = Listbox(active, listvariable =  player_rates_var)
+player_rates.grid(column=0, row=12, columnspan = 2, rowspan = 10)
+
+
+
+
 players_list = Listbox(active)
 players_list.grid(column=0, row=2, columnspan = 2, rowspan = 10)
+
 
 
 empty = ["Свободно","не занимать"]
@@ -353,5 +374,13 @@ full_log.pack(side=LEFT)
 
 write_log("Start")
 
+sinch.run = True
+
+thrd = Thread(target=sinch.process_queue)
+thrd.start()
 
 app.mainloop()
+
+print("end!!!")
+sinch.run = False
+
