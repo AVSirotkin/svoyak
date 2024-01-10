@@ -56,7 +56,7 @@ for d in all_players_info:
         if max_id < int(d["Id"]):
             max_id = d["Id"]
         pl_list.append(d["to_record"])
-        rates[d["to_record"]] = d["Рейтинг"]
+        # rates[d["to_record"]] = d["Рейтинг"]
     
         
 
@@ -81,22 +81,36 @@ def predict():
         if players_cb[i].get() in state.active_players:
             pre += [players_cb[i].get()]
 
-    # player_in_game = main_state.shuffle_players(pre)
-    # state.process_one_match(player_in_game)
+    player_in_game = main_state.shuffle_players(pre)
+    state.process_one_match(player_in_game)
     
-    # print("predict:", state.played_games)
-    # my_log(str(player_in_game))
-    
-    
-    # player_in_game = state.shuffle_players()
-    # state.process_one_match(player_in_game)
-    # my_log(str(player_in_game))
+    print("predict:", state.played_games)
+    my_log(str(player_in_game))
     
     
-    # player_in_game = state.shuffle_players()
-    # state.process_one_match(player_in_game)
-    # my_log(str(player_in_game))
-    # my_log("=================")
+    player_in_game = state.shuffle_players()
+    state.process_one_match(player_in_game)
+    
+    print("predict:", state.played_games)
+    my_log(str(player_in_game))
+    
+    player_in_game = state.shuffle_players()
+    state.process_one_match(player_in_game)
+    
+    print("predict:", state.played_games)
+    my_log(str(player_in_game))
+    
+        
+    player_in_game = state.shuffle_players()
+    state.process_one_match(player_in_game)
+    
+    print("predict:", state.played_games)
+    my_log(str(player_in_game))
+    
+    my_log(str(state.history))
+    
+    
+    my_log("=================")
 
     
     reit = estimate_rates(main_state.active_players, main_state, choused = pre)
@@ -172,7 +186,9 @@ def save_match():
             
             
     if len(player_in_game) < 4:
-        return()
+        if not askyesno("Подтверждение","Меньше 4 игроков, точно внести данные?"):
+            return
+    
     
     
     
@@ -181,7 +197,7 @@ def save_match():
     f = open("log.txt", "a")
     f.write("Игра "+str(game_id) + "\n")
     s = ""
-    for i in range(4):
+    for i in range(len(player_in_game)):
         sinch.update_cell(game_id*8-4+i,15, player_in_game[i])
         sinch.update_cell(game_id*8-4+i,16, ins[i].get())
         s += player_in_game[i] + "\t"+str(ins[i].get()) + "\n"
