@@ -23,9 +23,9 @@ class my_sinch:
         credentials = ServiceAccountCredentials.from_json_keyfile_name("svoyak.json", scopes) #access the json key you downloaded earlier 
         file = gspread.authorize(credentials) # authenticate the JSON key with gspread
         # sheet = file.open("ЛогСвояка-Сезон2023-Весна") 
-        sheet = file.open("Свояк Осень 2023") 
+        sheet = file.open("Свояк Зима 2024") 
 
-        players_sheet = sheet.worksheet("Рейтинг") 
+        players_sheet = sheet.worksheet("Все игроки") 
 
         result_list_name = str(dt.datetime.today().strftime('%Y-%m-%d'))
         run = True
