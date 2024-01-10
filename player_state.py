@@ -28,12 +28,12 @@ class player_state:
         a.active_players = deepcopy(self.active_players)
         return a
     
-    def shuffle_players(self, pre = [], seed = 0, full_info = False, by_rate = True):
+    def shuffle_players(self, fixed = [], seed = 0, full_info = False, by_rate = True):
         random.seed(seed)
         print("DDD", self.active_players)
         
         if by_rate:
-            player_in_game = pre
+            player_in_game = list(fixed)
             while len(player_in_game)<4:
                 rt = estimate_rates(self.active_players, self, choused = player_in_game)
                 if len(rt) == 0:
@@ -46,13 +46,13 @@ class player_state:
             print("DDD", self.active_players)
             
             for i in range(100):
-                player_in_game, chances = shuffle(self.active_players, self, sub_sec = pre, full_info = full_info)
+                player_in_game, chances = shuffle(self.active_players, self, sub_sec = fixed, full_info = full_info)
                 if len(player_in_game) == 4:
                     break
             if len(player_in_game) < 4:
                 print(self.played_games, self.skipped_games)
                 for i in range(100):
-                    player_in_game, chances = shuffle(self.active_players, self, sub_sec = pre, allow_4_game=True, full_info = full_info)
+                    player_in_game, chances = shuffle(self.active_players, self, sub_sec = fixed, allow_4_game=True, full_info = full_info)
                     if len(player_in_game) == 4:
                         break
             print(player_in_game, chances)
