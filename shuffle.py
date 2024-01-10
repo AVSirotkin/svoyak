@@ -170,7 +170,33 @@ def calculate_weigth(player, state, choused = [], soft_max = True, priority_list
         return w
     
 
+
+
+def estimate_rate_old(player, state, choused = [], soft_max = True, priority_list = []):
     
+    forbiden = [x for x in choused]
+    
+    for x in choused:
+        forbiden += state.twice_played_with[x]
+
+
+    if player in forbiden:
+        return 0
+    
+    if player in state.played_games:
+        if state.played_games[player] > 2:
+            return 0
+
+    rate = calculate_weigth(player, state, choused, False)
+
+    
+    return rate
+
+    
+    
+    
+    
+
 
 def estimate_rate(player, state, choused = [], soft_max = True, priority_list = []):
     
@@ -192,5 +218,5 @@ def estimate_rate(player, state, choused = [], soft_max = True, priority_list = 
 
 
 def estimate_rates(players, state, choused = [], soft_max = True, priority_list = []):
-    return {x:estimate_rate(x, state, choused, soft_max, priority_list) for x in players if not x in choused}
+    return {x:estimate_rate_old(x, state, choused, soft_max, priority_list) for x in players if not x in choused}
 
