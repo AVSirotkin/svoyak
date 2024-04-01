@@ -9,13 +9,14 @@ import random
 from shuffle import *
 
 class player_state:
-    skipped_games = {}
-    total_games = {}
-    played_games = {}
-    twice_played_with = {}
-    played_with = {}
-    history = []
-    active_players = []
+    def __init__(self):
+        self.skipped_games = {}
+        self.total_games = {}
+        self.played_games = {}
+        self.twice_played_with = {}
+        self.played_with = {}
+        self.history = []
+        self.active_players = []
     
     def get_copy(self):
         a = player_state()
