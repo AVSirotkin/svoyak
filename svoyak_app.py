@@ -29,6 +29,9 @@ from player_state import player_state
 
 from shuffle import *
 
+
+
+
 sinch = my_sinch()
 
 game_id = 1
@@ -52,10 +55,10 @@ print(all_players_info)
 
 for d in all_players_info:
     print(d)
-    if not (d["to_record"] == ''):
-        if max_id < int(d["Id"]):
-            max_id = d["Id"]
-        pl_list.append(d["to_record"])
+    if not (d["name"] == ''):
+        if max_id < int(d["playerid"]):
+            max_id = d["playerid"]
+        pl_list.append(d["name"])
         # rates[d["to_record"]] = d["Рейтинг"]
     
         
@@ -107,7 +110,7 @@ def predict():
     print("predict:", state.played_games)
     my_log(str(player_in_game))
     
-    my_log(str(state.history))
+    my_log(str(state.history))  
     
     
     my_log("=================")
