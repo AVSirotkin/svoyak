@@ -1,0 +1,427 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<table>
+<tr>
+<td width = 20% valign="top">
+<div id="page-wrapper">
+
+    <h1>Список игроков</h1>
+
+   <label>Игрок для добавления</label> <br>
+   <input type="text" id="player_to_add" list="players_list" placeholder="игрок">
+   <button onclick = "addActive()"> Добавить </button>
+   <datalist id="players_list">
+    {% for player in Players %}
+    <option>{{player["name"]}}</option>
+    {% endfor %}
+   </datalist>
+   
+   <br>
+   <div id="activeplayers"></div>
+   <input placeholder="удалить" id="remove_player" data-type="remove" ondrop="drop_handler(event)" ondragover = "dragsover(event)">
+</div>
+
+<datalist id="active_players_list">
+</datalist>
+</td>
+
+<td width="50%" valign="top">
+
+<div id="active_game_field">
+    <h3 id="game">Игра 1</h3>
+    <table>
+   <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><input type="text" data-type = "players" id="player1" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 1"><input type="int" id="score1" placeholder="0" tabindex = 5 size = 5pt></td></tr>
+   <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><input type="text" data-type = "players" id="player2" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 2"><input type="int" id="score2" placeholder="0" tabindex = 5 size = 5pt></td></tr>
+   <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><input type="text" data-type = "players" id="player3" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 3"><input type="int" id="score3" placeholder="0" tabindex = 5 size = 5pt></td></tr>
+   <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><input type="text" data-type = "players" id="player4" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 4"><input type="int" id="score4" placeholder="0" tabindex = 5 size = 5pt></td></tr>
+    </table>
+<button onclick = "AddResult()"> Внести результат </button><button onclick = "FillPositions()"> Заполнить игроков </button>
+<button onclick = "update_weight()"> Веса </button> <button onclick = "predict_matches()"> Прогноз </button> 
+ </div>
+
+<hr>
+<div id = "GameStory">
+
+</div>
+
+</td>
+<td valign="top">
+<div>
+Табличка текущих весов
+
+<table id="weight">
+
+</table>
+</div>   
+</td>
+
+</tr>
+</table>
+
+
+
+{% endblock %}
+
+
+
+{% block scripts %}
+<script>
+let active = []
+let player_name_drag = null
+function addActive() {
+    let ans = fetch("/activeplayers/{{roomid}}",
+    {
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        method: "POST",
+        body: JSON.stringify({name: document.getElementById('player_to_add').value})
+    }).then((response) => { 
+            return response.json().then((data) => {
+                console.log(data);
+                active = data
+                UpdateActivePlayer(active)
+                document.getElementById("player_to_add").value = ""
+                return data;
+            }).catch((err) => {
+                console.log(err);
+            }) 
+        });
+    
+    }
+
+function UpdateActivePlayer(activelist){
+    var listDiv = document.getElementById('activeplayers');
+    var listAct = document.getElementById('active_players_list');
+    listDiv.innerHTML = "";
+    listAct.innerHTML = "";
+
+    var ul=document.createElement('ul');
+    console.log(activelist)
+    for (var i = 0; i < activelist.length; ++i) {
+        var li=document.createElement('li');
+        li.setAttribute("draggable", "true")
+        li.setAttribute("ondragstart", "dragstart_handler(event)")
+        li.setAttribute("ondragend", "dragend_handler(event)")
+        li.setAttribute("ontouchstart", "dragstart_handler(event)")
+        li.setAttribute("ontouchend", "dragend_handler(event)")
+        li.innerHTML = activelist[i].name;   // Use innerHTML to set the text
+        ul.appendChild(li);                                 
+
+        var op=document.createElement('option');
+        op.innerHTML = activelist[i].name;   // Use innerHTML to set the text
+        listAct.appendChild(op);                                 
+    }
+    listDiv.appendChild(ul);
+}
+
+
+function dragstart_handler(ev) {
+ console.log("dragStart", ev);
+ player_name_drag = ev.target.innerHTML
+ // Tell the browser both copy and move are possible
+ ev.effectAllowed = "copyMove";
+}
+
+function dragsover(ev) {
+    ev.preventDefault()
+}
+
+
+function dragend_handler(ev) {
+  console.log("dragEnd");
+}
+
+function drop_handler(ev) {
+  
+  console.log("Drop");
+//   ev.preventDefault();
+  // Get the id of drag source element (that was added to the drag data
+  // payload by the dragstart event handler)
+  console.log(ev)
+  if (row == null) {
+
+  var id = player_name_drag
+//   ev.dataTransfer.getData("text");
+  var end_type = ev.target.dataset.type;
+  console.log(id, end_type, ev.target.id, ev.target);
+
+  if (end_type == "players")
+    if (id != document.getElementById("player1").value && id != document.getElementById("player2").value && id != document.getElementById("player3").value && id != document.getElementById("player4").value){
+        ev.target.value = id;
+    }
+
+  if (end_type == "remove")
+    remove_from_active(id)
+}
+player_name_drag = null
+
+}
+
+function AddResult(){
+
+    let res = []
+    res.push({name:document.getElementById('player1').value, score:document.getElementById('score1').value})
+    res.push({name:document.getElementById('player2').value, score:document.getElementById('score2').value})
+    res.push({name:document.getElementById('player3').value, score:document.getElementById('score3').value})
+    res.push({name:document.getElementById('player4').value, score:document.getElementById('score4').value})
+
+    let ans = fetch("/gameresult/{{roomid}}",
+    {
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        method: "POST",
+        body: JSON.stringify({roomid:{{roomid}}, gameindex: gameindex, scores:res})
+    }).then((response) => { 
+            return response.json().then((data) => {
+                console.log(data);
+                if (data.length > 0) {
+                    UpdateGameHistory(gameindex, data);
+                    RefreshGame();
+                    gameindex = gameindex + 1
+                    document.getElementById("game").innerHTML = "Игра "+ gameindex   
+                }
+                return data;
+            }).catch((err) => {
+                console.log(err);
+            }) 
+        });
+
+    }
+
+    function init_page(){
+        gameindex = {{gameindex}}
+        document.getElementById("game").innerHTML = "Игра "+ gameindex
+        let ans = fetch("/activeplayers/{{roomid}}",
+    {
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        method: "GET"}).then((response) => { 
+            return response.json().then((data) => {
+                console.log(data);
+                active = data
+                UpdateActivePlayer(active)
+                return data;
+            }).catch((err) => {
+                console.log(err);
+            }) 
+        });
+        GetGameHistory();
+        update_weight();
+    }
+
+    function UpdateGameHistory(gameindex, data){
+        
+        let gamelog = document.getElementById("game_log_"+gameindex)
+        
+        if (gamelog == null){
+            gamelog = document.createElement('table');
+            gamelog.setAttribute("id", "game_log_"+gameindex)
+            document.getElementById("GameStory").appendChild(gamelog)
+        }
+        gamelog.innerHTML = "<tr> Игра " + gameindex + "</tr>"
+        for (var i = 0; i < data.length; ++i) {
+            gamelog.innerHTML = gamelog.innerHTML + "<tr><td>" + data[i].name + "</td><td>"+ data[i].score +"</td></tr>"
+        }
+            
+    }
+
+    function PseudoGameHistory(gameindex, data){
+        
+        let gamelog = document.getElementById("game_log_"+gameindex)
+        
+        if (gamelog == null){
+            gamelog = document.createElement('table');
+            gamelog.setAttribute("id", "game_log_"+gameindex)
+            gamelog.setAttribute("color", "rgba(0,0,0,0.4)")
+        }
+        gamelog.innerHTML = "<tr> Игра " + gameindex + "</tr>"
+        for (var i = 0; i < data.length; ++i) {
+            gamelog.innerHTML = gamelog.innerHTML + "<tr><td>" + data[i].name + "</td><td>" + "</td></tr>"
+        }
+        document.getElementById("GameStory").appendChild(gamelog)            
+    }
+
+
+    function GetGameHistory(){
+        
+        let ans = fetch("/gameresult/{{roomid}}",
+        {
+            headers: {
+            'Accept': 'application/json',
+            },
+            method: "GET"
+        }).then((response) => { 
+            return response.json().then((data) => {
+                console.log("history",data);
+                for (var i = 0; i < data.length; ++i){
+                    UpdateGameHistory(data[i].gameindex, data[i].scores)
+                }
+                return data;
+            }).catch((err) => {
+                console.log(err);
+            }) 
+        });
+        
+        }
+
+    function RefreshGame(){
+
+
+        document.getElementById('player1').value = ""
+        document.getElementById('score1').value = ""
+
+        document.getElementById('player2').value = ""
+        document.getElementById('score2').value = ""
+
+        document.getElementById('player3').value = ""
+        document.getElementById('score3').value = ""
+
+        document.getElementById('player4').value = ""
+        document.getElementById('score4').value = ""
+        
+        update_weight()
+    }
+    var row = null;
+    function tab_drag_start(){
+    row = event.target;
+    }
+    function tab_drag_end(){
+    row = null;
+    }
+    function tab_drag_dragover(){
+    var e = event;
+    e.preventDefault();
+    if (row != null){
+    // console.log(e.target.parentNode.parentNode);
+
+    let children = Array.from(e.target.parentNode.parentNode.parentNode.children);
+    // console.log(row, children);
+    if(children.indexOf(e.target.parentNode.parentNode)>children.indexOf(row))
+        e.target.parentNode.parentNode.after(row);
+    else
+        e.target.parentNode.parentNode.before(row);
+    }
+    }
+    
+    function remove_from_active(name){
+        let ans = fetch("/removeactiveplayer/{{roomid}}",
+    {
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        method: "POST",
+        body: JSON.stringify({name: name})
+    }).then((response) => { 
+            return response.json().then((data) => {
+                console.log(data);
+                active = data
+                UpdateActivePlayer(active)
+                return data;
+            }).catch((err) => {
+                console.log(err);
+            }) 
+        });
+
+    }
+
+
+function FillPositions(){
+    to_send = [{"name":document.getElementById("player1").value},{"name":document.getElementById("player2").value},{"name":document.getElementById("player3").value},{"name":document.getElementById("player4").value}]
+    let ans = fetch("/fillpositions/{{roomid}}",
+    {
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        method: "POST",
+        body: JSON.stringify(to_send)
+    }).then((response) => { 
+            return response.json().then((data) => {
+                console.log(data);
+                if (data.length > 0)
+                    document.getElementById("player1").value = data[0].name
+                if (data.length > 1)
+                    document.getElementById("player2").value = data[1].name
+                if (data.length > 2)
+                    document.getElementById("player3").value = data[2].name
+                if (data.length > 3)
+                    document.getElementById("player4").value = data[3].name
+
+                return data;
+            }).catch((err) => {
+                console.log(err);
+            }) 
+        });
+
+    }
+
+function update_weight(){
+    to_send = [{"name":document.getElementById("player1").value},{"name":document.getElementById("player2").value},{"name":document.getElementById("player3").value},{"name":document.getElementById("player4").value}]
+    let ans = fetch("/weigth/{{roomid}}",
+    {
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        method: "POST",
+        body: JSON.stringify(to_send)
+    }).then((response) => { 
+            return response.json().then((data) => {
+                console.log(data);
+                printWeight(data)
+                return data;
+            }).catch((err) => {
+                console.log(err);
+            }) 
+        });
+
+    }
+
+function printWeight(data){
+    tb = document.getElementById("weight")
+    tb.innerHTML = ""
+    for (var i = 0; i < data.length; ++i) {
+            tb.innerHTML = tb.innerHTML + "<tr><td draggable = 'true' ondragstart = 'dragstart_handler(event)'>" + data[i].name + "</td><td>"+ data[i].weight +"</td></tr>"
+        }
+}
+
+
+function predict_matches(){
+    to_send = [{"name":document.getElementById("player1").value},{"name":document.getElementById("player2").value},{"name":document.getElementById("player3").value},{"name":document.getElementById("player4").value}]
+    let ans = fetch("/predictgames/{{roomid}}/3",
+    {
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        method: "POST",
+        body: JSON.stringify(to_send)
+    }).then((response) => { 
+            return response.json().then((data) => {
+                console.log(data);
+                for (var i = 0; i < data.length; ++i) {
+                    PseudoGameHistory(gameindex+data[i].shift, data[i].data)
+                }
+                return data;
+            }).catch((err) => {
+                console.log(err);
+            }) 
+        });
+
+
+}
+
+
+
+
+</script>
+{% endblock %}

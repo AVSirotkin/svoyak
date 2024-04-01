@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<table>
+<tr>
+<td width = 60% valign="top">
+<div id="page-wrapper">
+
+    <h1>Таблица игроков</h1>
+</div>
+
+<td width="40%" valign="top">
+<h1>Результаты игр</h1>
+<div id = "GameStory">
+
+
+</div>
+</td>
+{% endblock %}
+
+
+
+{% block scripts %}
+<script>
+
+    function init_page(){
+        GetGameHistory();
+    }
+
+    function UpdateGameHistory(gameindex, data){
+        
+        let gamelog = document.getElementById("game_log_"+gameindex)
+        
+        if (gamelog == null){
+            gamelog = document.createElement('table');
+            gamelog.setAttribute("id", "game_log_"+gameindex)
+        }
+        gamelog.innerHTML = "<tr> Игра " + gameindex + "</tr>"
+        for (var i = 0; i < data.length; ++i) {
+            gamelog.innerHTML = gamelog.innerHTML + "<tr><td width=200pt>" + data[i].name + "</td><td>"+ data[i].score +"</td></tr>"
+        }
+        gamelog.innerHTML = gamelog.innerHTML + "<br>"
+        document.getElementById("GameStory").appendChild(gamelog)            
+    }
+
+    function GetGameHistory(){
+        
+        let ans = fetch("/gameresult/{{roomid}}",
+        {
+            headers: {
+            'Accept': 'application/json',
+            },
+            method: "GET"
+        }).then((response) => { 
+            return response.json().then((data) => {
+                console.log("history",data);
+                for (var i = 0; i < data.length; ++i){
+                    UpdateGameHistory(data[i].gameindex, data[i].scores)
+                }
+                return data;
+            }).catch((err) => {
+                console.log(err);
+            }) 
+        });
+        
+    }
+    
+
+</script>
+{% endblock %}
