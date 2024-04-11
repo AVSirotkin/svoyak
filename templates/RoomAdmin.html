@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h1>Страничка для внесения правок в турнирной комнате {{roomid}} </h1>
+
+<a href = "/room/{{roomid}}"><h1>Вернуться в комнату</h1></a> 
+
+<h1>Список событий:</h1>
+<table>
+    <thead>
+        <tr><th>id</th><th>Время</th><th>Комната</th><th>Событие</th><th>Информация</th><th>Удалить</th></tr>
+    </thead>
+    <tbody>
+        {% for info in gamelog %}
+          <tr id = "row_{{info.id}}">
+              <td>{{ info.date }}</td>
+              <td>{{ info.id }}</td>
+              <td>{{ info.room }}</td>
+              <td>{{ info.name }}</td>
+              <td>{{ info.json  }}</td>
+              <td><button onclick="remove({{info.id}}, '{{info.name}}')">Удалить</button></td>
+          </tr>
+        {% endfor %}
+    </tbody>
+</table>
+<a href = "/room/{{roomid}}"><h1>Вернуться в комнату</h1></a> 
+    {% endblock %}
+
+
+
+{% block scripts %}
+<script>
+    function init_page(){
+
+    }
+
+    function remove(rowid, name){
+        var conf = confirm("Вы подтверждаете удаление события "+name+ " с id "+rowid);
+        if (conf){
+            let ans = fetch("/removegamelog/{{roomid}}",
+                {   
+                    headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                    },
+                    method: "POST",
+                    body: JSON.stringify({roomid:{{roomid}}, rowid: rowid})
+                }).then((response) => { 
+                    return response.json().then((data) => {
+                        console.log(data);
+                        console.log(data.rowid, rowid, data.rowid == rowid)
+                        if (data.rowid == rowid){
+                            var element = document.getElementById("row_"+rowid);
+                            element.parentNode.removeChild(element);
+                        }
+                        return data;
+                    }).catch((err) => {
+                        console.log(err);
+                    }) 
+                });
+        }
+    }
+
+
+
+</script>
+{% endblock %}

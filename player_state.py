@@ -29,14 +29,15 @@ class player_state:
         a.active_players = deepcopy(self.active_players)
         return a
     
-    def shuffle_players(self, fixed = [], seed = 0, full_info = False, by_rate = True):
+    def shuffle_players(self, fixed = [], forbiden = [], seed = 0, full_info = False, by_rate = True, rules = "Spontan"):
         random.seed(seed)
-        print("DDD", self.active_players)
+        # print("DDD", self.active_players)
+        available_players = [x for x in self.active_players if not x in forbiden]
         
         if by_rate:
             player_in_game = list(fixed)
             while len(player_in_game)<4:
-                rt = estimate_rates(self.active_players, self, choused = player_in_game)
+                rt = estimate_rates(available_players, self, choused = player_in_game, rules=rules)
                 if len(rt) == 0:
                     break
                 else:
@@ -44,16 +45,16 @@ class player_state:
                     player_in_game.append(s_rate[0][0])
             return player_in_game
         else:
-            print("DDD", self.active_players)
+            print("DDD random", self.active_players)
             
             for i in range(100):
-                player_in_game, chances = shuffle(self.active_players, self, sub_sec = fixed, full_info = full_info)
+                player_in_game, chances = shuffle(available_players, self, sub_sec = fixed, full_info = full_info)
                 if len(player_in_game) == 4:
                     break
             if len(player_in_game) < 4:
                 print(self.played_games, self.skipped_games)
                 for i in range(100):
-                    player_in_game, chances = shuffle(self.active_players, self, sub_sec = fixed, allow_4_game=True, full_info = full_info)
+                    player_in_game, chances = shuffle(available_players, self, sub_sec = fixed, allow_4_game=True, full_info = full_info)
                     if len(player_in_game) == 4:
                         break
             print(player_in_game, chances)
@@ -73,9 +74,10 @@ class player_state:
             for j in player_in_game:
                 if i != j:
                     if i in self.played_with[j]:
+                        self.played_with[j][i] += 1
                         self.twice_played_with[j].append(i)
                     else:
-                        self.played_with[j].append(i)
+                        self.played_with[j][i] = 1
         
         for i in self.active_players:
             self.total_games[i] += 1
@@ -90,11 +92,12 @@ class player_state:
             self.played_games[p] = 0
 #            players += 1
             self.twice_played_with[p] = []
-            self.played_with[p] = []
+            self.played_with[p] = {}
         if not p in self.active_players:
             self.active_players.append(p)
             
             
     def remove_player(self, pl_name):
-        self.active_players.remove(pl_name)
+        if pl_name in self.active_players:
+            self.active_players.remove(pl_name)
         

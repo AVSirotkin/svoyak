@@ -49,13 +49,36 @@ class my_sinch:
     
     def update_cell(self, x, y, cont):
         self.messages.put((x, y, cont))
+    
+    def encode_cell(self, x,y):
+        if x < 26:
+            return chr(64+x)+str(y)
+        else:
+            return chr(64+(x-1)//26)+chr(65+(x-1)%26)+str(y)
 
     def process_queue(self):
         while self.run:
+            rv = []
+            
             while not self.messages.empty():
                 x,y,nfo = self.messages.get()
-                self.today_sheet.update_cell(x,y,nfo)
+                rv.append({"range": self.encode_cell(y,x), "values":[[nfo]]})
+                # self.today_sheet.update_cell(x,y,nfo)
+            if len(rv) > 0:
+                print(rv)
+                self.today_sheet.batch_update(rv)
             time.sleep(1)
+
+    def process_queue_once(self):
+        rv = []
+        
+        while not self.messages.empty():
+            x,y,nfo = self.messages.get()
+            rv.append({"range": self.encode_cell(y,x), "values":[[nfo]]})
+            # self.today_sheet.update_cell(x,y,nfo)
+        if len(rv) > 0:
+            print(rv)
+            self.today_sheet.batch_update(rv)
 
 
 

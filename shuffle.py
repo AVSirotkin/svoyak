@@ -156,40 +156,55 @@ def shuffle(players, state, allow_4_game = False, full_info = False, sub_sec = [
 
 
 
-def calculate_weigth(player, state, choused = [], soft_max = True, priority_list = []):
-    if state.played_games[player] == 3:
-        w = 1
-    else:
+def calculate_weigth(player, state, choused = [], soft_max = True, priority_list = [], rules = "Spontan"):
+    if rules == "Tumen":
         w = 3*(4-state.played_games[player])+state.total_games[player]+(4-state.played_games[player])//2*state.skipped_games[player] + 20*(player in priority_list)
-    for p in choused:
-        if p in state.played_with[player]:
-            w *= 0.5
-    if soft_max:
-        return pow(10, w) 
+        for p in choused:
+            if p in state.played_with[player]:
+                w *= 0.5 ** (3*state.played_with[player][p]-2)
+        if soft_max:
+            return pow(10, w) 
+        else:
+            return w
     else:
-        return w
-    
+        if state.played_games[player] == 3:
+            w = 1
+        else:
+            w = 3*(4-state.played_games[player])+state.total_games[player]+(4-state.played_games[player])//2*state.skipped_games[player] + 20*(player in priority_list)
+        for p in choused:
+            if p in state.played_with[player]:
+                w *= 0.5 ** (3*state.played_with[player][p]-2)
+        if soft_max:
+            return pow(10, w) 
+        else:
+            return w
+        
 
 
 
-def estimate_rate_old(player, state, choused = [], soft_max = True, priority_list = []):
+def estimate_rate_old(player, state, choused = [], soft_max = True, priority_list = [], rules = "Spontan"):
     
     forbiden = [x for x in choused]
     
-    for x in choused:
-        forbiden += state.twice_played_with[x]
 
 
     if player in forbiden:
         return 0
     
-    if player in state.played_games:
-        if state.played_games[player] > 2:
-            return 0
-
-    rate = calculate_weigth(player, state, choused, False)
-
+    rate = calculate_weigth(player, state, choused, False, rules=rules)
     
+    if rules == "Tumen":
+        if player in state.played_games:
+            if state.played_games[player] > 3:
+                rate = rate / 100
+    else:
+        if player in state.played_games:
+            if state.played_games[player] > 2:
+                rate = rate / 100
+
+
+
+
     return rate
 
     
@@ -217,6 +232,6 @@ def estimate_rate(player, state, choused = [], soft_max = True, priority_list = 
     return cur_rate
 
 
-def estimate_rates(players, state, choused = [], soft_max = True, priority_list = []):
-    return {x:estimate_rate_old(x, state, choused, soft_max, priority_list) for x in players if not x in choused}
+def estimate_rates(players, state, choused = [], soft_max = True, priority_list = [], rules = "Spontan"):
+    return {x:estimate_rate_old(x, state, choused, soft_max, priority_list, rules=rules) for x in players if not x in choused}
 

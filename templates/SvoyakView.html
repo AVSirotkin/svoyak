@@ -4,16 +4,33 @@
 
 <table>
 <tr>
-<td width = 60% valign="top">
-<div id="page-wrapper">
 
+<td width = 70% valign="top">
+<div id="page-wrapper">
     <h1>Таблица игроков</h1>
+    <table style="border: 1px solid black;">
+    <thead>
+        <tr><th rowspan="2" style="vertical-align: bottom;">Игрок   </th><th colspan="4" style="text-align: center;">Результаты за {{rules.basic_game_number}} игры   </th><th rowspan="2" style="vertical-align: bottom;">Место   </th></tr>
+        <tr><th>Игр в зачет   </th><th>Сумма мест   </th><th>Сумма очков   </th><th>Сумма баллов   </th></tr>
+    </thead>
+    <tbody>
+        {% for result, place in PlayersStat |zip(places) %}
+          <tr>
+            <td>{{ result.name }}</td>
+            <td style = "text-align: center;">{{ result.games }}</td>
+            <td style = "text-align: center;">{{ result.position }}</td>
+            <td style = "text-align: center;">{{ result.score | round(3) }}</td>
+            <td style = "text-align: center;">{{ result.points  | round(3) }}</td>
+            <td style = "text-align: center;">{{ place  }}</td>
+          </tr>
+        {% endfor %}
+    </tbody>
+</table>
 </div>
 
-<td width="40%" valign="top">
+<td width="30%" valign="top">
 <h1>Результаты игр</h1>
 <div id = "GameStory">
-
 
 </div>
 </td>
@@ -25,23 +42,13 @@
 <script>
 
     function init_page(){
-        GetGameHistory();
-    }
+        // data = {{gamehistory}}
+        GetGameHistory()
+        // for (var i = 0; i < data.length; ++i){
+        //             UpdateGameHistoryFull(data[i].gameindex, data[i].scores)
+        //         }
 
-    function UpdateGameHistory(gameindex, data){
-        
-        let gamelog = document.getElementById("game_log_"+gameindex)
-        
-        if (gamelog == null){
-            gamelog = document.createElement('table');
-            gamelog.setAttribute("id", "game_log_"+gameindex)
-        }
-        gamelog.innerHTML = "<tr> Игра " + gameindex + "</tr>"
-        for (var i = 0; i < data.length; ++i) {
-            gamelog.innerHTML = gamelog.innerHTML + "<tr><td width=200pt>" + data[i].name + "</td><td>"+ data[i].score +"</td></tr>"
-        }
-        gamelog.innerHTML = gamelog.innerHTML + "<br>"
-        document.getElementById("GameStory").appendChild(gamelog)            
+
     }
 
     function GetGameHistory(){
@@ -56,7 +63,7 @@
             return response.json().then((data) => {
                 console.log("history",data);
                 for (var i = 0; i < data.length; ++i){
-                    UpdateGameHistory(data[i].gameindex, data[i].scores)
+                    UpdateGameHistoryFull(data[i].gameindex, data[i].scores)
                 }
                 return data;
             }).catch((err) => {
@@ -64,6 +71,22 @@
             }) 
         });
         
+        }
+
+    function UpdateGameHistoryFull(gameindex, data){
+        
+        let gamelog = document.getElementById("game_log_"+gameindex)
+        
+        if (gamelog == null){
+            gamelog = document.createElement('table');
+            gamelog.setAttribute("id", "game_log_"+gameindex)
+        }
+        gamelog.innerHTML = "<tr> Игра " + gameindex + "</tr>"
+        for (var i = 0; i < data.length; ++i) {
+            gamelog.innerHTML = gamelog.innerHTML + "<tr><td width=200pt>" + data[i].name + "</td><td width=40pt>"+ data[i].score +"</td><td width=40pt>"+ data[i].position +"</td><td width=40pt>"+ data[i].points +"</td></tr>"
+        }
+        gamelog.innerHTML = gamelog.innerHTML + "<br>"
+        document.getElementById("GameStory").appendChild(gamelog)            
     }
     
 

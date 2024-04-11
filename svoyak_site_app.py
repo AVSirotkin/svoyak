@@ -5,6 +5,7 @@ import time
 import json
 from shuffle import * 
 from player_state import player_state
+import pandas as pd
 
 
 app = Flask(__name__)
@@ -31,8 +32,6 @@ def SvoyakWelcomePage():
     return "Страничка на которой живет своячное приложение, однажды она станет интерактивной"
     
 
-
-
 @app.route('/allplayers', subdomain = "svoyak")
 def AllPalayers():
     conn = get_db_connection()
@@ -54,18 +53,17 @@ def SvoyakMainPage(roomid):
 
 @app.route('/view/<int:roomid>', subdomain = "svoyak")
 def SvoyakViewPage(roomid):
-    gamehistory = GetResult(roomid)
-    all_players_stats = []
-    # conn = get_db_connection()
-    # all_players = conn.execute('SELECT playerid, name FROM players ORDER BY name').fetchall()
-    # gi = conn.execute('SELECT max(gameindex) FROM results WHERE roomid == '+str(roomid)).fetchone()
-    # if gi["max(gameindex)"] is None:
-    #     gameindex = 1
-    # else:
-    #     gameindex = gi["max(gameindex)"] + 1
-    # ActivePalayers = []
-
-    return render_template("SvoyakView.html", roomid = roomid, PlayersStat = all_players_stats, gamehistory = gamehistory)
+    # gamehistory = json.loads(GetResult(roomid)
+    
+    rules = get_room_rules(roomid)
+    
+    conn = get_db_connection()
+    all_players_stats = conn.execute('SELECT name, COUNT(position) as games, sum(position) as position, sum(score) as score, sum(points) as points FROM results WHERE roomid == '+str(roomid)+' AND gamenumber <= '+ str(rules["basic_game_number"]) +' GROUP BY name ORDER BY points DESC').fetchall()
+    
+    all_places = pd.Series([r["points"] for r in all_players_stats]).rank(ascending=False).to_list()
+    # for i in range(len(all_places)):
+    #     all_players_stats[i]["place"] = all_places[i]
+    return render_template("SvoyakView.html", roomid = roomid, PlayersStat = all_players_stats, places = all_places, rules = rules)
 
 
 
@@ -76,14 +74,17 @@ def ActivePalayers(roomid):
     return json.dumps( [dict(ix) for ix in all_players])
 
 
-def get_id(name):
+def get_id(name, force_new = True):
     conn = get_db_connection()
     ids = conn.execute(f'SELECT playerid FROM players where name == "{name}"').fetchall()
     if len(ids) == 0:
-        m = conn.execute('SELECT max(playerid) FROM players').fetchone()["max(playerid)"]
-        conn.execute(f'INSERT INTO players (playerid, name, fullname) VALUES ({m+1}, "{name}", "{name}")')
-        conn.commit()
-        return (m+1)
+        if force_new:
+            m = conn.execute('SELECT max(playerid) FROM players').fetchone()["max(playerid)"]
+            conn.execute(f'INSERT INTO players (playerid, name, fullname) VALUES ({m+1}, "{name}", "{name}")')
+            conn.commit()
+            return (m+1)
+        else:
+            return None
     return(ids[0]["playerid"])
 
 def get_name(playerid):
@@ -129,17 +130,48 @@ def RemoveActivePalayers(roomid):
 
     print(data)
     if not "playerid" in data:
-        data["playerid"] = get_id(data["name"])
+        data["playerid"] = get_id(data["name"], False)
 
     if "playerid" in data and "name" in data:
-        conn.execute(f"DELETE FROM activeplayers WHERE roomid = {roomid} AND playerid = {data['playerid']} AND name =\"{data['name']}\" ")
-        conn.commit()
-        log_game_events(roomid, "remove active player", data)
-        if not roomid in game_states:
-            game_states[roomid] = restore_states(roomid)
-        game_states[roomid].remove_player(data['name'])
+        if data["playerid"] is not None:
+            conn.execute(f"DELETE FROM activeplayers WHERE roomid = {roomid} AND playerid = {data['playerid']} AND name =\"{data['name']}\" ")
+            conn.commit()
+            log_game_events(roomid, "remove active player", data)
+            if not roomid in game_states:
+                game_states[roomid] = restore_states(roomid)
+            game_states[roomid].remove_player(data['name'])
+
     all_players = conn.execute('SELECT playerid, name FROM activeplayers where roomid =='+str(roomid)).fetchall()
     return json.dumps([dict(ix) for ix in all_players])
+
+
+@app.route('/admin/<int:roomid>', subdomain = "svoyak")
+def LogView(roomid):
+    conn = get_db_connection()
+    log_info = conn.execute(f"SELECT rowid as id, date, roomid as room, event as name, data as json FROM log WHERE roomid = {roomid}").fetchall()
+    return render_template("RoomAdmin.html", roomid = roomid, gamelog = log_info)
+
+
+@app.route('/removegamelog/<int:roomid>', subdomain = "svoyak", methods = ["POST"])
+def RemoveFromLog(roomid):
+    data = request.json
+    print("DATA", data)
+    if not "rowid" in data:
+        return "{}"
+    conn = get_db_connection()
+    event_list = conn.execute(f"SELECT event, data FROM log WHERE roomid = {roomid} AND rowid = {data['rowid']}").fetchall()
+    if len(event_list) > 0:
+        if event_list[0]["event"] == "save game result":
+            gamedata = json.loads(event_list[0]["data"])
+            conn.execute(f"DELETE FROM results WHERE roomid = {roomid} AND gameindex = {gamedata['gameindex']}")
+    sql_del = conn.execute(f"DELETE FROM log WHERE roomid = {roomid} AND rowid = {data['rowid']}")
+    conn.commit()
+    if sql_del.rowcount == 0:
+        return "{}"
+    if roomid in game_states:
+        game_states[roomid] = restore_states(roomid)
+    return json.dumps(request.json)
+
 
 
 @app.route('/gameresult/<int:roomid>', subdomain = "svoyak", methods = ["POST"])
@@ -158,6 +190,9 @@ def SaveResult(roomid):
         return "{}"
     player_in_game = []
     if conn.execute(f"SELECT count(playerid) FROM results WHERE roomid == {roomid} AND gameindex == {data['gameindex']}").fetchone()["count(playerid)"] == 0:
+
+        non_empty = []
+        
         for v in data["scores"]:
             if v["name"] == "":
                 continue
@@ -166,11 +201,38 @@ def SaveResult(roomid):
             player_in_game.append(v["name"])
             if not "playerid" in v:
                 v["playerid"] = get_id(v['name'])
-            conn.execute(f"INSERT OR IGNORE INTO results VALUES ({roomid},{data['gameindex']}, {v['playerid']}, \"{v['name']}\", {v['score']} )")
+            
+            non_empty.append(v)
+
+        if len(non_empty) == 0:
+            return {}
+        
+        local_res = pd.DataFrame(non_empty)
+
+        print(local_res)
+
+        game_num = [len(conn.execute(f"SELECT name FROM results WHERE roomid = {roomid} AND name = '{x}' AND gameindex < {data['gameindex']}").fetchall()) + 1 for x in local_res["name"]]
+        print(game_num)
+        for x in local_res["name"]:
+            print(f"SELECT name FROM results WHERE roomid = {roomid} AND name = '{x}' AND gameindex < {data['gameindex']}")
+
+        local_res["score"] = pd.to_numeric(local_res["score"])
+        local_res["position"] = local_res["score"].rank(ascending = False)
+        local_res["points"] = 5 - local_res["position"] + local_res["score"]/1000
+        local_res["points"] = local_res["points"].round(3)
+        local_res["roomid"] = roomid
+        local_res["gameindex"] = data['gameindex']
+        local_res["gamenumber"] = game_num
+
+        
+        local_res.to_sql('results', conn, if_exists='append', index=False)
         conn.commit()
+
         log_game_events(roomid, "save game result", data)
+        
         if not roomid in game_states:
             game_states[roomid] = restore_states(roomid)
+        
         if len(player_in_game) >0:
             game_states[roomid].process_one_match(player_in_game)
 
@@ -191,11 +253,11 @@ def GetResult(roomid):
     conn = get_db_connection()
 
     if data is None:
-        req = conn.execute(f"SELECT gameindex, playerid, name, score FROM results WHERE roomid == {roomid} ORDER BY gameindex")
+        req = conn.execute(f"SELECT gameindex, playerid, name, score, position, points FROM results WHERE roomid == {roomid} ORDER BY gameindex")
     elif "game_index" in data:
-        req = conn.execute(f"SELECT gameindex, playerid, name, score FROM results WHERE roomid == {roomid} AND gameindex == {data['gameindex']}")
+        req = conn.execute(f"SELECT gameindex, playerid, name, score, position, points FROM results WHERE roomid == {roomid} AND gameindex == {data['gameindex']}")
     else:
-        req = conn.execute(f"SELECT gameindex, playerid, name, score FROM results WHERE roomid == {roomid} ORDER BY gameindex")
+        req = conn.execute(f"SELECT gameindex, playerid, name, score, position, points FROM results WHERE roomid == {roomid} ORDER BY gameindex")
 
     res = []
     prev_index = -1
@@ -205,7 +267,7 @@ def GetResult(roomid):
             prev_index = r["gameindex"]
         res[-1]["scores"].append(dict(r))
 
-    return json.dumps(res)
+    return json.dumps(res, ensure_ascii=False)
 
 
 
@@ -232,21 +294,27 @@ def ReturnPositions(roomid):
     if not roomid in game_states:
         game_states[roomid] = restore_states(roomid)
     
-    
+    rules = get_room_rules(roomid)
     sub = []
     pre = []
-    for i in range(len(data)):
-        if data[i]["name"] == "":
-            sub.append(i)
-        else:
-            pre.append(data[i]["name"])
-            
-    player_in_game = game_states[roomid].shuffle_players(pre)
+    forbiden = []
+    if "assigned" in data:
+        for i in range(len(data["assigned"])):
+            if data["assigned"][i]["name"] == "":
+                sub.append(i)
+            else:
+                pre.append(data["assigned"][i]["name"])
+    if "one_game_forbiden" in data:
+        for pl in data["one_game_forbiden"]:
+            forbiden.append(pl["name"])
+
+    player_in_game = game_states[roomid].shuffle_players(pre, forbiden=forbiden, rules = rules["name"])
     print(player_in_game)
     for i in range(len(player_in_game) - len(pre)):
-        data[sub[i]]["name"] = player_in_game[i+len(pre)]
-        
-    return json.dumps(data)
+        data["assigned"][sub[i]]["name"] = player_in_game[i+len(pre)]
+
+    # data_all = [{"shift":0, "data": data["assigned"]}]
+    return json.dumps(data["assigned"])
 
 @app.route('/predictgames/<int:roomid>/<int:games_num>', subdomain = "svoyak", methods = ["POST"])
 def ReturnFuturePositions(roomid, games_num):
@@ -255,45 +323,67 @@ def ReturnFuturePositions(roomid, games_num):
     if not roomid in game_states:
         game_states[roomid] = restore_states(roomid)
     
-    
+    rules = get_room_rules(roomid)
+
     sub = []
     pre = []
-    for i in range(len(data)):
-        if data[i]["name"] == "":
-            sub.append(i)
-        else:
-            pre.append(data[i]["name"])
-            
-    player_in_game = game_states[roomid].shuffle_players(pre)
+    forbiden = []
+    if "assigned" in data:
+        for i in range(len(data["assigned"])):
+            if data["assigned"][i]["name"] == "":
+                sub.append(i)
+            else:
+                pre.append(data["assigned"][i]["name"])
+    if "one_game_forbiden" in data:
+        for pl in data["one_game_forbiden"]:
+            forbiden.append(pl["name"])
+
+    player_in_game = game_states[roomid].shuffle_players(pre, forbiden=forbiden, rules = rules["name"])
     print(player_in_game)
     for i in range(len(player_in_game) - len(pre)):
-        data[sub[i]]["name"] = player_in_game[i+len(pre)]
+        data["assigned"][sub[i]]["name"] = player_in_game[i+len(pre)]
 
-    data_all = [{"shift":0, "data": data}]
+    data_all = [{"shift":0, "data": data["assigned"]}]
     
     if games_num > 1:
         loc_state = game_states[roomid].get_copy()        
         for i in range(1, games_num):
             data_all.append({"shift":i, "data": []})
             loc_state.process_one_match(player_in_game)
-            player_in_game = loc_state.shuffle_players()
+            player_in_game = loc_state.shuffle_players(rules = rules["name"])
             for n in player_in_game:
                 data_all[-1]["data"].append({"name":n})
 
     return json.dumps(data_all)
 
 
-def rate_all(room, choused = []):
+def rate_all(roomid, choused = []):
     global game_states
-    print("rate all ", room)
-    if not room in game_states:
-        game_states[room] = restore_states(room)
+    print("rate all ", roomid)
+    if not roomid in game_states:
+        game_states[roomid] = restore_states(roomid)
+    
+    rules = get_room_rules(roomid)
 
-    rt = estimate_rates(game_states[room].active_players, game_states[room], choused = choused)
+    rt = estimate_rates(game_states[roomid].active_players, game_states[roomid], choused = choused, rules = rules["name"])
     if len(rt) == 0:
         return([])
     else:
         return(sorted(rt.items(), key=lambda x:-x[1]))
+
+def get_room_rules(roomid):
+    conn = get_db_connection()
+    rules = conn.execute(f'SELECT * FROM rules WHERE roomid={roomid}').fetchone()
+    if rules is None:
+        rules = {"name": "Spontan", "basic_game_number":3}
+    else:
+        print("r1", rules)
+        rules = dict(rules)
+        print("r2", rules)
+        if rules["name"] == "Tumen":
+            rules["basic_game_number"] = 4
+    return rules
+
 
 def restore_states(room):
     print("restore state ", room)
@@ -345,4 +435,5 @@ if __name__ == "__main__":
     website_url, port = read_cfg()
     print(website_url)
     app.config['SERVER_NAME'] = website_url
+    app.jinja_env.filters['zip'] = zip
     app.run(debug=True, port=port)

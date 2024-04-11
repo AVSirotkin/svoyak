@@ -20,7 +20,10 @@
    
    <br>
    <div id="activeplayers"></div>
-   <input placeholder="удалить" id="remove_player" data-type="remove" ondrop="drop_handler(event)" ondragover = "dragsover(event)">
+   <input placeholder="удалить" id="remove_player" data-type="remove" ondrop="drop_handler(event)" ondragover = "dragsover(event)" onchange="remove_pl(event)">
+   <br>
+   <br>
+   <a href="/admin/{{roomid}}">админка</a>
 </div>
 
 <datalist id="active_players_list">
@@ -32,23 +35,34 @@
 <div id="active_game_field">
     <h3 id="game">Игра 1</h3>
     <table>
-   <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><input type="text" data-type = "players" id="player1" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 1"><input type="int" id="score1" placeholder="0" tabindex = 5 size = 5pt></td></tr>
-   <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><input type="text" data-type = "players" id="player2" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 2"><input type="int" id="score2" placeholder="0" tabindex = 5 size = 5pt></td></tr>
-   <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><input type="text" data-type = "players" id="player3" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 3"><input type="int" id="score3" placeholder="0" tabindex = 5 size = 5pt></td></tr>
-   <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><input type="text" data-type = "players" id="player4" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 4"><input type="int" id="score4" placeholder="0" tabindex = 5 size = 5pt></td></tr>
+   <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><input type="text" class = "player_input" data-type = "players" id="player1" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 1"><input type="int" id="score1" placeholder="счет" tabindex = 5 size = 5pt></td></tr>
+   <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><input type="text" class = "player_input" data-type = "players" id="player2" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 2"><input type="int" id="score2" placeholder="счет" tabindex = 5 size = 5pt></td></tr>
+   <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><input type="text" class = "player_input" data-type = "players" id="player3" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 3"><input type="int" id="score3" placeholder="счет" tabindex = 5 size = 5pt></td></tr>
+   <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><input type="text" class = "player_input" data-type = "players" id="player4" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 4"><input type="int" id="score4" placeholder="счет" tabindex = 5 size = 5pt></td></tr>
     </table>
-<button onclick = "AddResult()"> Внести результат </button><button onclick = "FillPositions()"> Заполнить игроков </button>
-<button onclick = "update_weight()"> Веса </button> <button onclick = "predict_matches()"> Прогноз </button> 
  </div>
-
+<button onclick = "AddResult()"> Внести результат </button><button onclick = "FillPositions()"> Заполнить игроков </button>
+<button onclick = "predict_matches()"> Прогноз </button> 
+ 
 <hr>
+<a href="/view/{{roomid}}">Подробные результаты</a>
 <div id = "GameStory">
 
 </div>
 
 </td>
 <td valign="top">
-<div>
+
+<div hei style="border:dotted; min-height:150px" id="blocked_for_one_game" data-type="one_game_block" ondrop="drop_handler(event);" ondragover="dragsover(event);">
+    Блокировка на одну игру:
+    <list id="one_game_block_list" data-type="one_game_block"></list>
+</div>
+
+
+
+
+<div id="weight_info">
+<button onclick = "update_weight()"> Веса </button> 
 Табличка текущих весов
 
 <table id="weight">
@@ -70,6 +84,13 @@
 <script>
 let active = []
 let player_name_drag = null
+let one_game_block_array = []
+
+function remove_pl(){
+    console.log(document.getElementById("remove_player").value)
+    remove_from_active(document.getElementById("remove_player").value)
+}
+
 function addActive() {
     let ans = fetch("/activeplayers/{{roomid}}",
     {
@@ -156,9 +177,24 @@ function drop_handler(ev) {
 
   if (end_type == "remove")
     remove_from_active(id)
+
+  if (end_type == "one_game_block"){
+    if (!one_game_block_array.includes(id)){
+        one_game_block_array.push(id)
+        refreshOneGameBlock()
+    }
+  }
 }
 player_name_drag = null
 
+}
+
+function refreshOneGameBlock(){
+    let d = document.getElementById("one_game_block_list")
+    d.innerHTML = ""
+    for (const element of one_game_block_array) {
+        d.innerHTML = d.innerHTML + '<li data-type="one_game_block" draggable="true" ondragstart="dragstart_handler(event)">' +element + '</li>'
+    }
 }
 
 function AddResult(){
@@ -228,8 +264,9 @@ function AddResult(){
         }
         gamelog.innerHTML = "<tr> Игра " + gameindex + "</tr>"
         for (var i = 0; i < data.length; ++i) {
-            gamelog.innerHTML = gamelog.innerHTML + "<tr><td>" + data[i].name + "</td><td>"+ data[i].score +"</td></tr>"
+            gamelog.innerHTML = gamelog.innerHTML + "<tr><td width=200pt>" + data[i].name + "</td><td>"+ data[i].score +"</td></tr>"
         }
+        gamelog.innerHTML = gamelog.innerHTML + "<br>"
             
     }
 
@@ -240,12 +277,13 @@ function AddResult(){
         if (gamelog == null){
             gamelog = document.createElement('table');
             gamelog.setAttribute("id", "game_log_"+gameindex)
-            gamelog.setAttribute("color", "rgba(0,0,0,0.4)")
+            // gamelog.setAttribute("color", "rgba(0,0,0,0.4)")
         }
         gamelog.innerHTML = "<tr> Игра " + gameindex + "</tr>"
         for (var i = 0; i < data.length; ++i) {
-            gamelog.innerHTML = gamelog.innerHTML + "<tr><td>" + data[i].name + "</td><td>" + "</td></tr>"
+            gamelog.innerHTML = gamelog.innerHTML + "<tr><td width=200pt>>" + data[i].name + "</td><td>" + "</td></tr>"
         }
+        gamelog.innerHTML = gamelog.innerHTML + "<br>"
         document.getElementById("GameStory").appendChild(gamelog)            
     }
 
@@ -287,6 +325,8 @@ function AddResult(){
         document.getElementById('player4').value = ""
         document.getElementById('score4').value = ""
         
+        document.getElementById('one_game_block_list').innerHTML = ""
+        
         update_weight()
     }
     var row = null;
@@ -300,15 +340,28 @@ function AddResult(){
     var e = event;
     e.preventDefault();
     if (row != null){
-    // console.log(e.target.parentNode.parentNode);
-
+    console.log(e.target);
+    console.log(e.target.parentNode);
+    
     let children = Array.from(e.target.parentNode.parentNode.parentNode.children);
     // console.log(row, children);
-    if(children.indexOf(e.target.parentNode.parentNode)>children.indexOf(row))
+    if(children.indexOf(e.target.parentNode.parentNode)>children.indexOf(row)){
         e.target.parentNode.parentNode.after(row);
+        pls = document.getElementsByClassName("player_input");
+        for (var i = 0; i < pls.length; ++i){
+                    pls[i].placeholder = "игрок "+ (i+1)
+                }
+    }
     else
         e.target.parentNode.parentNode.before(row);
+        pls = document.getElementsByClassName("player_input");
+        for (var i = 0; i < pls.length; ++i){
+                    pls[i].placeholder = "игрок "+ (i+1)
+                }
+ 
     }
+
+
     }
     
     function remove_from_active(name){
@@ -335,7 +388,13 @@ function AddResult(){
 
 
 function FillPositions(){
-    to_send = [{"name":document.getElementById("player1").value},{"name":document.getElementById("player2").value},{"name":document.getElementById("player3").value},{"name":document.getElementById("player4").value}]
+    // to_send = [{"name":document.getElementById("player1").value},{"name":document.getElementById("player2").value},{"name":document.getElementById("player3").value},{"name":document.getElementById("player4").value}]
+    to_send = {"assigned":[{"name":document.getElementById("player1").value},{"name":document.getElementById("player2").value},{"name":document.getElementById("player3").value},{"name":document.getElementById("player4").value}], "one_game_forbiden":[]}
+    for (const element of one_game_block_array) {
+        to_send.one_game_forbiden.push({"name":element})
+    }
+    
+    
     let ans = fetch("/fillpositions/{{roomid}}",
     {
         headers: {
@@ -396,7 +455,10 @@ function printWeight(data){
 
 
 function predict_matches(){
-    to_send = [{"name":document.getElementById("player1").value},{"name":document.getElementById("player2").value},{"name":document.getElementById("player3").value},{"name":document.getElementById("player4").value}]
+    to_send = {"assigned":[{"name":document.getElementById("player1").value},{"name":document.getElementById("player2").value},{"name":document.getElementById("player3").value},{"name":document.getElementById("player4").value}], "one_game_forbiden":[]}
+    for (const element of one_game_block_array) {
+        to_send.one_game_forbiden.push({"name":element})
+    }
     let ans = fetch("/predictgames/{{roomid}}/3",
     {
         headers: {
