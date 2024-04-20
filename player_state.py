@@ -13,7 +13,6 @@ class player_state:
         self.skipped_games = {}
         self.total_games = {}
         self.played_games = {}
-        self.twice_played_with = {}
         self.played_with = {}
         self.history = []
         self.active_players = []
@@ -23,7 +22,6 @@ class player_state:
         a.skipped_games = deepcopy(self.skipped_games)
         a.total_games = deepcopy(self.total_games)
         a.played_games = deepcopy(self.played_games)
-        a.twice_played_with = deepcopy(self.twice_played_with)
         a.played_with = deepcopy(self.played_with)
         a.history = deepcopy(self.history)
         a.active_players = deepcopy(self.active_players)
@@ -65,6 +63,11 @@ class player_state:
     
     def process_one_match(self, player_in_game):
         self.history.append(player_in_game)
+
+        for i in player_in_game:
+            if not i in self.skipped_games:
+                self.add_player(i)
+
        
         #update restrictions
         for i in player_in_game:
@@ -73,9 +76,10 @@ class player_state:
             
             for j in player_in_game:
                 if i != j:
+                    if not j in self.played_with:
+                        self.played_with[j] = {} 
                     if i in self.played_with[j]:
                         self.played_with[j][i] += 1
-                        self.twice_played_with[j].append(i)
                     else:
                         self.played_with[j][i] = 1
         
@@ -91,7 +95,6 @@ class player_state:
             self.total_games[p] = 0
             self.played_games[p] = 0
 #            players += 1
-            self.twice_played_with[p] = []
             self.played_with[p] = {}
         if not p in self.active_players:
             self.active_players.append(p)
