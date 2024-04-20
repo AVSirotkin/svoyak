@@ -35,13 +35,13 @@
 <div id="active_game_field">
     <h3 id="game">Игра 1</h3>
     <table>
-   <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><input type="text" class = "player_input" data-type = "players" id="player1" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 1"><input type="int" id="score1" placeholder="счет" tabindex = 5 size = 5pt></td></tr>
-   <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><input type="text" class = "player_input" data-type = "players" id="player2" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 2"><input type="int" id="score2" placeholder="счет" tabindex = 5 size = 5pt></td></tr>
-   <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><input type="text" class = "player_input" data-type = "players" id="player3" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 3"><input type="int" id="score3" placeholder="счет" tabindex = 5 size = 5pt></td></tr>
-   <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><input type="text" class = "player_input" data-type = "players" id="player4" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 4"><input type="int" id="score4" placeholder="счет" tabindex = 5 size = 5pt></td></tr>
+   <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><button onclick = "(function(){document.getElementById('player1').value = '';document.getElementById('score1').value = ''})()">🗑</button><input type="text" class = "player_input" data-type = "players" id="player1" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 1"><input type="int" id="score1" placeholder="счет" tabindex = 5 size = 5pt></td></tr>
+   <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><button onclick = "(function(){document.getElementById('player2').value = '';document.getElementById('score2').value = ''})()">🗑</button><input type="text" class = "player_input" data-type = "players" id="player2" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 2"><input type="int" id="score2" placeholder="счет" tabindex = 5 size = 5pt></td></tr>
+   <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><button onclick = "(function(){document.getElementById('player3').value = '';document.getElementById('score3').value = ''})()">🗑</button><input type="text" class = "player_input" data-type = "players" id="player3" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 3"><input type="int" id="score3" placeholder="счет" tabindex = 5 size = 5pt></td></tr>
+   <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><button onclick = "(function(){document.getElementById('player4').value = '';document.getElementById('score4').value = ''})()">🗑</button><input type="text" class = "player_input" data-type = "players" id="player4" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 4"><input type="int" id="score4" placeholder="счет" tabindex = 5 size = 5pt></td></tr>
     </table>
  </div>
-<button onclick = "AddResult()"> Внести результат </button><button onclick = "FillPositions()"> Заполнить игроков </button>
+<button onclick = "AddResult()"> Внести результат </button><button onclick = "FillPositions()"> Заполнить игроков </button><button onclick = "ClearPlayers()"> Очистить </button>
 <button onclick = "predict_matches()"> Прогноз </button> 
  
 <hr>
@@ -200,36 +200,43 @@ function refreshOneGameBlock(){
 function AddResult(){
 
     let res = []
-    res.push({name:document.getElementById('player1').value, score:document.getElementById('score1').value})
-    res.push({name:document.getElementById('player2').value, score:document.getElementById('score2').value})
-    res.push({name:document.getElementById('player3').value, score:document.getElementById('score3').value})
-    res.push({name:document.getElementById('player4').value, score:document.getElementById('score4').value})
+    if (((document.getElementById('player1').value != "") & (document.getElementById('score1').value == ""))|
+        ((document.getElementById('player2').value != "") & (document.getElementById('score2').value == ""))|
+        ((document.getElementById('player3').value != "") & (document.getElementById('score3').value == ""))|
+        ((document.getElementById('player4').value != "") & (document.getElementById('score4').value == ""))){
+            alert("Не у всех игроков внесен счет! Внесите счет или удалите игрока.")
+        }
+    else {
+        res.push({name:document.getElementById('player1').value, score:document.getElementById('score1').value})
+        res.push({name:document.getElementById('player2').value, score:document.getElementById('score2').value})
+        res.push({name:document.getElementById('player3').value, score:document.getElementById('score3').value})
+        res.push({name:document.getElementById('player4').value, score:document.getElementById('score4').value})
 
-    let ans = fetch("/gameresult/{{roomid}}",
-    {
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json'
-        },
-        method: "POST",
-        body: JSON.stringify({roomid:{{roomid}}, gameindex: gameindex, scores:res})
-    }).then((response) => { 
-            return response.json().then((data) => {
-                console.log(data);
-                if (data.length > 0) {
-                    UpdateGameHistory(gameindex, data);
-                    RefreshGame();
-                    gameindex = gameindex + 1
-                    document.getElementById("game").innerHTML = "Игра "+ gameindex   
-                }
-                return data;
-            }).catch((err) => {
-                console.log(err);
-            }) 
-        });
+        let ans = fetch("/gameresult/{{roomid}}",
+        {
+            headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+            },
+            method: "POST",
+            body: JSON.stringify({roomid:{{roomid}}, gameindex: gameindex, scores:res})
+        }).then((response) => { 
+                return response.json().then((data) => {
+                    console.log(data);
+                    if (data.length > 0) {
+                        UpdateGameHistory(gameindex, data);
+                        RefreshGame();
+                        gameindex = gameindex + 1
+                        document.getElementById("game").innerHTML = "Игра "+ gameindex   
+                    }
+                    return data;
+                }).catch((err) => {
+                    console.log(err);
+                }) 
+            });
 
-    }
-
+        }
+}
     function init_page(){
         gameindex = {{gameindex}}
         document.getElementById("game").innerHTML = "Игра "+ gameindex
@@ -309,10 +316,7 @@ function AddResult(){
         });
         
         }
-
-    function RefreshGame(){
-
-
+    function ClearPlayers(){
         document.getElementById('player1').value = ""
         document.getElementById('score1').value = ""
 
@@ -324,8 +328,13 @@ function AddResult(){
 
         document.getElementById('player4').value = ""
         document.getElementById('score4').value = ""
+    }
+    function RefreshGame(){
+
+        ClearPlayers()
         
         document.getElementById('one_game_block_list').innerHTML = ""
+        one_game_block_array = []
         
         update_weight()
     }
@@ -449,7 +458,7 @@ function printWeight(data){
     tb = document.getElementById("weight")
     tb.innerHTML = ""
     for (var i = 0; i < data.length; ++i) {
-            tb.innerHTML = tb.innerHTML + "<tr><td draggable = 'true' ondragstart = 'dragstart_handler(event)'>" + data[i].name + "</td><td>"+ data[i].weight +"</td></tr>"
+            tb.innerHTML = tb.innerHTML + "<tr><td draggable = 'true' ondragstart = 'dragstart_handler(event)'>" + data[i].name + "<td width=20pt>"+ data[i].skiped +"</td>" + "<td width=20pt>"+ data[i].played +"</td>"+ "</td><td width=40pt>"+ data[i].weight +"</td>" + "</tr>"
         }
 }
 

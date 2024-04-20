@@ -283,7 +283,8 @@ def EstimateWeigth(roomid):
     all_players = rate_all(roomid, choused = choused)
 
     print(game_states)
-    return json.dumps( [{"name":ix[0], "weight":ix[1]} for ix in all_players])
+
+    return json.dumps( [{"name":ix[0], "weight":ix[1], "skiped":ix[2], "played":ix[3]} for ix in all_players])
 
 
 
@@ -369,7 +370,8 @@ def rate_all(roomid, choused = []):
     if len(rt) == 0:
         return([])
     else:
-        return(sorted(rt.items(), key=lambda x:-x[1]))
+        rt_extra = [(x[0], x[1], game_states[roomid].skipped_games[x[0]], game_states[roomid].played_games[x[0]]) for x in rt.items()]
+        return(sorted(rt_extra, key=lambda x:-x[1]))
 
 def get_room_rules(roomid):
     conn = get_db_connection()
