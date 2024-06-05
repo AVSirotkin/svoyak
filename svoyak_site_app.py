@@ -417,6 +417,37 @@ def restore_states(room):
     print(loc_states.played_games)
     return loc_states.get_copy()
 
+@app.route('/spontan', subdomain = "svoyak")
+def SpontanPage():
+    conn = get_db_connection()
+    GameHistory = conn.execute("SELECT * FROM roomhistory LEFT JOIN players ON roomhistory.winerplayerid==players.playerid WHERE venueid==1 ORDER BY date DESC;").fetchall()
+    # print(GameHistory)
+    return render_template("VenuesView.html", GameHistory = GameHistory, VenueName = "Бар Спонтан")
+    # return " "
+
+@app.route('/venue/<int:venueid>', subdomain = "svoyak")
+def VenuePage(venueid):
+    conn = get_db_connection()
+    VenueNameRec = conn.execute(f"SELECT venuename FROM venues WHERE venueid=={venueid};").fetchall()
+    VenueName = ""
+    if len(VenueNameRec) >0:
+        VenueName = VenueNameRec[0]["venuename"]
+
+    GameHistory = conn.execute(f"SELECT * FROM roomhistory LEFT JOIN players ON roomhistory.winerplayerid==players.playerid WHERE venueid=={venueid} ORDER BY date DESC;").fetchall()
+    # print(GameHistory)
+    return render_template("VenuesView.html", GameHistory = GameHistory, VenueName = VenueName)
+    # return " "
+
+
+
+@app.route('/active', subdomain = "svoyak")
+def ActivePage():
+    conn = get_db_connection()
+    GameHistory = conn.execute("SELECT * FROM activerooms LEFT JOIN venues ON activerooms.venueid==venues.venueid ORDER BY date DESC;").fetchall()
+    # print(GameHistory)
+    return render_template("ActiveView.html", GameHistory = GameHistory, VenueName = "Бар Спонтан")
+    # return " "
+
 
 
 def read_cfg():
