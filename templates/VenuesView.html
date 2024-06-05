@@ -16,7 +16,7 @@
         {% for result in GameHistory %}
           <tr>
             <td style="text-align: center;"><a href="/view/{{result.roomid}}">{{ result.date }}</a></td>
-            <td>{% if result.name == None %} Еще не определен {% else %} {{result.name}} {% endif %}</td>
+            <td>{% if result.name == None %} Ещё не определён {% else %} {{result.name}} {% endif %}</td>
           </tr>
         {% endfor %}
     </tbody>
