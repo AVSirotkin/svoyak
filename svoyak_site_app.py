@@ -384,15 +384,26 @@ def CreateRoomApi():
 
     conn = get_db_connection()
     
+    force_room_overwrite = False
+    if "force_room_overwrite" in data:
+        if data["force_room_overwrite"]:
+            force_room_overwrite = True
+
     if new_room_id != 0:
         check_room_id = conn.execute('SELECT roomid FROM roomhistory WHERE roomid == '+str(new_room_id)).fetchall()
         if len(check_room_id) > 0:
-            return json.dumps({"Status": "Room already in use", "RoomId": new_room_id})
+            if force_room_overwrite:
+                conn.executescript('DELETE FROM roomhistory WHERE roomid == '+str(new_room_id))
+            else:
+                return json.dumps({"Status": "Room already in use", "RoomId": new_room_id})
     
     if new_room_id != 0:
         check_room_id = conn.execute('SELECT roomid FROM activerooms WHERE roomid == '+str(new_room_id)).fetchall()
         if len(check_room_id) > 0:
-            return json.dumps({"Status": "Room already in use", "RoomId": new_room_id})
+            if force_room_overwrite:
+                conn.executescript('DELETE FROM activerooms WHERE roomid == '+str(new_room_id))
+            else:
+                return json.dumps({"Status": "Room already in use", "RoomId": new_room_id})
 
     if new_room_id == 0:
         max_room_h = conn.execute('SELECT max(roomid) as roomid FROM roomhistory').fetchall()
@@ -410,8 +421,12 @@ def CreateRoomApi():
     conn.executescript(f'INSERT INTO roomhistory(roomid, date, venueid, winerplayerid) VALUES({new_room_id}, "{roomdate}", {venueid}, Null)')
     conn.executescript(f'INSERT INTO activerooms(roomid, date, venueid, finished) VALUES({new_room_id}, "{roomdate}", {venueid}, 0)')
     
+    check_room_id = conn.execute('SELECT roomid FROM rules WHERE roomid == '+str(new_room_id)).fetchall()
+    if len(check_room_id) > 0:
+        conn.executescript('DELETE FROM rules WHERE roomid == '+str(new_room_id))
+
     if not rules_name is None:
-        conn.executescript(f'INSERT INTO rules(roomid, name) VALUES({new_room_id}, {rules_name})')
+        conn.executescript(f'INSERT INTO rules(roomid, name) VALUES({new_room_id}, "{rules_name}")')
 
     return json.dumps({"Status": "Ok", "RoomId": new_room_id})
 
