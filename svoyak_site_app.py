@@ -385,13 +385,13 @@ def CreateRoomApi():
     conn = get_db_connection()
     
     if new_room_id != 0:
-        conn.execute('SELECT roomid FROM roomhistory WHERE roomid == '+str(new_room_id)).fetchall()
-        if len(max_room_h) > 0:
+        check_room_id = conn.execute('SELECT roomid FROM roomhistory WHERE roomid == '+str(new_room_id)).fetchall()
+        if len(check_room_id) > 0:
             return json.dumps({"Status": "Room already in use", "RoomId": new_room_id})
     
     if new_room_id != 0:
-        conn.execute('SELECT roomid FROM activerooms WHERE roomid == '+str(new_room_id)).fetchall()
-        if len(max_room_h) > 0:
+        check_room_id = conn.execute('SELECT roomid FROM activerooms WHERE roomid == '+str(new_room_id)).fetchall()
+        if len(check_room_id) > 0:
             return json.dumps({"Status": "Room already in use", "RoomId": new_room_id})
 
     if new_room_id == 0:
