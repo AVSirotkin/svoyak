@@ -8,6 +8,7 @@ from player_state import player_state
 import pandas as pd
 
 
+
 app = Flask(__name__)
 
 game_states = {}
@@ -357,6 +358,83 @@ def ReturnFuturePositions(roomid, games_num):
 
     return json.dumps(data_all)
 
+
+
+@app.route('/api/addroom', subdomain = "svoyak", methods = ["POST"])
+def CreateRoomApi():
+    data = request.json
+
+    roomdate = datetime.datetime.today().strftime('%Y-%m-%d')
+    if "date" in data:
+        roomdate = data["date"]
+
+    venueid = 0
+    if "venueid" in data:
+        venueid = data["venueid"]
+    
+    rules_name = None
+    
+    if "rules_name" in data:
+        rules_name = data["rules_name"]
+
+    new_room_id = 0
+    if "roomid" in data:
+        new_room_id = int(data["roomid"])
+
+
+    conn = get_db_connection()
+    
+    if new_room_id != 0:
+        conn.execute('SELECT roomid FROM roomhistory WHERE roomid == '+str(room_id)).fetchall()
+        if len(max_room_h) > 0:
+            return json.dumps({"Status": "Room already in use", "RoomId": new_room_id})
+    
+    if new_room_id != 0:
+        conn.execute('SELECT roomid FROM activerooms WHERE roomid == '+str(room_id)).fetchall()
+        if len(max_room_h) > 0:
+            return json.dumps({"Status": "Room already in use", "RoomId": new_room_id})
+
+    if new_room_id == 0:
+        max_room_h = conn.execute('SELECT max(roomid) as roomid FROM roomhistory').fetchall()
+        if len(max_room_h):
+            if max_room_id < max_room_h[0]["roomid"]:
+                max_room_id = max_room_h[0]["roomid"]
+        max_room_a = conn.execute('SELECT max(roomid) as roomid FROM activerooms').fetchall()
+        if len(max_room_a):
+            if max_room_id < max_room_a[0]["roomid"]:
+                max_room_id = max_room_a[0]["roomid"]
+        
+        new_room_id = max_room_id + 1
+
+    print(f'INSERT INTO roomhistory(roomid, date, venueid, winerplayerid) VALUES({new_room_id}, "{roomdate}", {venueid}, Null)')
+    conn.executescript(f'INSERT INTO roomhistory(roomid, date, venueid, winerplayerid) VALUES({new_room_id}, "{roomdate}", {venueid}, Null)')
+    conn.executescript(f'INSERT INTO activerooms(roomid, date, venueid, finished) VALUES({new_room_id}, "{roomdate}", {venueid}, 0)')
+    
+    if not rules_name is None:
+        conn.executescript(f'INSERT INTO rules(roomid, name) VALUES({new_room_id}, {rules_name})')
+
+    return json.dumps({"Status": "Ok", "RoomId": new_room_id})
+
+@app.route('/api/finalizeroom/<int:roomid>', subdomain = "svoyak")
+def FinalizeRoomApi(roomid):
+    # data = request.json
+    conn = get_db_connection()
+    room_info = conn.execute('SELECT * FROM activerooms WHERE roomid == '+str(roomid)).fetchall()
+    rules = get_room_rules(roomid)
+    if len(room_info) == 1:
+        if not room_info[0]["finished"]:
+            conn.executescript('UPDATE activerooms SET finished=1 WHERE roomid == '+str(roomid))
+
+            players_stat = conn.execute('SELECT playerid, name, COUNT(position) as games, sum(position) as position, sum(score) as score, sum(points) as points FROM results WHERE roomid == '+str(roomid)+' AND gamenumber <= '+ str(rules["basic_game_number"]) +' GROUP BY name ORDER BY points DESC').fetchall()
+            if len(players_stat)>0:
+                playerid = players_stat[0]["playerid"]
+                winer_name = players_stat[0]["name"]
+                conn.executescript(f'UPDATE roomhistory SET winerplayerid={playerid} WHERE roomid == {roomid}')
+                return json.dumps({"status":"Ok", "winer":winer_name}, ensure_ascii=False)
+            return json.dumps({"status":"No winer detected"})
+        return json.dumps({"status":"Room arleady finished"})
+    return json.dumps({"status":"No such room"})
+    
 
 def rate_all(roomid, choused = []):
     global game_states
