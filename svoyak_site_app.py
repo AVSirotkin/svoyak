@@ -66,7 +66,7 @@ def SvoyakViewPage(roomid):
     rules = get_room_rules(roomid)
     
     conn = get_db_connection()
-    all_players_stats = conn.execute('SELECT name, COUNT(position) as games, sum(position) as position, sum(score) as score, sum(points) as points FROM results WHERE roomid == '+str(roomid)+' AND gamenumber <= '+ str(rules["basic_game_number"]) +' GROUP BY name ORDER BY points DESC').fetchall()
+    all_players_stats = conn.execute('SELECT name, COUNT(position) as games, sum(position) as position, sum(score) as score, sum(points) as points FROM results WHERE roomid == '+str(roomid)+' AND gamenumber <= '+ str(rules["parameters"]["basic_game_number"]) +' GROUP BY name ORDER BY points DESC').fetchall()
     
     all_places = pd.Series([r["points"] for r in all_players_stats]).rank(ascending=False).to_list()
     # for i in range(len(all_places)):
@@ -158,7 +158,8 @@ def InitRoom(roomid):
     conn = get_db_connection()
     venues = conn.execute(f"SELECT * FROM venues").fetchall()
     # print(venues)
-    return render_template("InitRoom.html", roomid = roomid, venues = venues)
+    rules = conn.execute(f"SELECT * FROM basic_rules").fetchall()
+    return render_template("InitRoom.html", roomid = roomid, venues = venues, rules=rules)
 
 
 @app.route('/admin/<int:roomid>', subdomain = "svoyak")
@@ -317,6 +318,28 @@ def ReturnPositions(roomid):
     sub = []
     pre = []
     forbiden = []
+    if "final_players" in rules["parameters"]:
+        if rules["parameters"]["final_participants"] == "best_active":
+            final_time = True
+            for a in game_states[roomid].active_players:
+                if game_states[roomid].played_games[a] < rules["parameters"]["basic_game_number"]:
+                    final_time = False
+                    break
+            if final_time:
+                conn = get_db_connection()
+                #Возможно лучше сделать join с активными игроками
+                players_stat = conn.execute('SELECT playerid, name, COUNT(position) as games, sum(position) as position, sum(score) as score, sum(points) as points FROM results WHERE roomid == '+str(roomid)+' AND gamenumber <= '+ str(rules["parameters"]["basic_game_number"]) +' GROUP BY name ORDER BY points DESC').fetchall()
+                player_pos = 0
+                if len(players_stat)>0:
+                    assigned = []
+                    for p in players_stat:
+                        if p["name"] in game_states[roomid].active_players:
+                            assigned.append({"name":p["name"]})
+                        if len(assigned) >= rules["parameters"]["final_players"]:
+                            break
+                    if len(assigned)>0:
+                        return json.dumps(assigned)
+
     if "assigned" in data:
         for i in range(len(data["assigned"])):
             if data["assigned"][i]["name"] == "":
@@ -390,16 +413,25 @@ def CreateRoomApi():
         venueid = data["venueid"]
     
     rules_name = None
+    rules_param = None
     
     if "rules_name" in data:
         rules_name = data["rules_name"]
 
+    conn = get_db_connection()
+
+    if "rulesid" in data:
+        if int(data["rulesid"]) > 0:
+            r = conn.execute(f"SELECT name, parameters FROM basic_rules WHERE rulesid={data["rulesid"]}").fetchone()
+            if not r is None:
+                rules_name = r["name"]
+                rules_param = r["parameters"]
+
+
+
     new_room_id = 0
     if "roomid" in data:
         new_room_id = int(data["roomid"])
-
-
-    conn = get_db_connection()
     
     force_room_overwrite = False
     if "force_room_overwrite" in data:
@@ -444,7 +476,10 @@ def CreateRoomApi():
         conn.executescript('DELETE FROM rules WHERE roomid == '+str(new_room_id))
 
     if not rules_name is None:
-        conn.executescript(f'INSERT INTO rules(roomid, name) VALUES({new_room_id}, "{rules_name}")')
+        if not rules_param is None:
+            conn.executescript(f"INSERT INTO rules(roomid, name, parameters) VALUES({new_room_id}, '{rules_name}', '{rules_param}')")
+        else:
+            conn.executescript(f'INSERT INTO rules(roomid, name) VALUES({new_room_id}, "{rules_name}")')
 
     return json.dumps({"Status": "Ok", "RoomId": new_room_id})
 
@@ -456,15 +491,31 @@ def FinalizeRoomApi(roomid):
     rules = get_room_rules(roomid)
     if len(room_info) == 1:
         if not room_info[0]["finished"]:
-            conn.executescript('UPDATE activerooms SET finished=1 WHERE roomid == '+str(roomid))
-
-            players_stat = conn.execute('SELECT playerid, name, COUNT(position) as games, sum(position) as position, sum(score) as score, sum(points) as points FROM results WHERE roomid == '+str(roomid)+' AND gamenumber <= '+ str(rules["basic_game_number"]) +' GROUP BY name ORDER BY points DESC').fetchall()
-            if len(players_stat)>0:
-                playerid = players_stat[0]["playerid"]
-                winer_name = players_stat[0]["name"]
+    
+            if "final_players" in rules["parameters"]:
+                final_id = conn.execute('SELECT MAX(gameindex) as last FROM results WHERE roomid == '+str(roomid)).fetchone()
+                if final_id is None:
+                    return json.dumps({"status":"No winer detected"})
+                winer = conn.execute('SELECT playerid, name FROM results WHERE roomid == '+str(roomid)+' AND gameindex == '+ str(final_id["last"]) +' AND position == 1').fetchone()
+                if winer is None:
+                    return json.dumps({"status":"No winer detected"})
+                playerid = winer["playerid"]
+                winer_name = winer["name"]
                 conn.executescript(f'UPDATE roomhistory SET winerplayerid={playerid} WHERE roomid == {roomid}')
+                conn.executescript('UPDATE activerooms SET finished=1 WHERE roomid == '+str(roomid))
                 return json.dumps({"status":"Ok", "winer":winer_name}, ensure_ascii=False)
-            return json.dumps({"status":"No winer detected"})
+                
+
+            else:
+                players_stat = conn.execute('SELECT playerid, name, COUNT(position) as games, sum(position) as position, sum(score) as score, sum(points) as points FROM results WHERE roomid == '+str(roomid)+' AND gamenumber <= '+ str(rules["parameters"]["basic_game_number"]) +' GROUP BY name ORDER BY points DESC').fetchall()
+                    
+                if len(players_stat)>0:
+                    playerid = players_stat[0]["playerid"]
+                    winer_name = players_stat[0]["name"]
+                    conn.executescript(f'UPDATE roomhistory SET winerplayerid={playerid} WHERE roomid == {roomid}')
+                    conn.executescript('UPDATE activerooms SET finished=1 WHERE roomid == '+str(roomid))
+                    return json.dumps({"status":"Ok", "winer":winer_name}, ensure_ascii=False)
+                return json.dumps({"status":"No winer detected"})
         return json.dumps({"status":"Room arleady finished"})
     return json.dumps({"status":"No such room"})
     
@@ -486,15 +537,18 @@ def rate_all(roomid, choused = []):
 
 def get_room_rules(roomid):
     conn = get_db_connection()
-    rules = conn.execute(f'SELECT * FROM rules WHERE roomid={roomid}').fetchone()
-    if rules is None:
-        rules = {"name": "Spontan", "basic_game_number":3}
+    rules_base = conn.execute(f'SELECT * FROM rules WHERE roomid={roomid}').fetchone()
+    if rules_base is None:
+        rules = {"name": "Spontan", "parameters":{"basic_game_number":3}}
     else:
-        print("r1", rules)
-        rules = dict(rules)
-        print("r2", rules)
-        if rules["name"] == "Tumen":
-            rules["basic_game_number"] = 4
+        rules = dict(rules_base)
+        if rules["parameters"] is None:
+            if rules["name"] == "Tumen":
+                rules["parameters"] = {"basic_game_number":4}
+            else:
+                rules["parameters"] = {"basic_game_number":3}
+        else:
+            rules["parameters"] = json.loads(rules["parameters"])    
     return rules
 
 

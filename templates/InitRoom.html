@@ -17,13 +17,14 @@
     </select><br>
 
 Схема: <select id="game_format" name="game_format">
-    <option value="1" selected>свободная посадка 3 игры</option>
+    <!-- <option value="0" selected>свободная посадка 3 игры</option> -->
+    <!-- <option value="1" selected>свободная посадка 3 игры</option>
     <option value="2">свободная посадка 4 игры</option>
     <option value="3">2 игры + финал</option>
     <option value="4">3 игры + финал</option>
-    <option value="5">DE на 8 игроков</option>
-    <!-- {% for ven in venues %}    <option value="{{ven.venueid}}"> {{ven.venuename}} </option>
-    {% endfor %} -->
+    <option value="5">DE на 8 игроков</option> -->
+    {% for rul in rules %}    <option value="{{rul.rulesid}}"> {{rul.description}} </option>
+    {% endfor %}
     </select><br>
     
 <button onclick="assign()">Настроить комнату</button>
@@ -47,6 +48,9 @@ DE на 8 человек<br> -->
     function assign(){
         // var conf = confirm("Вы подтверждаете привязку "+name+ " с id "+rowid);
         // if (conf){
+            var re = document.getElementById("game_format");
+            var rvalue = re.value;
+            console.log(rvalue)
             var e = document.getElementById("game_venue");
             var value = e.value;
             var de = document.getElementById("game_date");
@@ -59,7 +63,7 @@ DE на 8 человек<br> -->
                     'Content-Type': 'application/json'
                     },
                     method: "POST",
-                    body: JSON.stringify({venueid: value, roomid:{{roomid}}, date: dvalue})
+                    body: JSON.stringify({venueid: value, roomid:{{roomid}}, date: dvalue, rulesid:rvalue})
                 }).then((response) => { 
                     return response.json().then((data) => {
                         
