@@ -1,5 +1,5 @@
 import sqlite3
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, redirect
 import datetime
 import time
 import json
@@ -42,6 +42,13 @@ def AllPalayers():
 @app.route('/room/<int:roomid>', subdomain = "svoyak")
 def SvoyakMainPage(roomid):
     conn = get_db_connection()
+    roomstate = conn.execute(f"SELECT * FROM activerooms WHERE roomid={roomid}").fetchone()
+    print(roomstate)
+    if roomstate is None:
+        return redirect(f"/init/{roomid}", code=302)
+    if roomstate["finished"]:
+        return redirect(f"/view/{roomid}", code=302)
+
     all_players = conn.execute('SELECT playerid, name FROM players ORDER BY name').fetchall()
     gi = conn.execute('SELECT max(gameindex) FROM results WHERE roomid == '+str(roomid)).fetchone()
     if gi["max(gameindex)"] is None:
@@ -146,11 +153,21 @@ def RemoveActivePalayers(roomid):
     return json.dumps([dict(ix) for ix in all_players])
 
 
+@app.route('/init/<int:roomid>', subdomain = "svoyak")
+def InitRoom(roomid):
+    conn = get_db_connection()
+    venues = conn.execute(f"SELECT * FROM venues").fetchall()
+    # print(venues)
+    return render_template("InitRoom.html", roomid = roomid, venues = venues)
+
+
 @app.route('/admin/<int:roomid>', subdomain = "svoyak")
-def LogView(roomid):
+def AdminLogView(roomid):
     conn = get_db_connection()
     log_info = conn.execute(f"SELECT rowid as id, date, roomid as room, event as name, data as json FROM log WHERE roomid = {roomid}").fetchall()
-    return render_template("RoomAdmin.html", roomid = roomid, gamelog = log_info)
+    venues = conn.execute(f"SELECT * FROM venues").fetchall()
+    # print(venues)
+    return render_template("RoomAdmin.html", roomid = roomid, gamelog = log_info, venues = venues)
 
 
 @app.route('/removegamelog/<int:roomid>', subdomain = "svoyak", methods = ["POST"])
@@ -363,7 +380,7 @@ def ReturnFuturePositions(roomid, games_num):
 @app.route('/api/addroom', subdomain = "svoyak", methods = ["POST"])
 def CreateRoomApi():
     data = request.json
-
+    print(data)
     roomdate = datetime.datetime.today().strftime('%Y-%m-%d')
     if "date" in data:
         roomdate = data["date"]
@@ -406,6 +423,7 @@ def CreateRoomApi():
                 return json.dumps({"Status": "Room already in use", "RoomId": new_room_id})
 
     if new_room_id == 0:
+        max_room_id = 0
         max_room_h = conn.execute('SELECT max(roomid) as roomid FROM roomhistory').fetchall()
         if len(max_room_h):
             if max_room_id < max_room_h[0]["roomid"]:

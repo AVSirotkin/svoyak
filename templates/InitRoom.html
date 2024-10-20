@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% if roomid == 0 %}
+<h1>Инициализация свободной комнаты</h1>
+{% else %}
+<h1>Инициализация комнаты {{roomid}} </h1>
+{% endif %}
+<!-- <a href = "/room/{{roomid}}"><h1>Вернуться в комнату</h1></a>  -->
+
+Дата игры: <input type="date" id="game_date" name="game_date" value="2024-09-01" min="2024-09-01" max="2026-12-31" /><br>
+Площадка: <select id="game_venue" name="game_venue">
+    <option value="0">Без площадки</option>
+    {% for ven in venues %}    <option value="{{ven.venueid}}"> {{ven.venuename}} </option>
+    {% endfor %}
+    </select><br>
+
+Схема: <select id="game_format" name="game_format">
+    <option value="1" selected>свободная посадка 3 игры</option>
+    <option value="2">свободная посадка 4 игры</option>
+    <option value="3">2 игры + финал</option>
+    <option value="4">3 игры + финал</option>
+    <option value="5">DE на 8 игроков</option>
+    <!-- {% for ven in venues %}    <option value="{{ven.venueid}}"> {{ven.venuename}} </option>
+    {% endfor %} -->
+    </select><br>
+    
+<button onclick="assign()">Настроить комнату</button>
+{% endblock %}
+<!-- Выбрать формат:<br>
+
+свободная посадка 2 игры<br>
+свободная посадка 3 игры<br>
+свободная посадка 4 игры<br>
+2 игры + финал<br>
+3 игры + финал<br>
+DE на 8 человек<br> -->
+{% block scripts %}
+<script>
+    function init_page(){
+        let currentDate = new Date().toJSON().slice(0, 10);
+        var de = document.getElementById("game_date")
+        de.value = currentDate
+    }
+
+    function assign(){
+        // var conf = confirm("Вы подтверждаете привязку "+name+ " с id "+rowid);
+        // if (conf){
+            var e = document.getElementById("game_venue");
+            var value = e.value;
+            var de = document.getElementById("game_date");
+            var dvalue = de.value;
+
+            let ans = fetch("/api/addroom",
+                {   
+                    headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                    },
+                    method: "POST",
+                    body: JSON.stringify({venueid: value, roomid:{{roomid}}, date: dvalue})
+                }).then((response) => { 
+                    return response.json().then((data) => {
+                        
+                        if (data.Status == "Ok"){
+                            alert("Комната успешно создана");
+                            var loc_ref = "/room/"+ data.RoomId
+                            document.location.href = loc_ref}
+                        else {alert("Невозможно занять комнату. Причина: "+ data.Status);
+                        // window.location.replace("/room/{{roomid}}");
+                        }
+
+                        return data;
+                    }).catch((err) => {
+                        console.log(err);
+                    }) 
+                });
+        // }
+    }
+
+
+
+
+</script>
+{% endblock %}
