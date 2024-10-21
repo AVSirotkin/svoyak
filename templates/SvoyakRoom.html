@@ -42,7 +42,9 @@
     </table>
  </div>
 <button onclick = "AddResult()"> Внести результат </button><button onclick = "FillPositions()"> Заполнить игроков </button><button onclick = "ClearPlayers()"> Очистить </button>
-<button onclick = "predict_matches()"> Прогноз </button> 
+<button onclick = "predict_matches()"> Прогноз </button> <br>
+<button onclick = "FinalizeRoom()"> Завершить бои и определить победителя</button>
+
  
 <hr>
 <a href="/view/{{roomid}}">Подробные результаты</a>
@@ -196,6 +198,26 @@ function refreshOneGameBlock(){
         d.innerHTML = d.innerHTML + '<li data-type="one_game_block" draggable="true" ondragstart="dragstart_handler(event)">' +element + '</li>'
     }
 }
+
+function FinalizeRoom(){
+    var conf = confirm("После завершения боев вы не сможете изменять данные. Вы уверены, что хотите завершить бои?");
+        if (conf){
+                let ans = fetch("/api/finalizeroom/{{roomid}}"
+                ).then((response) => { 
+                    return response.json().then((data) => {
+                        console.log(data);
+                        if (data.status=="Ok"){alert("Победитель: "+data.winer);
+                        document.location.href = "/view/{{roomid}}"}
+                        else {alert("Не удалось завершить. Сообщение системы:"+data.status)}
+                        return data;
+                    }).catch((err) => {
+                        console.log(err);
+                    }) 
+                });
+        }
+
+}
+
 
 function AddResult(){
 
