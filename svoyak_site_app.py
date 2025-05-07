@@ -30,7 +30,8 @@ def log_game_events(room, event, data):
 
 @app.route('/', subdomain = "svoyak")
 def SvoyakWelcomePage():
-    return "Страничка на которой живет своячное приложение, однажды она станет интерактивной"
+    return render_template("start.html")
+    # return "Страничка на которой живет своячное приложение, однажды она станет интерактивной"
     
 
 @app.route('/allplayers', subdomain = "svoyak")
@@ -58,12 +59,45 @@ def SvoyakMainPage(roomid):
     ActivePalayers = []
     return render_template("SvoyakRoom.html", roomid = roomid, Players = all_players, gameindex = gameindex)
 
+@app.route('/fullroom/<int:roomid>', subdomain = "svoyak")
+def SvoyakNewMainPage(roomid):
+    conn = get_db_connection()
+    roomstate = conn.execute(f"SELECT * FROM activerooms WHERE roomid={roomid}").fetchone()
+    print(roomstate)
+    if roomstate is None:
+        return redirect(f"/init/{roomid}", code=302)
+    if roomstate["finished"]:
+        return redirect(f"/view/{roomid}", code=302)
+
+    all_players = conn.execute('SELECT playerid, name FROM players ORDER BY name').fetchall()
+    gi = conn.execute('SELECT max(gameindex) FROM results WHERE roomid == '+str(roomid)).fetchone()
+    if gi["max(gameindex)"] is None:
+        gameindex = 1
+    else:
+        gameindex = gi["max(gameindex)"] + 1
+    ActivePalayers = []
+    return render_template("FullRoom.html", roomid = roomid, Players = all_players, gameindex = gameindex)
 
 @app.route('/view/<int:roomid>', subdomain = "svoyak")
 def SvoyakViewPage(roomid):
     # gamehistory = json.loads(GetResult(roomid)
     
     rules = get_room_rules(roomid)
+    
+    conn = get_db_connection()
+    all_players_stats = conn.execute('SELECT name, COUNT(position) as games, sum(position) as position, sum(score) as score, sum(points) as points FROM results WHERE roomid == '+str(roomid)+' AND gamenumber <= '+ str(rules["parameters"]["basic_game_number"]) +' GROUP BY name ORDER BY points DESC').fetchall()
+    
+    all_places = pd.Series([r["points"] for r in all_players_stats]).rank(ascending=False).to_list()
+    return render_template("view_new.html", roomid = roomid, PlayersStat = all_players_stats, places = all_places, rules = rules)
+
+
+
+@app.route('/view_old/<int:roomid>', subdomain = "svoyak")
+def SvoyakViewOldPage(roomid):
+    # gamehistory = json.loads(GetResult(roomid)
+    
+    rules = get_room_rules(roomid)
+    print(rules)
     
     conn = get_db_connection()
     all_players_stats = conn.execute('SELECT name, COUNT(position) as games, sum(position) as position, sum(score) as score, sum(points) as points FROM results WHERE roomid == '+str(roomid)+' AND gamenumber <= '+ str(rules["parameters"]["basic_game_number"]) +' GROUP BY name ORDER BY points DESC').fetchall()
@@ -288,6 +322,69 @@ def GetResult(roomid):
 
     return json.dumps(res, ensure_ascii=False)
 
+
+@app.route('/lastgames/<int:lastcount>', subdomain = "svoyak", methods = ["GET"])
+def GetLastResult(lastcount):
+    print("GetLastResultReques")
+    try:
+        data = request.json
+    except:
+        data = None
+
+    print("DATA", data)
+
+    conn = get_db_connection()
+
+    events_list = conn.execute(f'SELECT data FROM log WHERE event=="save game result" ORDER BY rowid DESC').fetchmany(lastcount)
+
+    res = []
+    if len(events_list) > 0:
+        print(events_list)
+        for j in events_list:
+            v = json.loads(j["data"])
+            req = conn.execute(f"SELECT gameindex, playerid, name, score, position, points FROM results WHERE roomid == {v['roomid']} AND gameindex == {v['gameindex']}")
+            res.append({"gameindex":v["gameindex"], "roomid":v["roomid"], "scores":[]})
+
+            for r in req.fetchall():
+                res[-1]["scores"].append(dict(r))
+
+    return json.dumps(res, ensure_ascii=False)
+
+
+@app.route('/tournaments/active', subdomain = "svoyak", methods = ["GET"])
+def GetActiveTournaments():
+    conn = get_db_connection()
+    GameHistory = conn.execute("SELECT * FROM activerooms LEFT JOIN venues ON activerooms.venueid==venues.venueid WHERE finished == 0 ORDER BY date DESC;").fetchmany(3)
+
+    res = []
+    # {"id": 1,
+    #        "name": 'Весенний чемпионат',
+    #        "timeLeft": '3 дня осталось',
+    #         "participants": 12
+    #     }]
+    for t in GameHistory:
+        res += [{"id":t["roomid"], "name": (t["venuename"] if not t["venuename"] is None else "Безымянный") +" "+t["date"]}]
+
+    return json.dumps(res, ensure_ascii=False)
+
+@app.route('/tournaments/completed', subdomain = "svoyak", methods = ["GET"])
+def GetLastTournaments():
+
+    # res = []{"id": 2,
+    #         "name": 'Зимний кубок',
+    #         "winners": [
+    #                     {"name": 'Профессионал123'},
+    #                     {"name": 'Игрок2000'},
+    #                     {"name": 'НовыйЧемпион'}
+    #                 ]}]
+    conn = get_db_connection()
+    GameHistory = conn.execute("SELECT * FROM roomhistory LEFT JOIN venues ON roomhistory.venueid==venues.venueid LEFT JOIN players ON roomhistory.winerplayerid==players.playerid WHERE roomhistory.winerplayerid IS NOT NULL ORDER BY date DESC;").fetchmany(5)
+
+    res = []
+    for t in GameHistory:
+        res += [{"id":t["roomid"], "name": (t["venuename"] if not t["venuename"] is None else "Безымянный") +" "+t["date"], "winners":[{"name": t["name"]}]}]
+
+    return json.dumps(res, ensure_ascii=False)
 
 
 
