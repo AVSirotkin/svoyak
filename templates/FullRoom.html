@@ -424,6 +424,7 @@
         function initControlButtons() {
             const controlButtons = document.getElementById('controlButtons');
             controlButtons.innerHTML = '';
+            const keys = "qwerty"
             
             gameData.players.forEach((player, index) => {
                 const playerButtons = document.createElement('div');
@@ -442,7 +443,7 @@
                 
                 const incorrectBtn = document.createElement('button');
                 incorrectBtn.className = 'player-button incorrect-button';
-                incorrectBtn.textContent = `Неправильно (${String.fromCharCode(113+index)})`;
+                incorrectBtn.textContent = `Неправильно (${keys[index]})`;
                 incorrectBtn.onclick = () => handleAnswer(index, false);
                 playerButtons.appendChild(incorrectBtn);
                 
@@ -973,6 +974,30 @@
             document.getElementById('nextQuestionBtn').style.display = 'none';
             document.getElementById('editModeBtn').style.display = 'none';
         }
+
+        function showResetGameOver() {
+            const gameOverElement = document.getElementById('gameOverMessage');
+            if (gameOverElement) {
+                gameOverElement.style.display = 'none';
+                // gameOverElement.textContent = 'Игра завершена! Финальные результаты:';
+            }
+            
+            const saveBtn = document.getElementById('saveResultsBtn');
+            if (saveBtn) {
+                saveBtn.style.display = 'none';
+            }
+            
+            const questionInfo = document.getElementById('questionInfo');
+            if (questionInfo) {
+                questionInfo.textContent = 'Игра завершена!';
+            }
+            
+            // Скрываем кнопки управления
+            document.getElementById('controlButtons').style.display = 'flex';
+            document.getElementById('nextQuestionBtn').style.display = 'flex';
+            document.getElementById('editModeBtn').style.display = 'flex';
+        }
+
         
         // Формирование JSON с результатами
         function getGameResults() {
@@ -1008,10 +1033,25 @@
                 '3': {player: 2, correct: true},
                 '4': {player: 3, correct: true},
                 'q': {player: 0, correct: false},
+                'Q': {player: 0, correct: false},
+                'й': {player: 0, correct: false},
+                'Й': {player: 0, correct: false},
                 'w': {player: 1, correct: false},
+                'W': {player: 1, correct: false},
+                'Ц': {player: 1, correct: false},
+                'ц': {player: 1, correct: false},
                 'e': {player: 2, correct: false},
+                'E': {player: 2, correct: false},
+                'У': {player: 2, correct: false},
+                'у': {player: 2, correct: false},
                 'r': {player: 3, correct: false},
-                '0': () => nextQuestion()
+                'R': {player: 3, correct: false},
+                'К': {player: 3, correct: false},
+                'к': {player: 3, correct: false},
+                '0': () => nextQuestion(),
+                '`': () => nextQuestion(),
+                'ё': () => nextQuestion(),
+                'Ё': () => nextQuestion(),
             };
             
             if (keyMap[e.key]) {
@@ -1031,10 +1071,13 @@
             
             // Здесь можно отправить результаты на сервер
             console.log("Результаты игры:", resultsJson);
-            alert("Результаты игры сформированы и готовы к отправке на сервер:\n\n" + resultsJson);
+            // alert("Результаты игры сформированы и готовы к отправке на сервер:\n\n" + resultsJson);
             
             // Очистка сохранённой игры
             localStorage.removeItem('quizGameState');
+            showResetGameOver()
+
+
         });
         
         // Инициализация при загрузке
@@ -1203,7 +1246,7 @@
                 'Content-Type': 'application/json'
                 },
                 method: "POST",
-                body: JSON.stringify({roomid:{{roomid}}, gameindex: gameindex, scores:res})
+                body: JSON.stringify({roomid:{{roomid}}, gameindex: gameindex, scores:res, detailed: getGameResults()})
             }).then((response) => { 
                     return response.json().then((data) => {
                         console.log(data);
@@ -1313,6 +1356,7 @@
             document.getElementById('player4').value = ""
             document.getElementById('score4').value = ""
         }
+
         function RefreshGame(){
     
             ClearPlayers()
@@ -1320,7 +1364,19 @@
             document.getElementById('one_game_block_list').innerHTML = ""
             one_game_block_array = []
             
+
+            gameState.currentBlock = 0
+            gameState.currentQuestion = 0,
+            gameState.scores = Array(gameData.players.length).fill(0),
+            gameState.answers = [],
+            gameState.gameFinished = false,
+            gameState.editMode = false,
+
+            initAnswers() 
+
             update_weight()
+            refreshTable()
+            updateQuestionInfo();
         }
         var row = null;
         function tab_drag_start(){
@@ -1420,6 +1476,9 @@
                     } else {
                         renderVerticalTable();
                     }
+                    updateQuestionInfo();
+
+
                     return data;
                 }).catch((err) => {
                     console.log(err);
@@ -1493,6 +1552,8 @@
             gameData.players[i] = el[i].value
         }
         refreshTable()
+        updateQuestionInfo();
+
     }
     
     function refreshTable(){
