@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Результаты турниров</title>
+    <style>
+        :root {
+            --card-width: 320px;
+            --primary-color: #3498db;
+            --secondary-color: #2980b9;
+            --past-game-bg: #f8f9fa;
+            --future-game-bg: #e8f4fc;
+            --tournament-game-bg: #fff3cd;
+            --winner-color: #27ae60;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 15px;
+            background-color: #f0f2f5;
+            color: #333;
+            line-height: 1.5;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        h1, h2 {
+            color: #2c3e50;
+            margin-top: 0;
+        }
+        
+        h1 {
+            margin-bottom: 20px;
+            font-size: 1.8rem;
+        }
+        
+        h2 {
+            font-size: 1.4rem;
+            margin-bottom: 15px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid var(--primary-color);
+        }
+        
+        /* Стили для таблицы статистики */
+        .stats-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 25px;
+            background-color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .stats-table th, .stats-table td {
+            padding: 10px 15px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .stats-table th {
+            background-color: #f2f6fa;
+            font-weight: 600;
+        }
+        
+        .stats-table tr:hover {
+            background-color: #f5f9fd;
+        }
+        
+        /* Стили для карточек игр */
+        .games-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(var(--card-width), 1fr));
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+        
+        .game-card {
+            border-radius: 8px;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.1);
+            padding: 12px;
+            background-color: white;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .game-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 5px 10px rgba(0,0,0,0.15);
+        }
+        
+        .game-card.past {
+            border-left: 4px solid var(--winner-color);
+        }
+        
+        .game-card.future {
+            border-left: 4px solid #f39c12;
+        }
+        
+        .game-card.tournament {
+            border-left: 4px solid #e74c3c;
+        }
+        
+        .game-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .game-id {
+            font-weight: bold;
+            color: var(--primary-color);
+            font-size: 1.1rem;
+        }
+        
+        .game-date {
+            color: #7f8c8d;
+            font-size: 0.85rem;
+        }
+        
+        .game-type {
+            font-size: 0.75rem;
+            background-color: #e0e0e0;
+            padding: 2px 8px;
+            border-radius: 10px;
+            margin-left: 8px;
+        }
+        
+        .game-type.tournament {
+            background-color: #fde8e8;
+            color: #e74c3c;
+        }
+        
+        .players-container {
+            display: flex;
+        }
+        
+        .players-column {
+            flex-grow: 1;
+        }
+        
+        .player-row {
+            display: flex;
+            margin-bottom: 6px;
+            align-items: center;
+        }
+        
+        .player-place {
+            width: 24px;
+            text-align: center;
+            font-weight: bold;
+            margin-right: 8px;
+            flex-shrink: 0;
+        }
+        
+        .place-1 { color: #f1c40f; }
+        .place-2 { color: #95a5a6; }
+        .place-3 { color: #cd7f32; }
+        .place-4 { color: #7f8c8d; }
+        
+        .player-name {
+            flex-grow: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            min-width: 100px;
+        }
+        
+        .player-score {
+            width: 50px;
+            text-align: right;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            color: var(--secondary-color);
+        }
+        
+        .player-points {
+            width: 50px;
+            text-align: right;
+            font-size: 0.85rem;
+            color: #7f8c8d;
+        }
+        
+        .positive-score {
+            color: #27ae60;
+        }
+        
+        .negative-score {
+            color: #e74c3c;
+        }
+        
+        .game-footer {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: #7f8c8d;
+            margin-top: 10px;
+            padding-top: 8px;
+            border-top: 1px solid #eee;
+        }
+        
+        /* Адаптивность */
+        @media (max-width: 768px) {
+            :root {
+                --card-width: 100%;
+            }
+            
+            .games-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .stats-table {
+                font-size: 0.9rem;
+            }
+            
+            .stats-table th, .stats-table td {
+                padding: 8px 10px;
+            }
+        }
+        
+        /* Индикатор загрузки */
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #7f8c8d;
+        }
+        
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Результаты турниров и игр</h1>
+        
+        <!-- Общая статистика -->
+        <section>
+            <h2>Общая статистика игроков</h2>
+            <!-- <div id="stats-container" class="loading">Загрузка статистики...</div> -->
+            <table id="stats-table" class="stats-table">
+                <thead>
+                    <tr>
+                        <tr><th rowspan="2" style="vertical-align: bottom;">Игрок   </th><th colspan="4" style="text-align: center;">Результаты за {{rules.parameters.basic_game_number}} игры   </th><th rowspan="2" style="vertical-align: bottom;">Место   </th></tr>
+                        <tr><th>Игр в зачет   </th><th>Сумма мест   </th><th>Сумма очков   </th><th>Сумма баллов   </th></tr>
+                    </tr>
+                </thead>
+                <tbody id="stats-body">
+                    {% for result, place in PlayersStat |zip(places) %}
+                    <tr>
+                      <td>{{ result.name }}</td>
+                      <td style = "text-align: center;">{{ result.games }}</td>
+                      <td style = "text-align: center;">{{ result.position }}</td>
+                      <td style = "text-align: center;">{{ result.score | round(3) }}</td>
+                      <td style = "text-align: center;">{{ result.points  | round(3) }}</td>
+                      <td style = "text-align: center;">{{ place  }}</td>
+                    </tr>
+                  {% endfor %}
+          
+                    <!-- Данные будут загружены с сервера -->
+                </tbody>
+            </table>
+        </section>
+        
+        <!-- Прошедшие игры -->
+        <section>
+            <h2>Прошедшие игры</h2>
+            <div id="past-games-container" class="loading">Загрузка списка игр...</div>
+            <div id="past-games-grid" class="games-grid hidden"></div>
+        </section>
+        
+        <!-- Будущие игры -->
+        <section>
+            <h2>Будущие игры</h2>
+            <div id="future-games-container" class="loading">Загрузка списка игр...</div>
+            <div id="future-games-grid" class="games-grid hidden"></div>
+        </section>
+    </div>
+
+    <script>
+        var pastGamesData = Array()
+        document.addEventListener('DOMContentLoaded', function() {
+            // Имитация загрузки данных
+            // setTimeout(() => {
+                loadStats();
+                loadPastGames();
+                GetGameHistory();
+                                // loadFutureGames();
+            // }, 500);
+        });
+        
+
+        function GetGameHistory(){
+        
+            console.log("/gameresult/{{roomid}}")
+            let ans = fetch("/gameresult/{{roomid}}",
+            {
+                headers: {
+                'Accept': 'application/json',
+                },
+                method: "GET"
+            }).then((response) => { 
+                return response.json().then((data) => {
+                    console.log("history",data);
+                    pastGamesData = data
+                    loadPastGames()
+                    return data;
+                }).catch((err) => {
+                    console.log(err);
+                }) 
+            });
+        
+        }
+
+
+        // // Пример данных прошедших игр с сервера
+        // var pastGamesData = GetGameHistory();
+        
+
+        // Пример данных будущих игр (без результатов)
+        const futureGamesData = [
+            {
+                "gameindex": 3,
+                "scores": [
+                    {"gameindex": 3, "playerid": 100, "name": "Новыш Нат"},
+                    {"gameindex": 3, "playerid": 103, "name": "Стариков Иван"},
+                    {"gameindex": 3, "playerid": 301, "name": "Сосенко Катя"},
+                    {"gameindex": 3, "playerid": 3, "name": "Чирятьева Саша"}
+                ]
+            },
+            {
+                "gameindex": 4,
+                "scores": [
+                    {"gameindex": 4, "playerid": 100, "name": "Новыш Нат"},
+                    {"gameindex": 4, "playerid": 103, "name": "Стариков Иван"},
+                    {"gameindex": 4, "playerid": 202, "name": "Петров Алексей"},
+                    {"gameindex": 4, "playerid": 5, "name": "Смирнова Ольга"}
+                ]
+            }
+        ];
+        
+        function loadStats() {
+            // // Собираем статистику только из прошедших игр
+            // const playerStats = {};
+            
+            // pastGamesData.forEach(game => {
+            //     game.scores.forEach(player => {
+            //         if (!playerStats[player.playerid]) {
+            //             playerStats[player.playerid] = {
+            //                 name: player.name,
+            //                 games: 0,
+            //                 totalScore: 0,
+            //                 totalPoints: 0,
+            //                 wins: 0,
+            //                 seconds: 0,
+            //                 thirds: 0
+            //             };
+            //         }
+                    
+            //         const stats = playerStats[player.playerid];
+            //         stats.games++;
+            //         stats.totalScore += player.score;
+            //         stats.totalPoints += player.points;
+                    
+            //         if (player.position === 1.0) stats.wins++;
+            //         else if (player.position === 2.0) stats.seconds++;
+            //         else if (player.position === 3.0) stats.thirds++;
+            //     });
+            // });
+            
+            // // Преобразуем в массив и сортируем по средним баллам
+            // const statsArray = Object.values(playerStats).map(player => ({
+            //     ...player,
+            //     avgScore: player.totalScore / player.games,
+            //     avgPoints: player.totalPoints / player.games
+            // })).sort((a, b) => b.avgPoints - a.avgPoints);
+            
+            // // Заполняем таблицу
+            // const tbody = document.getElementById('stats-body');
+            // tbody.innerHTML = '';
+            
+            // statsArray.forEach(player => {
+            //     const row = document.createElement('tr');
+            //     row.innerHTML = `
+            //         <td>${player.name}</td>
+            //         <td>${player.games}</td>
+            //         <td>${player.avgScore.toFixed(1)}</td>
+            //         <td>${player.avgPoints.toFixed(2)}</td>
+            //         <td>${player.wins}</td>
+            //         <td>${player.seconds}</td>
+            //         <td>${player.thirds}</td>
+            //     `;
+            //     tbody.appendChild(row);
+            // });
+            
+            // document.getElementById('stats-container').classList.add('hidden');
+            // document.getElementById('stats-table').classList.remove('hidden');
+        }
+        
+        function loadPastGames() {
+            
+            console.log(pastGamesData)
+
+            const grid = document.getElementById('past-games-grid');
+            grid.innerHTML = '';
+            
+            // Сортируем игры по номеру (от новых к старым)
+            const sortedGames = [...pastGamesData].sort((a, b) => b.gameindex - a.gameindex);
+            console.log(sortedGames)
+            
+            sortedGames.forEach(game => {
+                const card = document.createElement('div');
+                card.className = 'game-card past';
+                
+                console.log(game.scores)
+                // Сортируем игроков по занятым местам
+                const sortedPlayers = [...game.scores].sort((a, b) => a.position - b.position);
+                
+                let playersHtml = '';
+                sortedPlayers.forEach(player => {
+                    const scoreClass = player.score >= 0 ? 'positive-score' : 'negative-score';
+                    
+                    playersHtml += `
+                        <div class="player-row">
+                            <span class="player-place place-${player.position}">${player.position}</span>
+                            <span class="player-name" title="${player.name}">${player.name}</span>
+                            <span class="player-score ${scoreClass}">${player.score > 0 ? '+' : ''}${player.score}</span>
+                            <span class="player-points">${player.points.toFixed(2)}</span>
+                        </div>
+                    `;
+                });
+                
+                card.innerHTML = `
+                    <div class="game-header">
+                        <span class="game-id">Игра #${game.gameindex}</span>
+                        <span class="game-type">обычная</span>
+                    </div>
+                    <div class="players-container">
+                        <div class="players-column">
+                            ${playersHtml}
+                        </div>
+                    </div>
+                    <div class="game-footer">
+                        ✔ Завершена
+                    </div>
+                `;
+                
+                grid.appendChild(card);
+            });
+            
+            document.getElementById('past-games-container').classList.add('hidden');
+            grid.classList.remove('hidden');
+        }
+        
+        function loadFutureGames() {
+            const grid = document.getElementById('future-games-grid');
+            grid.innerHTML = '';
+            
+            // Сортируем игры по номеру (от ближайших к дальним)
+            const sortedGames = [...futureGamesData].sort((a, b) => a.gameindex - b.gameindex);
+            
+            sortedGames.forEach(game => {
+                const card = document.createElement('div');
+                card.className = 'game-card future';
+                
+                let playersHtml = '';
+                game.scores.forEach((player, index) => {
+                    playersHtml += `
+                        <div class="player-row">
+                            <span class="player-place">${index + 1}</span>
+                            <span class="player-name" title="${player.name}">${player.name}</span>
+                            <span class="player-score">-</span>
+                            <span class="player-points">-</span>
+                        </div>
+                    `;
+                });
+                
+                card.innerHTML = `
+                    <div class="game-header">
+                        <span class="game-id">Игра #${game.gameindex}</span>
+                        <span class="game-date">${formatFutureGameDate(game.gameindex)}</span>
+                        <span class="game-type">обычная</span>
+                    </div>
+                    <div class="players-container">
+                        <div class="players-column">
+                            ${playersHtml}
+                        </div>
+                    </div>
+                    <div class="game-footer">
+                        Запланирована
+                    </div>
+                `;
+                
+                grid.appendChild(card);
+            });
+            
+            document.getElementById('future-games-container').classList.add('hidden');
+            grid.classList.remove('hidden');
+        }
+        
+        // Вспомогательная функция для форматирования даты прошедших игр
+        function formatGameDate(gameIndex) {
+            const baseDate = new Date('2023-05-01');
+            baseDate.setDate(baseDate.getDate() + gameIndex);
+            return baseDate.toLocaleDateString('ru-RU');
+        }
+        
+        // Вспомогательная функция для форматирования даты будущих игр
+        function formatFutureGameDate(gameIndex) {
+            const baseDate = new Date();
+            baseDate.setDate(baseDate.getDate() + gameIndex);
+            return baseDate.toLocaleDateString('ru-RU');
+        }
+        
+        // Функция для загрузки данных с сервера (пример)
+        async function fetchPastGames() {
+            try {
+                const response = await fetch('/api/past-games');
+                if (!response.ok) {
+                    throw new Error('Ошибка загрузки данных');
+                }
+                return await response.json();
+            } catch (error) {
+                console.error('Ошибка:', error);
+                return [];
+            }
+        }
+        
+        async function fetchFutureGames() {
+            try {
+                const response = await fetch('/api/future-games');
+                if (!response.ok) {
+                    throw new Error('Ошибка загрузки данных');
+                }
+                return await response.json();
+            } catch (error) {
+                console.error('Ошибка:', error);
+                return [];
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Сыграем в свояк? - Турнирная платформа</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+
+        body {
+            background-color: #f5f5f5;
+        }
+
+        .header {
+            background-color: #2c3e50;
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: white;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+
+        .auth-buttons button {
+            margin-left: 1rem;
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background-color: #3498db;
+            color: white;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 3fr 1fr;
+            gap: 2rem;
+            padding: 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .tournament-creation {
+            background-color: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .tournaments-section {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+
+        .tournament-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin: 1rem 0;
+        }
+
+        .winners-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin: 1rem 0;
+        }
+
+        .winner {
+            display: flex;
+            align-items: center;
+            padding: 0.8rem;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+
+        .winner-icon {
+            font-size: 1.2rem;
+            margin-right: 1rem;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            padding: 0.2rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.8rem;
+        }
+
+        .status-active {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-completed {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .recent-events {
+            background-color: white;
+            padding: 1.5rem;
+            margin: 1rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .battle-card {
+            border: 1px solid #eee;
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+
+        .participants {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.5rem;
+            margin: 1rem 0;
+        }
+
+        .participant {
+            display: flex;
+            align-items: center;
+            padding: 0.5rem;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 8px;
+            width: 300px;
+        }
+
+        input {
+            width: 100%;
+            padding: 0.5rem;
+            margin: 0.5rem 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error-message {
+            color: #dc3545;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .games-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(var(--card-width), 1fr));
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+        
+        .game-card {
+            border-radius: 8px;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.1);
+            padding: 12px;
+            background-color: white;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .game-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 5px 10px rgba(0,0,0,0.15);
+        }
+        
+        .game-card.past {
+            border-left: 4px solid var(--winner-color);
+        }
+        
+        .game-card.future {
+            border-left: 4px solid #f39c12;
+        }
+        
+        .game-card.tournament {
+            border-left: 4px solid #e74c3c;
+        }
+        
+        .game-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .game-id {
+            font-weight: bold;
+            color: var(--primary-color);
+            font-size: 1.1rem;
+        }
+        
+        .game-date {
+            color: #7f8c8d;
+            font-size: 0.85rem;
+        }
+        
+        .game-type {
+            font-size: 0.75rem;
+            background-color: #e0e0e0;
+            padding: 2px 8px;
+            border-radius: 10px;
+            margin-left: 8px;
+        }
+        
+        .game-type.tournament {
+            background-color: #fde8e8;
+            color: #e74c3c;
+        }
+        
+        .players-container {
+            display: flex;
+        }
+        
+        .players-column {
+            flex-grow: 1;
+        }
+        
+        .player-row {
+            display: flex;
+            margin-bottom: 6px;
+            align-items: center;
+        }
+        
+        .player-place {
+            width: 24px;
+            text-align: center;
+            font-weight: bold;
+            margin-right: 8px;
+            flex-shrink: 0;
+        }
+        
+        .place-1 { color: #f1c40f; }
+        .place-2 { color: #95a5a6; }
+        .place-3 { color: #cd7f32; }
+        .place-4 { color: #7f8c8d; }
+        
+        .player-name {
+            flex-grow: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            min-width: 100px;
+        }
+        
+        .player-score {
+            width: 50px;
+            text-align: right;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            color: var(--secondary-color);
+        }
+        
+        .player-points {
+            width: 50px;
+            text-align: right;
+            font-size: 0.85rem;
+            color: #7f8c8d;
+        }
+        
+        .positive-score {
+            color: #27ae60;
+        }
+        
+        .negative-score {
+            color: #e74c3c;
+        }
+        
+        .game-footer {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: #7f8c8d;
+            margin-top: 10px;
+            padding-top: 8px;
+            border-top: 1px solid #eee;
+        }
+
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="logo">Сыграем в свояк?</div>
+        <div class="auth-buttons">
+            <button onclick="showModal('login')">Войти</button>
+            <button onclick="showModal('register')">Регистрация</button>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <div >
+
+            <div class="tournament-creation">
+                <h2><a href="/init/0">Создать новый турнир</a></h2>
+                <!-- <form id="createTournament" style="display: none;">
+                    <input type="text" placeholder="Название турнира" required>
+                    <select required>
+                        <option value="">Выберите правила</option>
+                        <option>Классические</option>
+                        <option>Экспресс</option>
+                        <option>Командные</option>
+                    </select>
+                    <button onclick="window.location.href='/init/0'">Создать</button>
+                    type="submit"> 
+                    Создать</button> 
+                </form>
+                <p id="loginPrompt">Войдите, чтобы создать турнир</p> -->
+            </div>
+
+            <div class="recent-events">
+                <h2>Последние бои</h2>
+                <div id="recentBattles" class=".games-grid">
+                    <div class="loader"></div>
+                    <div class="error-message" style="display: none;"></div>
+                </div>
+            </div>
+        </div>
+        <div class="tournaments-section">
+            <div id="activeTournaments">
+                <h2>Активные турниры</h2>
+                <div class="loader"></div>
+                <div class="error-message" style="display: none;"></div>
+            </div>
+
+            <div id="completedTournaments">
+                <h2>Завершенные турниры</h2>
+                <div class="loader"></div>
+                <div class="error-message" style="display: none;"></div>
+            </div>
+        </div>
+
+ 
+    </main>
+
+    <!-- Модальные окна -->
+    <div id="loginModal" class="modal">
+        <div class="modal-content">
+            <h2>Вход</h2>
+            <form id="loginForm">
+                <input type="email" placeholder="Email" required>
+                <input type="password" placeholder="Пароль" required>
+                <button type="submit">Войти</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="registerModal" class="modal">
+        <div class="modal-content">
+            <h2>Регистрация</h2>
+            <form id="registerForm">
+                <input type="email" placeholder="Email" required>
+                <input type="password" placeholder="Пароль" required>
+                <input type="password" placeholder="Подтвердите пароль" required>
+                <button type="submit">Зарегистрироваться</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'https://api.example.com';
+
+        async function loadData(endpoint, containerId) {
+            const container = document.getElementById(containerId);
+            const loader = container.querySelector('.loader');
+            const errorMsg = container.querySelector('.error-message');
+
+            try {
+                loader.style.display = 'block';
+                errorMsg.style.display = 'none';
+                
+                const response = await fetch(`${endpoint}`);
+                if (!response.ok) throw new Error('Ошибка загрузки данных');
+                
+                const data = await response.json();
+                // console.log(data)
+                renderData(data, containerId);
+            } catch (error) {
+                errorMsg.textContent = error.message;
+                errorMsg.style.display = 'block';
+            } finally {
+                loader.style.display = 'none';
+            }
+        }
+
+        function renderData(data, containerId) {
+            const container = document.getElementById(containerId);
+            container.querySelector('.error-message').style.display = 'none';
+            
+            if (!data || !Array.isArray(data)) {
+                container.innerHTML += '<div class="error-message">Нет данных для отображения</div>';
+                return;
+            }
+
+            let html = '';
+            switch(containerId) {
+                case 'activeTournaments':
+                    html = data.map(t => `
+                        <div class="tournament-card">
+                            <h3>${t.name || 'Без названия'}</h3>
+                            <p class="status-indicator status-active">
+                                Активен • ${t.timeLeft || 'N/A'}
+                            </p>
+                            <p>Участников: ${t.participants || 0}</p>
+                            <a href="/view/${t.id || '#'}">Перейти →</a>
+                        </div>
+                    `).join('');
+                    container.innerHTML = container.querySelector('h2').outerHTML + html;
+                    break;
+
+                case 'completedTournaments':
+                    console.log('recentBattles')
+                    html = data.map(t => `
+                        <div class="tournament-card">
+                            <h3>${t.name || 'Без названия'}</h3>
+                            <p class="status-indicator status-completed">
+                                Завершен
+                            </p>
+                            <div class="winners-list">
+                                ${(t.winners || []).map((w, i) => `
+                                    <div class="winner">
+                                        <span class="winner-icon">
+                                            ${['🥇', '🥈', '🥉'][i] || '🏅'}
+                                        </span>
+                                        ${w.name || 'Неизвестный игрок'}
+                                    </div>
+                                `).join('')}
+                            </div>
+                            <a href="/view/${t.id || '#'}">Посмотреть результаты →</a>
+                        </div>
+                    `).join('');
+                    container.innerHTML = container.querySelector('h2').outerHTML + html;
+                    break;
+
+                case 'recentBattles':
+                    console.log('recentBattles')
+                    html = data.forEach(game => {
+                        const card = document.createElement('div');
+                        card.className = 'game-card past';
+                        
+                        console.log(game.scores)
+                        // Сортируем игроков по занятым местам
+                        const sortedPlayers = [...game.scores].sort((a, b) => a.position - b.position);
+                        
+                        let playersHtml = '';
+                        sortedPlayers.forEach(player => {
+                            const scoreClass = player.score >= 0 ? 'positive-score' : 'negative-score';
+                            
+                            playersHtml += `
+                                <div class="player-row">
+                                    <span class="player-place place-${player.position}">${player.position}</span>
+                                    <span class="player-name" title="${player.name}">${player.name}</span>
+                                    <span class="player-score ${scoreClass}">${player.score > 0 ? '+' : ''}${player.score}</span>
+                                    <span class="player-points">${player.points.toFixed(2)}</span>
+                                </div>
+                            `;
+                        });
+                        
+                        card.innerHTML = `
+                            <div class="game-header">
+                                <span class="game-id">Игра #${game.gameindex}</span>
+                                <span class="game-type">обычная</span>
+                            </div>
+                            <div class="players-container">
+                                <div class="players-column">
+                                    ${playersHtml}
+                                </div>
+                            </div>
+                            <div class="game-footer">
+                                ✔ Завершена
+                            </div>
+                        `;
+                        
+                        container.appendChild(card);
+                        return card
+                    });
+
+                    break;
+            }
+            
+            // container.innerHTML = container.querySelector('h2').outerHTML + html;
+        }
+
+        function initDataLoading() {
+            loadData('/tournaments/active', 'activeTournaments');
+            loadData('/tournaments/completed', 'completedTournaments');
+            loadData('/lastgames/3', 'recentBattles');
+        }
+
+        function updateUI() {
+            const loggedIn = localStorage.getItem('loggedIn');
+            if (loggedIn) {
+                document.querySelector('.auth-buttons').innerHTML = `
+                    <button onclick="location.href='/profile'">Мой профиль</button>
+                    <button onclick="logout()">Выйти</button>
+                `;
+                document.getElementById('createTournament').style.display = 'block';
+                document.getElementById('loginPrompt').style.display = 'none';
+            }
+            initDataLoading();
+        }
+
+        function showModal(type) {
+            document.getElementById(`${type}Modal`).style.display = 'flex';
+        }
+
+        function closeModal(type) {
+            document.getElementById(`${type}Modal`).style.display = 'none';
+        }
+
+        document.getElementById('loginForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            localStorage.setItem('loggedIn', 'true');
+            updateUI();
+            closeModal('login');
+        });
+
+        document.getElementById('registerForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            closeModal('register');
+            showModal('login');
+        });
+
+        function logout() {
+            localStorage.removeItem('loggedIn');
+            location.reload();
+        }
+
+        window.onload = updateUI;
+        window.onclick = function(e) {
+            if (e.target.classList.contains('modal')) {
+                e.target.style.display = 'none';
+            }
+        }
+
+        // Моковые данные
+        async function fetch2(url) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            const mockData = {
+                'tournaments/active': [{
+                    id: 1,
+                    name: 'Весенний чемпионат',
+                    timeLeft: '3 дня осталось',
+                    participants: 12
+                }],
+                'tournaments/completed': [{
+                    id: 2,
+                    name: 'Зимний кубок',
+                    winners: [
+                        {name: 'Профессионал123'},
+                        {name: 'Игрок2000'},
+                        {name: 'НовыйЧемпион'}
+                    ]
+                }],
+                'battles/recent': [{
+                    id: 123,
+                    tournamentId: 1,
+                    participants: [
+                        {name: 'Игрок 1', position: 1},
+                        {name: 'Игрок 2', position: 2},
+                        {name: 'Игрок 3', position: 3},
+                        {name: 'Игрок 4', position: 4}
+                    ]
+                }]
+            };
+
+            return {
+                ok: true,
+                json: () => mockData[url.split('/').pop()]
+            };
+        }
+    </script>
+</body>
+</html>

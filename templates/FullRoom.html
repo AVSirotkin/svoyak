@@ -1,0 +1,1509 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Таблица результатов</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            box-sizing: border-box;
+            align-items: center;
+            overflow: hidden;
+        }
+        .header {
+            width: 100%;
+            max-width: 1000px;
+            margin-bottom: 10px;
+        }
+        .table-container {
+            width: 100%;
+            max-width: 1000px;
+            max-height: 400px;
+            overflow: auto;
+            margin-bottom: 10px;
+            flex: 1;
+        }
+        .score-table {
+            border-collapse: collapse;
+            margin: 0 auto;
+            max-height: 1000px;
+            overflow: scroll;
+        }
+        .score-table.vertical {
+            table-layout: auto;
+            overflow: scroll;
+        }
+        .score-table.vertical th.theme-header {
+            width: 80px;
+            min-width: 80px;
+        }
+        .score-table.horizontal {
+            table-layout: auto;
+            min-width: 100%;
+        }
+        .score-table.horizontal th, 
+        .score-table.horizontal td {
+            min-width: 60px;
+            height: 40px;
+            text-align: center;
+            padding: 8px 5px;
+        }
+        .score-table.horizontal th.theme-header {
+            width: 120px;
+            min-width: 120px;
+            position: sticky;
+            left: 0;
+            background-color: #f2f2f2;
+            z-index: 2;
+        }
+        .score-table th, .score-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+        }
+        .score-table th {
+            background-color: #f2f2f2;
+            position: sticky;
+            top: 0;
+        }
+        .score-table.vertical th.theme-header {
+            position: sticky;
+            left: 0;
+            z-index: 2;
+            background-color: #f2f2f2;
+        }
+        .score-table tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .current-question {
+            background-color: #fffde7 !important;
+        }
+        .current-question-column {
+            background-color: #fffde7 !important;
+        }
+        .correct {
+            background-color: #c8e6c9;
+        }
+        .incorrect {
+            background-color: #ffcdd2;
+        }
+        .controls {
+            padding: 15px;
+            background-color: #f5f5f5;
+            border-radius: 5px;
+            margin-top: 10px;
+            width: 100%;
+            max-width: 1000px;
+            box-sizing: border-box;
+        }
+        .question-info {
+            font-size: 18px;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+        .player-scores {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 10px;
+            width: 100%;
+            max-width: 1000px;
+        }
+        .player-score {
+            text-align: center;
+            padding: 10px;
+            background-color: #e0e0e0;
+            border-radius: 5px;
+            min-width: 100px;
+        }
+        .block-separator {
+            background-color: #e3f2fd !important;
+        }
+        .theme-block {
+            background-color: #e3f2fd;
+            font-weight: bold;
+            text-align: center;
+        }
+        .game-over {
+            font-size: 24px;
+            color: #d32f2f;
+            text-align: center;
+            margin: 20px 0;
+            font-weight: bold;
+        }
+        .save-results {
+            display: block;
+            margin: 20px auto;
+            padding: 10px 20px;
+            background-color: #4caf50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .save-results:hover {
+            background-color: #388e3c;
+        }
+        .control-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+        .player-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .player-button {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        .player-button:hover {
+            opacity: 0.9;
+        }
+        .correct-button {
+            background-color: #4caf50;
+            color: white;
+        }
+        .incorrect-button {
+            background-color: #f44336;
+            color: white;
+        }
+        .next-button {
+            background-color: #2196f3;
+            color: white;
+            padding: 8px 20px;
+        }
+        .player-title {
+            text-align: center;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .question-value {
+            font-weight: bold;
+        }
+        .edit-mode {
+            background-color: #ffeb3b !important;
+            color: #000 !important;
+        }
+        .mode-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 10px;
+            width: 100%;
+            max-width: 1000px;
+        }
+        .view-mode-button {
+            background-color: #9e9e9e;
+            color: white;
+        }
+        .warning {
+            color: #d32f2f;
+            font-weight: bold;
+            margin-top: 10px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+<div>
+    <table>
+        <tr>
+        <td width = 20% valign="top">
+        <div id="page-wrapper">
+        
+            <h1>Список игроков</h1>
+        
+           <label>Игрок для добавления</label> <br>
+           <input type="text" id="player_to_add" list="players_list" placeholder="игрок">
+           <button onclick = "addActive()"> Добавить </button>
+           <datalist id="players_list">
+            {% for player in Players %}
+            <option>{{player["name"]}}</option>
+            {% endfor %}
+           </datalist>
+           
+           <br>
+           <div id="activeplayers"></div>
+           <input placeholder="удалить" id="remove_player" data-type="remove" ondrop="drop_handler(event)" ondragover = "dragsover(event)" onchange="remove_pl(event)">
+           <br>
+           <br>
+           <a href="/admin/{{roomid}}">админка</a>
+
+
+           <hr>
+            <a href="/view/{{roomid}}">Подробные результаты</a>
+            <div id = "GameStory">
+            
+            </div>
+            
+        </div>
+        
+        <datalist id="active_players_list">
+        </datalist>
+        </td>
+        
+        <td width="50%" valign="top">
+        
+        <div id="active_game_field">
+            <h3 id="game">Игра 1</h3>
+            <table id="player_table">
+           <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><button onclick = "(function(){document.getElementById('player1').value = '';document.getElementById('score1').value = ''})()">🗑</button><input type="text" class = "player_input" data-type = "players" id="player1" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 1"><input type="int" class = "player_input_score" id="score1" placeholder="счет" tabindex = 5 size = 5pt></td></tr>
+           <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><button onclick = "(function(){document.getElementById('player2').value = '';document.getElementById('score2').value = ''})()">🗑</button><input type="text" class = "player_input" data-type = "players" id="player2" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 2"><input type="int" class = "player_input_score" id="score2" placeholder="счет" tabindex = 5 size = 5pt></td></tr>
+           <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><button onclick = "(function(){document.getElementById('player3').value = '';document.getElementById('score3').value = ''})()">🗑</button><input type="text" class = "player_input" data-type = "players" id="player3" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 3"><input type="int" class = "player_input_score" id="score3" placeholder="счет" tabindex = 5 size = 5pt></td></tr>
+           <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><button onclick = "(function(){document.getElementById('player4').value = '';document.getElementById('score4').value = ''})()">🗑</button><input type="text" class = "player_input" data-type = "players" id="player4" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 4"><input type="int" class = "player_input_score" id="score4" placeholder="счет" tabindex = 5 size = 5pt></td></tr>
+            </table>
+         </div>
+        <button onclick = "AddResult()"> Внести результат </button><button onclick = "FillPositions()"> Заполнить игроков </button><button onclick = "ClearPlayers()"> Очистить </button>
+        <button onclick = "predict_matches()"> Прогноз </button> <br>
+        <button onclick = "FinalizeRoom()"> Завершить бои и определить победителя</button>
+        
+
+    <div class="header">
+        <div class="mode-buttons">
+            <button id="toggleViewBtn" class="player-button view-mode-button">Горизонтальное отображение</button>
+        </div>
+        <div class="player-scores" id="playerScores"></div>
+    </div>
+    
+    <div class="table-container">
+        <table class="score-table vertical" id="scoreTable">
+            <thead>
+                <tr id="headerRow"></tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+        </table>
+    </div>
+    
+    <div id="gameOverMessage" class="game-over" style="display: none;"></div>
+    <div id="warningMessage" class="warning" style="display: none;"></div>
+    <button id="saveResultsBtn" class="save-results" style="display: none;">Сохранить результаты</button>
+    
+    <div class="controls">
+        <div class="question-info" id="questionInfo"></div>
+        <div class="control-buttons" id="controlButtons">
+            <!-- Кнопки будут добавлены через JavaScript -->
+        </div>
+        <div style="text-align: center; margin-top: 15px;">
+            <button id="nextQuestionBtn" class="next-button">Следующий вопрос (0)</button>
+            <button id="editModeBtn" style="margin-left: 10px;" class="player-button">Режим исправления</button>
+        </div>
+    </div>
+
+</td>
+<td valign="top">
+
+<div hei style="border:dotted; min-height:150px" id="blocked_for_one_game" data-type="one_game_block" ondrop="drop_handler(event);" ondragover="dragsover(event);">
+    Блокировка на одну игру:
+    <list id="one_game_block_list" data-type="one_game_block"></list>
+</div>
+
+
+
+
+<div id="weight_info">
+<button onclick = "update_weight()"> Веса </button> 
+Табличка текущих весов
+
+<table id="weight">
+
+</table>
+</div>   
+</td>
+
+</tr>
+</table>
+
+
+</div>
+
+
+    <script>
+        // Данные игры (6 тем по 5 вопросов)
+        const gameData = {
+            players: ["", "", "", ""],
+            questionBlocks: [
+                {
+                    theme: "",
+                    questions: [
+                        { value: 10, text: "Вопрос 1", answer: "" },
+                        { value: 20, text: "Вопрос 2", answer: "" },
+                        { value: 30, text: "Вопрос 3", answer: "" },
+                        { value: 40, text: "Вопрос 4", answer: "" },
+                        { value: 50, text: "Вопрос 5", answer: "" }
+                    ]
+                },
+                {
+                    theme: "",
+                    questions: [
+                        { value: 10, text: "Вопрос 1", answer: "" },
+                        { value: 20, text: "Вопрос 2", answer: "" },
+                        { value: 30, text: "Вопрос 3", answer: "" },
+                        { value: 40, text: "Вопрос 4", answer: "" },
+                        { value: 50, text: "Вопрос 5", answer: "" }
+                    ]
+                },
+                {
+                    theme: "",
+                    questions: [
+                        { value: 10, text: "Вопрос 1", answer: "" },
+                        { value: 20, text: "Вопрос 2", answer: "" },
+                        { value: 30, text: "Вопрос 3", answer: "" },
+                        { value: 40, text: "Вопрос 4", answer: "" },
+                        { value: 50, text: "Вопрос 5", answer: "" }
+                    ]
+                },
+                {
+                    theme: "",
+                    questions: [
+                        { value: 10, text: "Вопрос 1", answer: "" },
+                        { value: 20, text: "Вопрос 2", answer: "" },
+                        { value: 30, text: "Вопрос 3", answer: "" },
+                        { value: 40, text: "Вопрос 4", answer: "" },
+                        { value: 50, text: "Вопрос 5", answer: "" }
+                    ]
+                },
+                {
+                    theme: "",
+                    questions: [
+                        { value: 10, text: "Вопрос 1", answer: "" },
+                        { value: 20, text: "Вопрос 2", answer: "" },
+                        { value: 30, text: "Вопрос 3", answer: "" },
+                        { value: 40, text: "Вопрос 4", answer: "" },
+                        { value: 50, text: "Вопрос 5", answer: "" }
+                    ]
+                },
+                {
+                    theme: "",
+                    questions: [
+                        { value: 10, text: "Вопрос 1", answer: "" },
+                        { value: 20, text: "Вопрос 2", answer: "" },
+                        { value: 30, text: "Вопрос 3", answer: "" },
+                        { value: 40, text: "Вопрос 4", answer: "" },
+                        { value: 50, text: "Вопрос 5", answer: "" }
+                    ]
+                }
+            ]
+        };
+
+        // Состояние игры
+        const gameState = {
+            currentBlock: 0,
+            currentQuestion: 0,
+            scores: Array(gameData.players.length).fill(0),
+            answers: [],
+            gameFinished: false,
+            editMode: false,
+            horizontalView: false
+        };
+
+        // Инициализация состояния ответов
+        function initAnswers() {
+            gameState.answers = [];
+            gameData.questionBlocks.forEach(block => {
+                block.questions.forEach(() => {
+                    gameState.answers.push(Array(gameData.players.length).fill(null));
+                });
+            });
+        }
+
+        // Инициализация кнопок управления
+        function initControlButtons() {
+            const controlButtons = document.getElementById('controlButtons');
+            controlButtons.innerHTML = '';
+            
+            gameData.players.forEach((player, index) => {
+                const playerButtons = document.createElement('div');
+                playerButtons.className = 'player-buttons';
+                
+                const playerTitle = document.createElement('div');
+                playerTitle.className = 'player-title';
+                playerTitle.textContent = player;
+                playerButtons.appendChild(playerTitle);
+                
+                const correctBtn = document.createElement('button');
+                correctBtn.className = 'player-button correct-button';
+                correctBtn.textContent = `Правильно (${index+1})`;
+                correctBtn.onclick = () => handleAnswer(index, true);
+                playerButtons.appendChild(correctBtn);
+                
+                const incorrectBtn = document.createElement('button');
+                incorrectBtn.className = 'player-button incorrect-button';
+                incorrectBtn.textContent = `Неправильно (${String.fromCharCode(113+index)})`;
+                incorrectBtn.onclick = () => handleAnswer(index, false);
+                playerButtons.appendChild(incorrectBtn);
+                
+                controlButtons.appendChild(playerButtons);
+            });
+            
+            // Кнопка следующего вопроса
+            document.getElementById('nextQuestionBtn').onclick = nextQuestion;
+            
+            // Кнопка режима исправления
+            document.getElementById('editModeBtn').onclick = toggleEditMode;
+            
+            // Кнопка переключения вида таблицы
+            document.getElementById('toggleViewBtn').onclick = toggleTableView;
+        }
+
+        // Переключение вида таблицы
+        function toggleTableView() {
+            gameState.horizontalView = !gameState.horizontalView;
+            const btn = document.getElementById('toggleViewBtn');
+            
+            if (gameState.horizontalView) {
+                btn.textContent = 'Вертикальное отображение';
+                renderHorizontalTable();
+            } else {
+                btn.textContent = 'Горизонтальное отображение';
+                renderVerticalTable();
+            }
+            
+            updateQuestionHighlight();
+        }
+
+        // Рендер горизонтальной таблицы
+        function renderHorizontalTable() {
+            const table = document.getElementById('scoreTable');
+            table.className = 'score-table horizontal';
+            const headerRow = document.getElementById('headerRow');
+            const tableBody = document.getElementById('tableBody');
+            
+            // Очищаем таблицу
+            headerRow.innerHTML = '';
+            tableBody.innerHTML = '';
+            
+            // Создаем строку с темами (блоками)
+            const themeRow = document.createElement('tr');
+            const emptyThemeCell = document.createElement('th');
+            emptyThemeCell.className = 'theme-header';
+            themeRow.appendChild(emptyThemeCell);
+            
+            gameData.questionBlocks.forEach(block => {
+                const th = document.createElement('th');
+                th.className = 'theme-block';
+                th.colSpan = block.questions.length;
+                th.textContent = block.theme;
+                themeRow.appendChild(th);
+            });
+            
+            tableBody.appendChild(themeRow);
+            
+            // Создаем строку с номиналами вопросов
+            const valueRow = document.createElement('tr');
+            const emptyValueCell = document.createElement('th');
+            emptyValueCell.className = 'theme-header';
+            valueRow.appendChild(emptyValueCell);
+            
+            gameData.questionBlocks.forEach(block => {
+                block.questions.forEach(question => {
+                    const td = document.createElement('td');
+                    td.className = 'question-value';
+                    td.textContent = question.value;
+                    valueRow.appendChild(td);
+                });
+            });
+            
+            tableBody.appendChild(valueRow);
+            
+            // Создаем строки для каждого игрока
+            gameData.players.forEach((player, playerIndex) => {
+                const playerRow = document.createElement('tr');
+                
+                // Ячейка с именем игрока
+                const playerCell = document.createElement('th');
+                playerCell.className = 'theme-header';
+                playerCell.textContent = player;
+                playerRow.appendChild(playerCell);
+                
+                // Ячейки с ответами игрока
+                let questionIndex = 0;
+                gameData.questionBlocks.forEach(block => {
+                    block.questions.forEach((question, qIndex) => {
+                        const td = document.createElement('td');
+                        td.id = `answer${questionIndex}_${playerIndex}`;
+                        
+                        // Восстанавливаем предыдущие ответы
+                        if (gameState.answers[questionIndex] && gameState.answers[questionIndex][playerIndex] !== null) {
+                            const value = gameState.answers[questionIndex][playerIndex] ? "+" + question.value : "-" + question.value;
+                            td.textContent = value;
+                            td.classList.add(gameState.answers[questionIndex][playerIndex] ? 'correct' : 'incorrect');
+                        }
+                        
+                        playerRow.appendChild(td);
+                        questionIndex++;
+                    });
+                });
+                
+                tableBody.appendChild(playerRow);
+            });
+        }
+
+        // Рендер вертикальной таблицы
+        function renderVerticalTable() {
+            const table = document.getElementById('scoreTable');
+            table.className = 'score-table vertical';
+            const headerRow = document.getElementById('headerRow');
+            const tableBody = document.getElementById('tableBody');
+            
+            // Очищаем таблицу
+            headerRow.innerHTML = '';
+            tableBody.innerHTML = '';
+            
+            // Создаем заголовок с номиналами и игроками
+            const thValue = document.createElement('th');
+            thValue.className = 'theme-header';
+            thValue.textContent = "Номинал";
+            headerRow.appendChild(thValue);
+            
+            gameData.players.forEach((player, index) => {
+                const th = document.createElement('th');
+                th.className = 'player-header';
+                th.textContent = player;
+                headerRow.appendChild(th);
+            });
+            
+            // Создаем строки с вопросами
+            let questionIndex = 0;
+            
+            gameData.questionBlocks.forEach((block, blockIndex) => {
+                block.questions.forEach((question, qIndex) => {
+                    // Добавляем разделитель между блоками
+                    if (qIndex === 0) {
+                        const separator = document.createElement('tr');
+                        separator.className = 'block-separator';
+                        const td = document.createElement('td');
+                        td.colSpan = gameData.players.length + 1;
+                        td.textContent = `Тема ${blockIndex + 1}: ${block.theme}`;
+                        td.style.fontWeight = 'bold';
+                        separator.appendChild(td);
+                        tableBody.appendChild(separator);
+                    }
+                    
+                    const row = document.createElement('tr');
+                    row.id = `question${questionIndex}`;
+                    
+                    const tdValue = document.createElement('td');
+                    tdValue.className = 'question-value';
+                    tdValue.textContent = question.value;
+                    row.appendChild(tdValue);
+                    
+                    // Ячейки для ответов игроков
+                    gameData.players.forEach((player, pIndex) => {
+                        const td = document.createElement('td');
+                        td.id = `answer${questionIndex}_${pIndex}`;
+                        
+                        // Восстанавливаем предыдущие ответы
+                        if (gameState.answers[questionIndex] && gameState.answers[questionIndex][pIndex] !== null) {
+                            const value = gameState.answers[questionIndex][pIndex] ? "+" + question.value : "-" + question.value;
+                            td.textContent = value;
+                            td.classList.add(gameState.answers[questionIndex][pIndex] ? 'correct' : 'incorrect');
+                        }
+                        
+                        row.appendChild(td);
+                    });
+                    
+                    tableBody.appendChild(row);
+                    questionIndex++;
+                });
+            });
+        }
+
+        // Обновление подсветки текущего вопроса
+        function updateQuestionHighlight() {
+            // Убираем предыдущую подсветку
+            document.querySelectorAll('.current-question').forEach(el => {
+                el.classList.remove('current-question');
+            });
+            document.querySelectorAll('.current-question-column').forEach(el => {
+                el.classList.remove('current-question-column');
+            });
+            
+            if (gameState.gameFinished) return;
+            
+            const questionNumber = getAbsoluteQuestionNumber();
+            
+            if (gameState.horizontalView) {
+                // В горизонтальном режиме подсвечиваем столбец
+                const allRows = document.querySelectorAll('#tableBody tr');
+                if (allRows.length > 0) {
+                    // Пропускаем строку с темами (первая строка)
+                    for (let i = 1; i < allRows.length; i++) {
+                        const cells = allRows[i].querySelectorAll('td, th');
+                        // +1 потому что первый столбец - заголовок
+                        if (cells.length > questionNumber + 1) {
+                            cells[questionNumber + 1].classList.add('current-question-column');
+                        }
+                    }
+                    document.getElementsByClassName("current-question-column")[0].scrollIntoView({ behavior: 'smooth', block: 'center', inline:"center" });
+                }
+            } else {
+                // В вертикальном режиме подсвечиваем строку
+                const questionRow = document.getElementById(`question${questionNumber}`);
+                if (questionRow) {
+                    questionRow.classList.add('current-question');
+                    questionRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
+        }
+
+        // Переключение режима исправления
+        function toggleEditMode() {
+            if (gameState.editMode) {
+                // Проверяем, что нет вопросов с несколькими правильными ответами
+                if (!validateAnswers()) {
+                    return;
+                }
+            }
+            
+            gameState.editMode = !gameState.editMode;
+            const btn = document.getElementById('editModeBtn');
+            btn.classList.toggle('edit-mode');
+            btn.textContent = gameState.editMode ? 'Завершить исправление' : 'Режим исправления';
+            
+            // Добавляем/убираем обработчики кликов на ячейки
+            const cells = document.querySelectorAll('#tableBody td[id^="answer"]');
+            cells.forEach(cell => {
+                if (gameState.editMode) {
+                    cell.style.cursor = 'pointer';
+                    cell.onclick = handleCellClick;
+                } else {
+                    cell.style.cursor = '';
+                    cell.onclick = null;
+                }
+            });
+            
+            // Скрываем сообщение об ошибке при выходе из режима
+            if (!gameState.editMode) {
+                document.getElementById('warningMessage').style.display = 'none';
+            }
+        }
+
+        // Проверка, что нет вопросов с несколькими правильными ответами
+        function validateAnswers() {
+            let isValid = true;
+            const warningElement = document.getElementById('warningMessage');
+            warningElement.style.display = 'none';
+            warningElement.innerHTML = '';
+            
+            gameState.answers.forEach((questionAnswers, questionIndex) => {
+                const correctAnswers = questionAnswers.filter(a => a === true).length;
+                if (correctAnswers > 1) {
+                    isValid = false;
+                    const question = getQuestionByIndex(questionIndex);
+                    warningElement.innerHTML += `Вопрос ${question.value} (${question.theme}) имеет ${correctAnswers} правильных ответа!<br>`;
+                }
+            });
+            
+            if (!isValid) {
+                warningElement.style.display = 'block';
+            }
+            
+            return isValid;
+        }
+
+        // Обработка клика по ячейке в режиме исправления
+        function handleCellClick(e) {
+            if (!gameState.editMode) return;
+            
+            const idParts = e.target.id.split('_');
+            const questionIndex = parseInt(idParts[0].replace('answer', ''));
+            const playerIndex = parseInt(idParts[1]);
+            
+            const currentAnswer = gameState.answers[questionIndex][playerIndex];
+            const question = getQuestionByIndex(questionIndex);
+            
+            // Определяем следующее состояние по циклу: null -> true -> false -> null
+            let newAnswer;
+            if (currentAnswer === null) {
+                newAnswer = true; // Пусто -> Правильно
+            } else if (currentAnswer === true) {
+                newAnswer = false; // Правильно -> Неправильно
+            } else {
+                newAnswer = null; // Неправильно -> Пусто
+            }
+            
+            // Обновляем состояние
+            gameState.answers[questionIndex][playerIndex] = newAnswer;
+            
+            // Обновляем очки
+            updateScoresAfterEdit(questionIndex, playerIndex, currentAnswer, newAnswer, question.value);
+            
+            // Обновляем отображение ячейки
+            updateCellAppearance(e.target, newAnswer, question.value);
+            
+            saveGame();
+        }
+
+        // Обновление очков после изменения ответа
+        function updateScoresAfterEdit(questionIndex, playerIndex, oldAnswer, newAnswer, value) {
+            // Убираем влияние старого ответа
+            if (oldAnswer === true) {
+                gameState.scores[playerIndex] -= value;
+            } else if (oldAnswer === false) {
+                gameState.scores[playerIndex] += value;
+            }
+            
+            // Добавляем влияние нового ответа
+            if (newAnswer === true) {
+                gameState.scores[playerIndex] += value;
+            } else if (newAnswer === false) {
+                gameState.scores[playerIndex] -= value;
+            }
+            
+            updateScoresDisplay();
+        }
+
+        // Обновление внешнего вида ячейки
+        function updateCellAppearance(cell, answer, value) {
+            if (answer === true) {
+                cell.textContent = `+${value}`;
+                cell.className = 'correct';
+            } else if (answer === false) {
+                cell.textContent = `-${value}`;
+                cell.className = 'incorrect';
+            } else {
+                cell.textContent = '';
+                cell.className = '';
+            }
+        }
+
+        // Получение вопроса по индексу
+        function getQuestionByIndex(index) {
+            let counter = 0;
+            for (const block of gameData.questionBlocks) {
+                for (const question of block.questions) {
+                    if (counter === index) return {
+                        ...question,
+                        theme: block.theme
+                    };
+                    counter++;
+                }
+            }
+            return null;
+        }
+
+        // Загрузка сохранённой игры
+        function loadGame() {
+            const savedGame = localStorage.getItem('quizGameState');
+            if (savedGame) {
+                try {
+                    const parsed = JSON.parse(savedGame);
+                    Object.assign(gameState, parsed);
+                    
+                    // Обновляем очки игроков
+                    updateScoresDisplay();
+                    
+                    // Если игра была завершена
+                    if (gameState.gameFinished) {
+                        showGameOver();
+                    }
+                    
+                    // Восстанавливаем режим отображения
+                    if (gameState.horizontalView) {
+                        renderHorizontalTable();
+                    } else {
+                        renderVerticalTable();
+                    }
+                } catch (e) {
+                    console.error("Ошибка при загрузке сохранённой игры:", e);
+                    initAnswers();
+                    renderVerticalTable();
+                }
+            } else {
+                initAnswers();
+                renderVerticalTable();
+            }
+            
+            updateQuestionInfo();
+        }
+
+        // Сохранение состояния игры
+        function saveGame() {
+            localStorage.setItem('quizGameState', JSON.stringify(gameState));
+        }
+
+        // Инициализация таблицы
+        function initTable() {
+            // Инициализируем кнопки управления
+            initControlButtons();
+            
+            // Загружаем сохранённую игру
+            loadGame();
+        }
+        
+        // Обновление информации о текущем вопросе
+        function updateQuestionInfo() {
+            const questionInfo = document.getElementById('questionInfo');
+            
+            if (gameState.gameFinished) {
+                questionInfo.textContent = "Игра завершена!";
+                return;
+            }
+            
+            const currentQuestionObj = getCurrentQuestion();
+            
+            questionInfo.textContent = `Тема ${gameState.currentBlock + 1}/${gameData.questionBlocks.length}: ${currentQuestionObj.theme} | 
+                                      Вопрос ${gameState.currentQuestion + 1}/${currentQuestionObj.questions.length} (${currentQuestionObj.current.value} очков)`;
+            
+            updateQuestionHighlight();
+        }
+        
+        // Получение абсолютного номера вопроса
+        function getAbsoluteQuestionNumber() {
+            let absoluteNumber = 0;
+            for (let i = 0; i < gameState.currentBlock; i++) {
+                absoluteNumber += gameData.questionBlocks[i].questions.length;
+            }
+            return absoluteNumber + gameState.currentQuestion;
+        }
+        
+        // Получение текущего вопроса
+        function getCurrentQuestion() {
+            const block = gameData.questionBlocks[gameState.currentBlock];
+            return {
+                theme: block.theme,
+                questions: block.questions,
+                current: block.questions[gameState.currentQuestion]
+            };
+        }
+        
+        // Обновление отображения очков
+        function updateScoresDisplay() {
+            scores = document.getElementsByClassName("player_input_score")
+            gameData.players.forEach((player, index) => {
+                // const scoreElement = document.getElementById(`currentScore${index}`);
+                scoreElement = scores[index];
+                if (scoreElement) {
+                    // scoreElement.textContent = gameState.scores[index];
+                    scoreElement.value = gameState.scores[index];
+                }
+            });
+        }
+        
+        // Обработка ответа игрока
+        function handleAnswer(playerIndex, isCorrect) {
+            if (gameState.gameFinished || gameState.editMode) return;
+            
+            const absoluteQuestionNumber = getAbsoluteQuestionNumber();
+            const question = getCurrentQuestion().current;
+            
+            // Если игрок уже отвечал на этот вопрос, пропускаем
+            if (gameState.answers[absoluteQuestionNumber][playerIndex] !== null) return;
+            
+            // Записываем ответ
+            gameState.answers[absoluteQuestionNumber][playerIndex] = isCorrect;
+            
+            // Обновляем очки
+            const value = isCorrect ? question.value : -question.value;
+            gameState.scores[playerIndex] += value;
+            updateScoresDisplay();
+            
+            // Обновляем ячейку в таблице
+            const answerCell = document.getElementById(`answer${absoluteQuestionNumber}_${playerIndex}`);
+            if (answerCell) {
+                answerCell.textContent = isCorrect ? "+" + question.value : "-" + question.value;
+                answerCell.classList.add(isCorrect ? 'correct' : 'incorrect');
+            }
+            
+            // Если ответ правильный, переходим к следующему вопросу
+            if (isCorrect) {
+                setTimeout(nextQuestion, 500);
+            }
+            
+            saveGame();
+        }
+        
+        // Переход к следующему вопросу
+        function nextQuestion() {
+            if (gameState.editMode) return;
+            
+            const currentBlock = gameData.questionBlocks[gameState.currentBlock];
+            
+            if (gameState.currentQuestion < currentBlock.questions.length - 1) {
+                gameState.currentQuestion++;
+            } else {
+                if (gameState.currentBlock < gameData.questionBlocks.length - 1) {
+                    gameState.currentBlock++;
+                    gameState.currentQuestion = 0;
+                } else {
+                    // Игра окончена
+                    gameState.gameFinished = true;
+                    showGameOver();
+                }
+            }
+            
+            updateQuestionInfo();
+            saveGame();
+        }
+        
+        // Отображение сообщения об окончании игры
+        function showGameOver() {
+            const gameOverElement = document.getElementById('gameOverMessage');
+            if (gameOverElement) {
+                gameOverElement.style.display = 'block';
+                gameOverElement.textContent = 'Игра завершена! Финальные результаты:';
+            }
+            
+            const saveBtn = document.getElementById('saveResultsBtn');
+            if (saveBtn) {
+                saveBtn.style.display = 'block';
+            }
+            
+            const questionInfo = document.getElementById('questionInfo');
+            if (questionInfo) {
+                questionInfo.textContent = 'Игра завершена!';
+            }
+            
+            // Скрываем кнопки управления
+            document.getElementById('controlButtons').style.display = 'none';
+            document.getElementById('nextQuestionBtn').style.display = 'none';
+            document.getElementById('editModeBtn').style.display = 'none';
+        }
+        
+        // Формирование JSON с результатами
+        function getGameResults() {
+            const results = {
+                players: gameData.players,
+                scores: gameState.scores,
+                answers: [],
+                date: new Date().toISOString()
+            };
+            
+            let questionIndex = 0;
+            gameData.questionBlocks.forEach(block => {
+                block.questions.forEach(question => {
+                    results.answers.push({
+                        theme: block.theme,
+                        value: question.value,
+                        playerAnswers: gameState.answers[questionIndex]
+                    });
+                    questionIndex++;
+                });
+            });
+            
+            return results;
+        }
+        
+        // Обработка клавиатуры
+        document.addEventListener('keydown', (e) => {
+            if (gameState.gameFinished || gameState.editMode) return;
+            
+            const keyMap = {
+                '1': {player: 0, correct: true},
+                '2': {player: 1, correct: true},
+                '3': {player: 2, correct: true},
+                '4': {player: 3, correct: true},
+                'q': {player: 0, correct: false},
+                'w': {player: 1, correct: false},
+                'e': {player: 2, correct: false},
+                'r': {player: 3, correct: false},
+                '0': () => nextQuestion()
+            };
+            
+            if (keyMap[e.key]) {
+                if (typeof keyMap[e.key] === 'function') {
+                    keyMap[e.key]();
+                } else {
+                    const {player, correct} = keyMap[e.key];
+                    handleAnswer(player, correct);
+                }
+            }
+        });
+        
+        // Сохранение результатов
+        document.getElementById('saveResultsBtn').addEventListener('click', () => {
+            const results = getGameResults();
+            const resultsJson = JSON.stringify(results, null, 2);
+            
+            // Здесь можно отправить результаты на сервер
+            console.log("Результаты игры:", resultsJson);
+            alert("Результаты игры сформированы и готовы к отправке на сервер:\n\n" + resultsJson);
+            
+            // Очистка сохранённой игры
+            localStorage.removeItem('quizGameState');
+        });
+        
+        // Инициализация при загрузке
+        window.onload = function() {
+            initAnswers(); // Инициализируем структуру ответов
+            initTable();   // Создаём таблицу, которая внутри вызовет loadGame()
+            init_page()
+        };
+    </script>
+
+<script>
+    let active = []
+    let player_name_drag = null
+    let one_game_block_array = []
+    
+    function remove_pl(){
+        console.log(document.getElementById("remove_player").value)
+        remove_from_active(document.getElementById("remove_player").value)
+    }
+    
+    function addActive() {
+        let ans = fetch("/activeplayers/{{roomid}}",
+        {
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json'
+            },
+            method: "POST",
+            body: JSON.stringify({name: document.getElementById('player_to_add').value})
+        }).then((response) => { 
+                return response.json().then((data) => {
+                    console.log(data);
+                    active = data
+                    UpdateActivePlayer(active)
+                    document.getElementById("player_to_add").value = ""
+                    return data;
+                }).catch((err) => {
+                    console.log(err);
+                }) 
+            });
+        
+        }
+    
+    function UpdateActivePlayer(activelist){
+        var listDiv = document.getElementById('activeplayers');
+        var listAct = document.getElementById('active_players_list');
+        listDiv.innerHTML = "";
+        listAct.innerHTML = "";
+    
+        var ul=document.createElement('ul');
+        console.log(activelist)
+        for (var i = 0; i < activelist.length; ++i) {
+            var li=document.createElement('li');
+            li.setAttribute("draggable", "true")
+            li.setAttribute("ondragstart", "dragstart_handler(event)")
+            li.setAttribute("ondragend", "dragend_handler(event)")
+            li.setAttribute("ontouchstart", "dragstart_handler(event)")
+            li.setAttribute("ontouchend", "dragend_handler(event)")
+            li.innerHTML = activelist[i].name;   // Use innerHTML to set the text
+            ul.appendChild(li);                                 
+    
+            var op=document.createElement('option');
+            op.innerHTML = activelist[i].name;   // Use innerHTML to set the text
+            listAct.appendChild(op);                                 
+        }
+        listDiv.appendChild(ul);
+    }
+    
+    
+    function dragstart_handler(ev) {
+     console.log("dragStart", ev);
+     player_name_drag = ev.target.innerHTML
+     // Tell the browser both copy and move are possible
+     ev.effectAllowed = "copyMove";
+    }
+    
+    function dragsover(ev) {
+        ev.preventDefault()
+    }
+    
+    
+    function dragend_handler(ev) {
+      console.log("dragEnd");
+    }
+    
+    function drop_handler(ev) {
+      
+      console.log("Drop");
+    //   ev.preventDefault();
+      // Get the id of drag source element (that was added to the drag data
+      // payload by the dragstart event handler)
+      console.log(ev)
+      if (row == null) {
+    
+      var id = player_name_drag
+    //   ev.dataTransfer.getData("text");
+      var end_type = ev.target.dataset.type;
+      console.log(id, end_type, ev.target.id, ev.target);
+    
+      if (end_type == "players")
+        if (id != document.getElementById("player1").value && id != document.getElementById("player2").value && id != document.getElementById("player3").value && id != document.getElementById("player4").value){
+            ev.target.value = id;
+        }
+    
+      if (end_type == "remove")
+        remove_from_active(id)
+    
+      if (end_type == "one_game_block"){
+        if (!one_game_block_array.includes(id)){
+            one_game_block_array.push(id)
+            refreshOneGameBlock()
+        }
+      }
+    }
+    player_name_drag = null
+    
+    }
+    
+    function refreshOneGameBlock(){
+        let d = document.getElementById("one_game_block_list")
+        d.innerHTML = ""
+        for (const element of one_game_block_array) {
+            d.innerHTML = d.innerHTML + '<li data-type="one_game_block" draggable="true" ondragstart="dragstart_handler(event)">' +element + '</li>'
+        }
+    }
+    
+    function FinalizeRoom(){
+        var conf = confirm("После завершения боев вы не сможете изменять данные. Вы уверены, что хотите завершить бои?");
+            if (conf){
+                    let ans = fetch("/api/finalizeroom/{{roomid}}"
+                    ).then((response) => { 
+                        return response.json().then((data) => {
+                            console.log(data);
+                            if (data.status=="Ok"){alert("Победитель: "+data.winer);
+                            document.location.href = "/view/{{roomid}}"}
+                            else {alert("Не удалось завершить. Сообщение системы:"+data.status)}
+                            return data;
+                        }).catch((err) => {
+                            console.log(err);
+                        }) 
+                    });
+            }
+    
+    }
+    
+    
+    function AddResult(){
+    
+        let res = []
+        if (((document.getElementById('player1').value != "") & (document.getElementById('score1').value == ""))|
+            ((document.getElementById('player2').value != "") & (document.getElementById('score2').value == ""))|
+            ((document.getElementById('player3').value != "") & (document.getElementById('score3').value == ""))|
+            ((document.getElementById('player4').value != "") & (document.getElementById('score4').value == ""))){
+                alert("Не у всех игроков внесен счет! Внесите счет или удалите игрока.")
+            }
+        else {
+            res.push({name:document.getElementById('player1').value, score:document.getElementById('score1').value})
+            res.push({name:document.getElementById('player2').value, score:document.getElementById('score2').value})
+            res.push({name:document.getElementById('player3').value, score:document.getElementById('score3').value})
+            res.push({name:document.getElementById('player4').value, score:document.getElementById('score4').value})
+    
+            let ans = fetch("/gameresult/{{roomid}}",
+            {
+                headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+                },
+                method: "POST",
+                body: JSON.stringify({roomid:{{roomid}}, gameindex: gameindex, scores:res})
+            }).then((response) => { 
+                    return response.json().then((data) => {
+                        console.log(data);
+                        if (data.length > 0) {
+                            UpdateGameHistory(gameindex, data);
+                            RefreshGame();
+                            gameindex = gameindex + 1
+                            document.getElementById("game").innerHTML = "Игра "+ gameindex   
+                        }
+                        return data;
+                    }).catch((err) => {
+                        console.log(err);
+                    }) 
+                });
+    
+            }
+    }
+        function init_page(){
+            gameindex = {{gameindex}}
+            document.getElementById("game").innerHTML = "Игра "+ gameindex
+            let ans = fetch("/activeplayers/{{roomid}}",
+        {
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json'
+            },
+            method: "GET"}).then((response) => { 
+                return response.json().then((data) => {
+                    console.log(data);
+                    active = data
+                    UpdateActivePlayer(active)
+                    return data;
+                }).catch((err) => {
+                    console.log(err);
+                }) 
+            });
+            GetGameHistory();
+            update_weight();
+        }
+    
+        function UpdateGameHistory(gameindex, data){
+            
+            let gamelog = document.getElementById("game_log_"+gameindex)
+            
+            if (gamelog == null){
+                gamelog = document.createElement('table');
+                gamelog.setAttribute("id", "game_log_"+gameindex)
+                document.getElementById("GameStory").appendChild(gamelog)
+            }
+            gamelog.innerHTML = "<tr> Игра " + gameindex + "</tr>"
+            for (var i = 0; i < data.length; ++i) {
+                gamelog.innerHTML = gamelog.innerHTML + "<tr><td width=200pt>" + data[i].name + "</td><td>"+ data[i].score +"</td></tr>"
+            }
+            gamelog.innerHTML = gamelog.innerHTML + "<br>"
+                
+        }
+    
+        function PseudoGameHistory(gameindex, data){
+            
+            let gamelog = document.getElementById("game_log_"+gameindex)
+            
+            if (gamelog == null){
+                gamelog = document.createElement('table');
+                gamelog.setAttribute("id", "game_log_"+gameindex)
+                // gamelog.setAttribute("color", "rgba(0,0,0,0.4)")
+            }
+            gamelog.innerHTML = "<tr> Игра " + gameindex + "</tr>"
+            for (var i = 0; i < data.length; ++i) {
+                gamelog.innerHTML = gamelog.innerHTML + "<tr><td width=200pt>>" + data[i].name + "</td><td>" + "</td></tr>"
+            }
+            gamelog.innerHTML = gamelog.innerHTML + "<br>"
+            document.getElementById("GameStory").appendChild(gamelog)            
+        }
+    
+    
+        function GetGameHistory(){
+            
+            let ans = fetch("/gameresult/{{roomid}}",
+            {
+                headers: {
+                'Accept': 'application/json',
+                },
+                method: "GET"
+            }).then((response) => { 
+                return response.json().then((data) => {
+                    console.log("history",data);
+                    for (var i = 0; i < data.length; ++i){
+                        UpdateGameHistory(data[i].gameindex, data[i].scores)
+                    }
+                    return data;
+                }).catch((err) => {
+                    console.log(err);
+                }) 
+            });
+            
+            }
+        function ClearPlayers(){
+            document.getElementById('player1').value = ""
+            document.getElementById('score1').value = ""
+    
+            document.getElementById('player2').value = ""
+            document.getElementById('score2').value = ""
+    
+            document.getElementById('player3').value = ""
+            document.getElementById('score3').value = ""
+    
+            document.getElementById('player4').value = ""
+            document.getElementById('score4').value = ""
+        }
+        function RefreshGame(){
+    
+            ClearPlayers()
+            
+            document.getElementById('one_game_block_list').innerHTML = ""
+            one_game_block_array = []
+            
+            update_weight()
+        }
+        var row = null;
+        function tab_drag_start(){
+        row = event.target;
+        }
+        function tab_drag_end(){
+        row = null;
+        console.log("drag ended")
+            update_players_names()
+        }
+        function tab_drag_dragover(){
+        var e = event;
+        e.preventDefault();
+        if (row != null){
+        console.log(e.target);
+        console.log(e.target.parentNode);
+        
+        let children = Array.from(e.target.parentNode.parentNode.parentNode.children);
+        // console.log(row, children);
+        if(children.indexOf(e.target.parentNode.parentNode)>children.indexOf(row)){
+            e.target.parentNode.parentNode.after(row);
+            pls = document.getElementsByClassName("player_input");
+            for (var i = 0; i < pls.length; ++i){
+                        pls[i].placeholder = "игрок "+ (i+1)
+                    }
+        }
+        else
+            e.target.parentNode.parentNode.before(row);
+            pls = document.getElementsByClassName("player_input");
+            for (var i = 0; i < pls.length; ++i){
+                        pls[i].placeholder = "игрок "+ (i+1)
+                    }
+     
+        }
+    
+    
+        }
+        
+        function remove_from_active(name){
+            let ans = fetch("/removeactiveplayer/{{roomid}}",
+        {
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json'
+            },
+            method: "POST",
+            body: JSON.stringify({name: name})
+        }).then((response) => { 
+                return response.json().then((data) => {
+                    console.log(data);
+                    active = data
+                    UpdateActivePlayer(active)
+                    return data;
+                }).catch((err) => {
+                    console.log(err);
+                }) 
+            });
+    
+        }
+    
+    
+    function FillPositions(){
+        // to_send = [{"name":document.getElementById("player1").value},{"name":document.getElementById("player2").value},{"name":document.getElementById("player3").value},{"name":document.getElementById("player4").value}]
+        to_send = {"assigned":[{"name":document.getElementById("player1").value},{"name":document.getElementById("player2").value},{"name":document.getElementById("player3").value},{"name":document.getElementById("player4").value}], "one_game_forbiden":[]}
+        for (const element of one_game_block_array) {
+            to_send.one_game_forbiden.push({"name":element})
+        }
+        
+        
+        let ans = fetch("/fillpositions/{{roomid}}",
+        {
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json'
+            },
+            method: "POST",
+            body: JSON.stringify(to_send)
+        }).then((response) => { 
+                return response.json().then((data) => {
+                    console.log(data);
+                    if (data.length > 0)
+                        document.getElementById("player1").value = data[0].name
+                        // gameData.players[0] = data[0].name
+                    if (data.length > 1)
+                        document.getElementById("player2").value = data[1].name
+                        // gameData.players[1] = data[1].name
+                    if (data.length > 2)
+                        document.getElementById("player3").value = data[2].name
+                        // gameData.players[2] = data[2].name
+                    if (data.length > 3)
+                        document.getElementById("player4").value = data[3].name
+                        // gameData.players[3] = data[3].name
+                    
+                    update_players_names()
+                    if (gameState.horizontalView) {
+                        renderHorizontalTable();
+                    } else {
+                        renderVerticalTable();
+                    }
+                    return data;
+                }).catch((err) => {
+                    console.log(err);
+                }) 
+            });
+    
+        }
+    
+    function update_weight(){
+        to_send = [{"name":document.getElementById("player1").value},{"name":document.getElementById("player2").value},{"name":document.getElementById("player3").value},{"name":document.getElementById("player4").value}]
+        let ans = fetch("/weigth/{{roomid}}",
+        {
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json'
+            },
+            method: "POST",
+            body: JSON.stringify(to_send)
+        }).then((response) => { 
+                return response.json().then((data) => {
+                    console.log(data);
+                    printWeight(data)
+                    return data;
+                }).catch((err) => {
+                    console.log(err);
+                }) 
+            });
+    
+        }
+    
+    function printWeight(data){
+        tb = document.getElementById("weight")
+        tb.innerHTML = ""
+        for (var i = 0; i < data.length; ++i) {
+                tb.innerHTML = tb.innerHTML + "<tr><td draggable = 'true' ondragstart = 'dragstart_handler(event)'>" + data[i].name + "<td width=20pt>"+ data[i].skiped +"</td>" + "<td width=20pt>"+ data[i].played +"</td>"+ "</td><td width=40pt>"+ data[i].weight +"</td>" + "</tr>"
+            }
+    }
+    
+    
+    function predict_matches(){
+        to_send = {"assigned":[{"name":document.getElementById("player1").value},{"name":document.getElementById("player2").value},{"name":document.getElementById("player3").value},{"name":document.getElementById("player4").value}], "one_game_forbiden":[]}
+        for (const element of one_game_block_array) {
+            to_send.one_game_forbiden.push({"name":element})
+        }
+        let ans = fetch("/predictgames/{{roomid}}/3",
+        {
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json'
+            },
+            method: "POST",
+            body: JSON.stringify(to_send)
+        }).then((response) => { 
+                return response.json().then((data) => {
+                    console.log(data);
+                    for (var i = 0; i < data.length; ++i) {
+                        PseudoGameHistory(gameindex+data[i].shift, data[i].data)
+                    }
+                    return data;
+                }).catch((err) => {
+                    console.log(err);
+                }) 
+            });
+    
+    
+    }
+
+    function update_players_names(){
+        el = document.getElementsByClassName("player_input")
+        for (var i = 0; i < el.length; ++i) {
+            gameData.players[i] = el[i].value
+        }
+        refreshTable()
+    }
+    
+    function refreshTable(){
+        if (gameState.horizontalView) {
+                renderHorizontalTable();
+            } else {
+                renderVerticalTable();
+            }
+    }
+    // RefreshGame
+    
+    </script>
+</body>
+</html>
