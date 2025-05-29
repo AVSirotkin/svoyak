@@ -14,7 +14,7 @@
             height: 100vh;
             box-sizing: border-box;
             align-items: center;
-            overflow: hidden;
+            overflow: scroll;
         }
         .header {
             width: 100%;
@@ -34,14 +34,15 @@
             margin: 0 auto;
             max-height: 1000px;
             overflow: scroll;
+            min-width: 540px;
         }
         .score-table.vertical {
             table-layout: auto;
             overflow: scroll;
         }
         .score-table.vertical th.theme-header {
-            width: 80px;
-            min-width: 80px;
+            /* width: 80px; */
+            min-width: 20px;
         }
         .score-table.horizontal {
             table-layout: auto;
@@ -159,10 +160,10 @@
         .player-buttons {
             display: flex;
             flex-direction: column;
-            gap: 5px;
+            gap: 2px;
         }
         .player-button {
-            padding: 8px 15px;
+            padding: 6px 3px;
             border: none;
             border-radius: 5px;
             cursor: pointer;
@@ -189,6 +190,9 @@
             text-align: center;
             margin-bottom: 5px;
             font-weight: bold;
+        }
+        .player-header {
+            min-width: 100px;
         }
         .question-value {
             font-weight: bold;
@@ -567,7 +571,8 @@
             // Создаем заголовок с номиналами и игроками
             const thValue = document.createElement('th');
             thValue.className = 'theme-header';
-            thValue.textContent = "Номинал";
+            // thValue.textContent = "Номинал";
+            thValue.textContent = " ";
             headerRow.appendChild(thValue);
             
             gameData.players.forEach((player, index) => {
@@ -972,7 +977,7 @@
             // Скрываем кнопки управления
             document.getElementById('controlButtons').style.display = 'none';
             document.getElementById('nextQuestionBtn').style.display = 'none';
-            document.getElementById('editModeBtn').style.display = 'none';
+            // document.getElementById('editModeBtn').style.display = 'none';
         }
 
         function showResetGameOver() {
