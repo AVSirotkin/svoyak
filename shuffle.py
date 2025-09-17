@@ -157,8 +157,21 @@ def shuffle(players, state, allow_4_game = False, full_info = False, sub_sec = [
 
 
 def calculate_weigth(player, state, choused = [], soft_max = True, priority_list = [], rules = "Spontan"):
+    
     if rules == "Tumen":
         w = 3*(4-state.played_games[player])+state.total_games[player]+(4-state.played_games[player])//2*state.skipped_games[player] + 20*(player in priority_list)
+        for p in choused:
+            if p in state.played_with[player]:
+                w *= 0.5 ** (3*state.played_with[player][p]-2)
+        if soft_max:
+            return pow(10, w) 
+        else:
+            return w
+    elif rules == "Spontan":
+        if state.played_games[player] == 3:
+            w = 1
+        else:
+            w = 6*state.total_games[player]/(1 + state.played_games[player]) + 3*(4-state.played_games[player])+state.total_games[player]+(4-state.played_games[player])//2*state.skipped_games[player] + 20*(player in priority_list)
         for p in choused:
             if p in state.played_with[player]:
                 w *= 0.5 ** (3*state.played_with[player][p]-2)
@@ -171,6 +184,7 @@ def calculate_weigth(player, state, choused = [], soft_max = True, priority_list
             w = 1
         else:
             w = 3*(4-state.played_games[player])+state.total_games[player]+(4-state.played_games[player])//2*state.skipped_games[player] + 20*(player in priority_list)
+       
         for p in choused:
             if p in state.played_with[player]:
                 w *= 0.5 ** (3*state.played_with[player][p]-2)
@@ -201,8 +215,6 @@ def estimate_rate_old(player, state, choused = [], soft_max = True, priority_lis
         if player in state.played_games:
             if state.played_games[player] > 2:
                 rate = rate / 100
-
-
 
 
     return rate
