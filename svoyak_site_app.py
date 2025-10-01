@@ -226,6 +226,28 @@ def RemoveFromLog(roomid):
     return json.dumps(request.json)
 
 
+@app.route('/system/renameplayer', subdomain = "svoyak", methods = ["POST"])
+def RenamePlayer():
+    data = request.json
+    print("DATA", data)
+    if not "playerid" in data:
+        return "{}"
+    if not "name" in data:
+        return "{}"
+    if not "fullname" in data:
+        return "{}"
+    
+    conn = get_db_connection()
+    conn.execute(f"UPDATE players SET name = ? WHERE playerid = ?", (data["name"], data["playerid"]))
+    conn.execute(f"UPDATE players SET fullname = ? WHERE playerid = ?", (data["fullname"], data["playerid"]))
+    conn.execute(f"UPDATE results SET name = ? WHERE playerid = ?", (data["name"], data["playerid"]))
+    conn.execute(f"UPDATE activeplayers SET name = ? WHERE playerid = ?", (data["name"], data["playerid"]))
+    conn.commit()
+    return json.dumps(request.json)
+
+
+
+
 
 @app.route('/gameresult/<int:roomid>', subdomain = "svoyak", methods = ["POST"])
 def SaveResult(roomid):
