@@ -219,6 +219,22 @@
             margin-top: 10px;
             text-align: center;
         }
+        .game-card {
+            border-radius: 8px;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.1);
+            padding: 12px;
+            background-color: white;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .local-saved-info {
+            max-height: 500px; /* Ограничиваем высоту */
+            overflow-y: auto;  /* Полоса прокрутки по вертикали */
+        }
+        .plmover {
+            width: 40px
+        }
     </style>
 </head>
 <body>
@@ -265,15 +281,18 @@
         <div id="active_game_field">
             <h3 id="game">Игра 1</h3>
             <table id="player_table">
-           <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><button onclick = "(function(){document.getElementById('player1').value = '';document.getElementById('score1').value = ''})()">🗑</button><input type="text" class = "player_input" data-type = "players" id="player1" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 1"><input type="int" class = "player_input_score" id="score1" placeholder="счет" tabindex = 5 size = 5pt></td></tr>
-           <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><button onclick = "(function(){document.getElementById('player2').value = '';document.getElementById('score2').value = ''})()">🗑</button><input type="text" class = "player_input" data-type = "players" id="player2" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 2"><input type="int" class = "player_input_score" id="score2" placeholder="счет" tabindex = 5 size = 5pt></td></tr>
-           <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><button onclick = "(function(){document.getElementById('player3').value = '';document.getElementById('score3').value = ''})()">🗑</button><input type="text" class = "player_input" data-type = "players" id="player3" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 3"><input type="int" class = "player_input_score" id="score3" placeholder="счет" tabindex = 5 size = 5pt></td></tr>
-           <tr draggable="true" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><button onclick = "(function(){document.getElementById('player4').value = '';document.getElementById('score4').value = ''})()">🗑</button><input type="text" class = "player_input" data-type = "players" id="player4" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 4"><input type="int" class = "player_input_score" id="score4" placeholder="счет" tabindex = 5 size = 5pt></td></tr>
+           <tr draggable="false" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><button onclick = "(function(){document.getElementById('player1').value = '';document.getElementById('score1').value = ''})()">🗑</button><input type="text" class = "player_input" data-type = "players" id="player1" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 1"><input type="int" class = "player_input_score" id="score1" placeholder="счет" tabindex = 5 size = 5pt></td><td><button class="plmover" onclick = "pl_move(1,1)"> ⬇ </button></td><td><button class="plmover" onclick = "pl_move(1,2)"> ⬇⬇</button></td><td><button class="plmover" onclick = "pl_move(1,3)">⬇⬇⬇</button></td></tr>
+           <tr draggable="false" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><button onclick = "(function(){document.getElementById('player2').value = '';document.getElementById('score2').value = ''})()">🗑</button><input type="text" class = "player_input" data-type = "players" id="player2" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 2"><input type="int" class = "player_input_score" id="score2" placeholder="счет" tabindex = 5 size = 5pt></td><td><button class="plmover" onclick = "pl_move(2,-1)"> ⬆ </button></td><td><button class="plmover" onclick = "pl_move(2,1)"> ⬇</button></td><td><button class="plmover" onclick = "pl_move(2,2)">⬇⬇</button></td></tr>
+           <tr draggable="false" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><button onclick = "(function(){document.getElementById('player3').value = '';document.getElementById('score3').value = ''})()">🗑</button><input type="text" class = "player_input" data-type = "players" id="player3" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 3"><input type="int" class = "player_input_score" id="score3" placeholder="счет" tabindex = 5 size = 5pt></td><td><button class="plmover" onclick = "pl_move(3,-2)"> ⬆⬆ </button></td><td><button class="plmover" onclick = "pl_move(3,-1)"> ⬆</button></td><td><button class="plmover" onclick = "pl_move(3,1)">⬇</button></td></tr>
+           <tr draggable="false" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><button onclick = "(function(){document.getElementById('player4').value = '';document.getElementById('score4').value = ''})()">🗑</button><input type="text" class = "player_input" data-type = "players" id="player4" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 4"><input type="int" class = "player_input_score" id="score4" placeholder="счет" tabindex = 5 size = 5pt></td><td><button class="plmover" onclick = "pl_move(4,-3)"> ⬆⬆⬆ </button></td><td><button class="plmover" onclick = "pl_move(4,-2)">⬆⬆</button></td><td><button class="plmover" onclick = "pl_move(4,-1)">⬆</button></td></tr>
             </table>
          </div>
         <button onclick = "AddResult()"> Внести результат </button><button onclick = "FillPositions()"> Заполнить игроков </button><button onclick = "ClearPlayers()"> Очистить </button>
         <button onclick = "predict_matches()"> Прогноз </button> <br>
         <button onclick = "FinalizeRoom()"> Завершить бои и определить победителя</button>
+        <button onclick = "ClearCurrentGameLog()"> Очистить бой</button>
+        <button onclick = "Info()"> Info</button>
+     
         
 
     <div class="header">
@@ -326,16 +345,72 @@
 
 </table>
 </div>   
+
+<button onclick = "show_saved()"> Сохраненные игры </button> 
+
+<div class= "local-saved-info" id="local_saved_info">
+
+</div>
+
 </td>
 
 </tr>
 </table>
+</div>
 
+
+<div id="StatePrint">
 
 </div>
 
 
+
     <script>
+    // Добавляем систему хранения с привязкой к комнате и матчу
+        class MatchStorage {
+            constructor() {
+                this.STORAGE_KEY = 'tournament_matches';
+                this.loadAllMatches();
+            }
+
+            loadAllMatches() {
+                const stored = localStorage.getItem(this.STORAGE_KEY);
+                this.allMatches = stored ? JSON.parse(stored) : {};
+            }
+
+            saveAllMatches() {
+                localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.allMatches));
+            }
+
+            getMatchKey(roomId, matchId) {
+                return `${roomId}_${matchId}`;
+            }
+
+            saveMatchState(roomId, matchId, gameState, gameData) {
+                if (!this.allMatches[roomId]) {
+                    this.allMatches[roomId] = {};
+                }
+                this.allMatches[roomId][matchId] = {
+                    gameState: {...gameState},
+                    gameData: {...gameData, players: [...gameData.players]},
+                    timestamp: new Date().toISOString()
+                };
+                this.saveAllMatches();
+            }
+
+            getMatchState(roomId, matchId) {
+                return this.allMatches[roomId]?.[matchId] || null;
+            }
+
+            getAllRoomMatches(roomId) {
+                return this.allMatches[roomId] || {};
+            }
+        }
+
+        // Инициализация системы хранения
+        const matchStorage = new MatchStorage();
+
+
         // Данные игры (6 тем по 5 вопросов)
         const gameData = {
             players: ["", "", "", ""],
@@ -411,9 +486,14 @@
             answers: [],
             gameFinished: false,
             editMode: false,
-            horizontalView: false
+            horizontalView: false,
+            roomId: '{{roomid}}'
         };
 
+        // function resetState() {
+        //     gameState
+
+        // }
         // Инициализация состояния ответов
         function initAnswers() {
             gameState.answers = [];
@@ -802,44 +882,105 @@
             return null;
         }
 
-        // Загрузка сохранённой игры
-        function loadGame() {
-            const savedGame = localStorage.getItem('quizGameState');
-            if (savedGame) {
+    // Функция загрузки игры для конкретного матча
+        function loadGame(matchId = null) {
+
+            console.log("load start", matchId)
+            const targetMatchId = matchId || getCurrentMatchId();
+            const savedMatch = matchStorage.getMatchState(gameState.roomId, targetMatchId);
+            
+            if (savedMatch) {
                 try {
-                    const parsed = JSON.parse(savedGame);
-                    Object.assign(gameState, parsed);
-                    
-                    // Обновляем очки игроков
+                    console.log(`Saved state :`, savedMatch.gameState)
+                    // Восстанавливаем состояние
+                    Object.assign(gameState, savedMatch.gameState);
+                     console.log(`Game loaded for match 0 : ${targetMatchId}`)
+                    // Восстанавливаем данные игроков
+                    if (savedMatch.gameData && savedMatch.gameData.players) {
+                     console.log(`Game loaded for match 01 : ${targetMatchId}`)
+                        gameData.players = savedMatch.gameData.players;
+                     console.log(`Game loaded for match 02 : ${targetMatchId}`, savedMatch.gameData)
+                        updatePlayerInputs();
+                    }
+
+
+                    console.log(`Game loaded for match 1 : ${targetMatchId}`)
                     updateScoresDisplay();
                     
-                    // Если игра была завершена
                     if (gameState.gameFinished) {
                         showGameOver();
                     }
-                    
-                    // Восстанавливаем режим отображения
+                    console.log(`Game loaded for match 2: ${targetMatchId}`)
                     if (gameState.horizontalView) {
                         renderHorizontalTable();
                     } else {
                         renderVerticalTable();
                     }
+                    
+                    console.log(`Game loaded for match: ${targetMatchId}`);
                 } catch (e) {
-                    console.error("Ошибка при загрузке сохранённой игры:", e);
+                    console.error("Ошибка при загрузке игры:", e);
                     initAnswers();
                     renderVerticalTable();
                 }
             } else {
+                console.log("No data for match ", matchId)
+                reset_players_names()
+                updatePlayerInputs();
+            // Новая игра - инициализируем
                 initAnswers();
+                gameState.gameFinished = false
+                gameState.currentBlock = 0
+                gameState.currentQuestion = 0
                 renderVerticalTable();
             }
             
             updateQuestionInfo();
         }
 
-        // Сохранение состояния игры
+
+        function show_saved() {
+            all_cards = document.getElementById("local_saved_info")
+            all_cards.innerHTML = ""
+            matches = matchStorage.getAllRoomMatches(gameState.roomId)
+            Object.keys(matches).forEach(element => {
+                console.log(element, matches[element])
+                all_cards.appendChild(renderMatchCard(element, matches[element]))
+                
+            });
+
+
+        }
+
+
+            // Обновление полей ввода игроков
+        function updatePlayerInputs() {
+            console.log("game data", gameData)
+            const inputs = document.querySelectorAll('.player_input');
+            inputs.forEach((input, index) => {
+                if (gameData.players[index]) {
+                    input.value = gameData.players[index];
+                }
+            });
+            update_players_names();
+        }
+
+        
+
+        // Получение текущего ID матча
+        function getCurrentMatchId() {
+            if (typeof gameindex !== 'undefined') {
+                return gameindex || 1;
+            }
+            else {
+                return 1;
+            }
+        }
+
         function saveGame() {
-            localStorage.setItem('quizGameState', JSON.stringify(gameState));
+            const currentMatchId = getCurrentMatchId();
+            matchStorage.saveMatchState(gameState.roomId, currentMatchId, gameState, gameData);
+            console.log(`Game saved for match: ${currentMatchId}`);
         }
 
         // Инициализация таблицы
@@ -858,6 +999,9 @@
             if (gameState.gameFinished) {
                 questionInfo.textContent = "Игра завершена!";
                 return;
+            }
+            else {
+                showResetGameOver()
             }
             
             const currentQuestionObj = getCurrentQuestion();
@@ -1229,8 +1373,29 @@
     }
     
     
-    function AddResult(){
+    function ClearCurrentGameLog(forced_conf = true){
+        var conf = true
+        if (forced_conf){
+            conf = confirm("Вы уверены, что хотите стереть данные за бой" + gameindex +"?");
+        }
+        if (conf){
+            RefreshGame()
+            // gameState
+            // Object.assign(gameData.players, ["", "", "", ""])
+            gameState.scores = [0,0,0,0]
+            gameState.editMode = false
+            gameState.currentBlock = 0
+            gameState.currentQuestion = 0
+            gameState.gameFinished = false
+            initAnswers()
+            update_players_names()
+            saveGame(); // Сохраняем при изменении игроков
+
+
+        }
+    }
     
+    function AddResult(){
         let res = []
         if (((document.getElementById('player1').value != "") & (document.getElementById('score1').value == ""))|
             ((document.getElementById('player2').value != "") & (document.getElementById('score2').value == ""))|
@@ -1243,7 +1408,7 @@
             res.push({name:document.getElementById('player2').value, score:document.getElementById('score2').value})
             res.push({name:document.getElementById('player3').value, score:document.getElementById('score3').value})
             res.push({name:document.getElementById('player4').value, score:document.getElementById('score4').value})
-    
+
             let ans = fetch("/gameresult/{{roomid}}",
             {
                 headers: {
@@ -1257,22 +1422,46 @@
                         console.log(data);
                         if (data.length > 0) {
                             UpdateGameHistory(gameindex, data);
-                            RefreshGame();
-                            gameindex = gameindex + 1
-                            document.getElementById("game").innerHTML = "Игра "+ gameindex   
+                            // Сохраняем финальное состояние
+                            gameState.gameFinished = true;
+                            saveGame();
+                            
+                            // Переходим к следующей игре
+                            switchMatch(gameindex + 1)
+                            // gameindex = gameindex + 1;
+                            // document.getElementById("game").innerHTML = "Игра "+ gameindex;
+                            // RefreshGame();
                         }
                         return data;
                     }).catch((err) => {
                         console.log(err);
                     }) 
                 });
-    
-            }
+        }
     }
-        function init_page(){
-            gameindex = {{gameindex}}
-            document.getElementById("game").innerHTML = "Игра "+ gameindex
-            let ans = fetch("/activeplayers/{{roomid}}",
+    // Добавляем навигацию по матчам в интерфейс
+    function addMatchNavigation() {
+        const gameHeader = document.getElementById("game");
+        const navigationHTML = `
+            <div style="margin: 10px 0;">
+                <button onclick="switchMatch(Math.max(1, gameindex - 1))">← Предыдущая</button>
+                <span style="margin: 0 10px;">Игра ${gameindex}</span>
+                <button onclick="switchMatch(gameindex + 1)">Следующая →</button>
+            </div>
+        `;
+        gameHeader.insertAdjacentHTML('afterend', navigationHTML);
+    }
+    function init_page(){
+        gameindex = {{gameindex}}
+        document.getElementById("game").innerHTML = "Игра "+ gameindex
+        
+        // Добавляем навигацию по матчам
+        addMatchNavigation();
+        
+        // Загружаем текущую игру
+        loadGame();
+        
+        let ans = fetch("/activeplayers/{{roomid}}",
         {
             headers: {
               'Accept': 'application/json',
@@ -1288,10 +1477,9 @@
                     console.log(err);
                 }) 
             });
-            GetGameHistory();
-            update_weight();
-        }
-    
+        GetGameHistory();
+        update_weight();
+    }    
         function UpdateGameHistory(gameindex, data){
             
             let gamelog = document.getElementById("game_log_"+gameindex)
@@ -1363,26 +1551,36 @@
         }
 
         function RefreshGame(){
-    
             ClearPlayers()
-            
             document.getElementById('one_game_block_list').innerHTML = ""
             one_game_block_array = []
             
-
-            gameState.currentBlock = 0
-            gameState.currentQuestion = 0,
-            gameState.scores = Array(gameData.players.length).fill(0),
-            gameState.answers = [],
-            gameState.gameFinished = false,
-            gameState.editMode = false,
-
-            initAnswers() 
-
-            update_weight()
-            refreshTable()
-            updateQuestionInfo();
+            // Загружаем состояние для текущего матча
+            // loadGame();
+            // update_weight()ss
         }
+
+        // Добавляем переключение между матчами
+        function switchMatch(newMatchId) {
+            // Сохраняем текущую игру
+            saveGame();
+            // RefreshGame();
+            ClearPlayers()
+            gameState.scores = [0,0,0,0] // отчистить целиком?
+
+            // Меняем номер игры
+            gameindex = newMatchId;
+            document.getElementById("game").innerHTML = "Игра "+ gameindex;
+            console.log("ready to load", gameindex)
+            // Загружаем новую игру
+            loadGame(newMatchId);
+            
+            // Обновляем историю игр
+            GetGameHistory();
+            // update_weight();
+        }
+
+
         var row = null;
         function tab_drag_start(){
         row = event.target;
@@ -1442,12 +1640,30 @@
     
         }
     
+
+    function pl_move(plid, pos){
+        loc_pl = document.getElementById(`player${plid}`).value
+        if (pos > 0){
+            for(i = plid; i<plid + pos; i++){
+                document.getElementById(`player${i}`).value = document.getElementById(`player${i+1}`).value
+            }
+            document.getElementById(`player${plid + pos}`).value = loc_pl
+        }
+        else {
+            for(i = plid; i>plid + pos; i--){
+                document.getElementById(`player${i}`).value = document.getElementById(`player${i-1}`).value
+            }
+            document.getElementById(`player${plid + pos}`).value = loc_pl
+
+        }
+        update_players_names()
+    }
     
     function FillPositions(){
         // to_send = [{"name":document.getElementById("player1").value},{"name":document.getElementById("player2").value},{"name":document.getElementById("player3").value},{"name":document.getElementById("player4").value}]
         to_send = {"assigned":[{"name":document.getElementById("player1").value},{"name":document.getElementById("player2").value},{"name":document.getElementById("player3").value},{"name":document.getElementById("player4").value}], "one_game_forbiden":[]}
         for (const element of one_game_block_array) {
-            to_send.one_game_forbiden.push({"name":element})
+            to_send.one_game_forbiden.push({"name":element})    
         }
         
         
@@ -1558,9 +1774,19 @@
         }
         refreshTable()
         updateQuestionInfo();
-
+        // saveGame(); // Сохраняем при изменении игроков
     }
-    
+
+    function reset_players_names(){
+        for (var i = 0; i < 4; ++i) {
+            gameData.players[i] = ""
+        }
+        // refreshTable()
+        // updateQuestionInfo();
+        // // saveGame(); // Сохраняем при изменении игроков
+    }
+
+
     function refreshTable(){
         if (gameState.horizontalView) {
                 renderHorizontalTable();
@@ -1569,7 +1795,55 @@
             }
     }
     // RefreshGame
+
+    function Info(){
+        console.log(gameData, gameState)
+        // document.getElementById("StatePrint").textContent = gameData.JSON() + gameState.stringify.JSON()
+    }
     
+
+
+    function renderMatchCard(matchid, matchinfo){
+        const card = document.createElement('div');
+        card.className = 'game-card';
+        
+        console.log(matchinfo.gameState.scores)
+        
+        const MPlayers = matchinfo.gameData.players;
+        const MScore = matchinfo.gameState.scores;
+        let playersHtml = '';
+        for( i=0; i<MPlayers.length; i++){
+            // const scoreClass = MScore[i] >= 0 ? 'positive-score' : 'negative-score';
+            playersHtml += `
+                <div class="player-row">
+                    <span class="player-place"></span>
+                    <span class="player-name" title="${MPlayers[i]}">${MPlayers[i]}</span>
+                    <span class="player-card-score">${MScore[i] > 0 ? '+' : ''}${MScore[i]}</span>
+                    <span class="player-points"></span>
+                </div>
+            `;
+
+        }
+
+        card.innerHTML = `
+            <div class="game-header">
+                <span class="game-id"><a href="#" onclick="loadGame(${matchid})">Игра #${matchid}</a></span>
+                <span class="game-type">обычная</span>
+            </div>
+            <div class="players-container">
+                <div class="players-column">
+                    ${playersHtml}
+                </div>
+            </div>
+            <div class="game-footer">
+                ${matchinfo.gameState.gameFinished? "✔ Завершена" : ""}
+            </div>
+        `;
+        
+        return card
+    }
+
+
     </script>
 </body>
 </html>
