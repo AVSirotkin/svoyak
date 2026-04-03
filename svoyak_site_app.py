@@ -78,6 +78,27 @@ def SvoyakNewMainPage(roomid):
     ActivePalayers = []
     return render_template("FullRoom.html", roomid = roomid, Players = all_players, gameindex = gameindex)
 
+@app.route('/fullroom2/<int:roomid>', subdomain = "svoyak")
+def SvoyakNewMainPage2(roomid):
+    conn = get_db_connection()
+    roomstate = conn.execute(f"SELECT * FROM activerooms WHERE roomid={roomid}").fetchone()
+    print(roomstate)
+    if roomstate is None:
+        return redirect(f"/init/{roomid}", code=302)
+    if roomstate["finished"]:
+        return redirect(f"/view/{roomid}", code=302)
+
+    all_players = conn.execute('SELECT playerid, name FROM players ORDER BY name').fetchall()
+    gi = conn.execute('SELECT max(gameindex) FROM results WHERE roomid == '+str(roomid)).fetchone()
+    if gi["max(gameindex)"] is None:
+        gameindex = 1
+    else:
+        gameindex = gi["max(gameindex)"] + 1
+    ActivePalayers = []
+    return render_template("FullRoomv2.html", roomid = roomid, Players = all_players, gameindex = gameindex)
+
+
+
 @app.route('/view/<int:roomid>', subdomain = "svoyak")
 def SvoyakViewPage(roomid):
     # gamehistory = json.loads(GetResult(roomid)
@@ -732,6 +753,19 @@ def ActivePage():
     return render_template("ActiveView.html", GameHistory = GameHistory, VenueName = "Бар Спонтан")
     # return " "
 
+@app.route('/api/detailed/<int:roomid>/<int:gameindex>', subdomain = "svoyak")
+def detailed(roomid, gameindex, return_json = True):
+    conn = get_db_connection()
+    #todo: move detailed info into other table
+    play_hist = conn.execute("SELECT data FROM log WHERE roomid = ? and event = 'save game result'", (roomid,)).fetchall()
+    res = None
+    for rs in play_hist:
+        rj = json.loads(rs["data"])
+        if rj["gameindex"] == gameindex:
+            if "detailed" in rj:
+                res = rj["detailed"]    
+            break 
+    return(json.dumps(res))
 
 
 def read_cfg():

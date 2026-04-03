@@ -5,6 +5,64 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Результаты турниров</title>
     <style>
+/* Модальное окно */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0,0,0,0.5);
+}
+.modal-content {
+    background-color: #fefefe;
+    margin: 5% auto;
+    padding: 20px;
+    border: 1px solid #888;
+    width: 90%;
+    max-width: 1200px;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+.close {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+}
+.close:hover {
+    color: black;
+}
+.readonly-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+.readonly-table th, .readonly-table td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: center;
+}
+.readonly-table th {
+    background-color: #f2f2f2;
+    position: sticky;
+    top: 0;
+}
+.readonly-table .correct {
+    background-color: #c8e6c9;
+}
+.readonly-table .incorrect {
+    background-color: #ffcdd2;
+}
+.theme-separator {
+    background-color: #e3f2fd;
+    font-weight: bold;
+}
+
         :root {
             --card-width: 320px;
             --primary-color: #3498db;
@@ -448,7 +506,7 @@
                         </div>
                     </div>
                     <div class="game-footer">
-                        ✔ Завершена
+                        ✔ Завершена <button onclick = "showGameDetails({{roomid}}, ${game.gameindex})"> Подробно </button>;
                     </div>
                 `;
                 
@@ -545,6 +603,126 @@
                 return [];
             }
         }
+
+// Функция для открытия модального окна и загрузки данных
+async function showGameDetails(roomId, gameIndex) {
+    const modal = document.getElementById('gameDetailsModal');
+    const modalBody = document.getElementById('modalBody');
+    const modalTitle = document.getElementById('modalTitle');
+    
+    // Показываем загрузку
+    modalTitle.textContent = `Игра ${gameIndex} — загрузка...`;
+    modalBody.innerHTML = '<p>Загрузка данных...</p>';
+    modal.style.display = 'block';
+    
+    try {
+        // Запрос к API (замените URL на ваш эндпоинт)
+        const response = await fetch(`/api/detailed/${roomId}/${gameIndex}`);
+        if (!response.ok) throw new Error('Ошибка загрузки');
+        const data = await response.json();
+        
+        // Отображаем данные
+        renderReadonlyGameTable(data, gameIndex);
+        modalTitle.textContent = `Игра ${gameIndex} — результаты`;
+    } catch (error) {
+        console.error(error);
+        modalBody.innerHTML = `<p style="color:red;">Ошибка загрузки: ${error.message}</p>`;
+    }
+}
+
+// Рендер таблицы только для чтения
+function renderReadonlyGameTable(data, gameIndex) {
+    const { players, scores, answers, date } = data;
+    if (!players || !answers) {
+        document.getElementById('modalBody').innerHTML = '<p>Некорректные данные</p>';
+        return;
+    }
+    
+    // Группируем ответы по блокам (по 5 вопросов в блоке)
+    const questionsPerBlock = 5;
+    const blocks = [];
+    for (let i = 0; i < answers.length; i += questionsPerBlock) {
+        blocks.push(answers.slice(i, i + questionsPerBlock));
+    }
+    
+    let html = `<p><strong>Дата:</strong> ${new Date(date).toLocaleString()}</p>`;
+    html += `<p><strong>Итоговые очки:</strong> ${players.map((p, idx) => `${p}: ${scores[idx]}`).join(', ')}</p>`;
+    html += `<table class="readonly-table">`;
+    
+    // Заголовок с именами игроков
+    html += `<thead><tr><th>Вопрос</th>`;
+    players.forEach(player => {
+        html += `<th>${escapeHtml(player)}</th>`;
+    });
+    html += `</tr></thead><tbody>`;
+    
+    // Проходим по блокам (темам)
+    blocks.forEach((block, blockIdx) => {
+        // Добавляем разделитель темы (если есть theme, иначе "Тема N")
+        const themeName = block[0]?.theme || `Тема ${blockIdx + 1}`;
+        html += `<tr class="theme-separator"><td colspan="${players.length + 1}"><strong>${escapeHtml(themeName)}</strong></td></tr>`;
+        
+        block.forEach((question, qIdx) => {
+            const value = question.value;
+            const playerAnswers = question.playerAnswers;
+            html += `<tr><td>${value}</td>`;
+            playerAnswers.forEach((answer, pIdx) => {
+                let cellClass = '';
+                let cellText = '';
+                if (answer === true) {
+                    cellClass = 'correct';
+                    cellText = `+${value}`;
+                } else if (answer === false) {
+                    cellClass = 'incorrect';
+                    cellText = `-${value}`;
+                } else {
+                    cellText = '';
+                }
+                html += `<td class="${cellClass}">${cellText}</td>`;
+            });
+            html += `</tr>`;
+        });
+    });
+    
+    html += `</tbody></table>`;
+    document.getElementById('modalBody').innerHTML = html;
+}
+
+// Вспомогательная функция для экранирования HTML
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/[&<>]/g, function(m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        return m;
+    });
+}
+
+// Закрытие модального окна
+document.addEventListener('DOMContentLoaded', function() {
+    const modal = document.getElementById('gameDetailsModal');
+    const closeBtn = document.querySelector('#gameDetailsModal .close');
+    if (closeBtn) {
+        closeBtn.onclick = function() { modal.style.display = 'none'; };
+    }
+    window.onclick = function(event) {
+        if (event.target == modal) modal.style.display = 'none';
+    };
+});
+
+
     </script>
+
+    <div id="gameDetailsModal" class="modal">
+    <div class="modal-content">
+        <span class="close">&times;</span>
+        <h2 id="modalTitle">Детали игры</h2>
+        <div id="modalBody">
+            <!-- Сюда будет вставлена таблица -->
+        </div>
+    </div>
+</div>
+
 </body>
 </html>
