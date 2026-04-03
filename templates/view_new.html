@@ -40,29 +40,56 @@
 .readonly-table {
     width: 100%;
     border-collapse: collapse;
-    margin-top: 20px;
+    table-layout: fixed; /* фиксированная ширина столбцов */
 }
 .readonly-table th, .readonly-table td {
     border: 1px solid #ddd;
     padding: 8px;
     text-align: center;
+    vertical-align: top; /* для размещения маленького текста внизу */
+    position: relative;
 }
 .readonly-table th {
     background-color: #f2f2f2;
     position: sticky;
     top: 0;
 }
-.readonly-table .correct {
+/* Первый столбец (номинал вопроса) — ширина 80px */
+.readonly-table th:first-child,
+.readonly-table td:first-child {
+    width: 80px;
+}
+/* Остальные столбцы (игроки) — равномерная ширина */
+.readonly-table th:not(:first-child),
+.readonly-table td:not(:first-child) {
+    width: auto;
+}
+/* Стиль для отображения суммы в правом нижнем углу */
+.cell-score {
+    font-size: 10px;
+    color: #666;
+    display: block;
+    text-align: right;
+    margin-top: 5px;
+}
+.cell-answer {
+    display: block;
+    font-weight: bold;
+}
+.correct {
     background-color: #c8e6c9;
 }
-.readonly-table .incorrect {
+.incorrect {
     background-color: #ffcdd2;
 }
 .theme-separator {
     background-color: #e3f2fd;
     font-weight: bold;
 }
-
+.theme-separator td {
+    text-align: left;
+    padding: 5px 8px;
+}
         :root {
             --card-width: 320px;
             --primary-color: #3498db;
@@ -638,53 +665,75 @@ function renderReadonlyGameTable(data, gameIndex) {
         return;
     }
     
-    // Группируем ответы по блокам (по 5 вопросов в блоке)
     const questionsPerBlock = 5;
     const blocks = [];
     for (let i = 0; i < answers.length; i += questionsPerBlock) {
         blocks.push(answers.slice(i, i + questionsPerBlock));
     }
     
-    let html = `<p><strong>Дата:</strong> ${new Date(date).toLocaleString()}</p>`;
-    html += `<p><strong>Итоговые очки:</strong> ${players.map((p, idx) => `${p}: ${scores[idx]}`).join(', ')}</p>`;
-    html += `<table class="readonly-table">`;
+    // Предварительный расчёт кумулятивных сумм для каждого игрока
+    // cumulativeScores[playerIndex][questionIndex] = сумма очков после ответа на этот вопрос (включая его)
+    const numPlayers = players.length;
+    const numQuestions = answers.length;
+    const cumulativeScores = Array(numPlayers).fill().map(() => Array(numQuestions).fill(0));
     
-    // Заголовок с именами игроков
+    for (let p = 0; p < numPlayers; p++) {
+        let runningSum = 0;
+        for (let q = 0; q < numQuestions; q++) {
+            const answer = answers[q].playerAnswers[p];
+            if (answer === true) {
+                runningSum += answers[q].value;
+            } else if (answer === false) {
+                runningSum -= answers[q].value;
+            }
+            cumulativeScores[p][q] = runningSum;
+        }
+    }
+    
+    let html = `<p><strong>Дата:</strong> ${new Date(date).toLocaleString()}</p>`;
+    html += `<p><strong>Итоговые очки:</strong> ${players.map((p, idx) => `${escapeHtml(p)}: ${scores[idx]}`).join(', ')}</p>`;
+    html += `<div style="overflow-x: auto;"><table class="readonly-table">`;
     html += `<thead><tr><th>Вопрос</th>`;
     players.forEach(player => {
         html += `<th>${escapeHtml(player)}</th>`;
     });
-    html += `</tr></thead><tbody>`;
+    html += `</thead></tr><tbody>`;
     
-    // Проходим по блокам (темам)
+    let questionIndex = 0;
     blocks.forEach((block, blockIdx) => {
-        // Добавляем разделитель темы (если есть theme, иначе "Тема N")
         const themeName = block[0]?.theme || `Тема ${blockIdx + 1}`;
         html += `<tr class="theme-separator"><td colspan="${players.length + 1}"><strong>${escapeHtml(themeName)}</strong></td></tr>`;
         
         block.forEach((question, qIdx) => {
             const value = question.value;
             const playerAnswers = question.playerAnswers;
-            html += `<tr><td>${value}</td>`;
+            html += `<tr>`;
+            html += `<td style="font-weight:bold;">${value}</td>`;
+            
             playerAnswers.forEach((answer, pIdx) => {
                 let cellClass = '';
-                let cellText = '';
+                let answerText = '';
                 if (answer === true) {
                     cellClass = 'correct';
-                    cellText = `+${value}`;
+                    answerText = `+${value}`;
                 } else if (answer === false) {
                     cellClass = 'incorrect';
-                    cellText = `-${value}`;
+                    answerText = `-${value}`;
                 } else {
-                    cellText = '';
+                    answerText = '';
                 }
-                html += `<td class="${cellClass}">${cellText}</td>`;
+                const cumulative = cumulativeScores[pIdx][questionIndex];
+                html += `<td class="${cellClass}">`;
+                html += `<span class="cell-answer">${answerText}</span>`;
+                html += `<span class="cell-score">${cumulative}</span>`;
+                html += `</td>`;
             });
             html += `</tr>`;
+            questionIndex++;
         });
     });
     
-    html += `</tbody></table>`;
+    html += `</tbody></table></div>`;
     document.getElementById('modalBody').innerHTML = html;
 }
 
