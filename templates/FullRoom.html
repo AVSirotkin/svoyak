@@ -291,7 +291,10 @@
         <button onclick = "predict_matches()"> Прогноз </button> <br>
         <button onclick = "FinalizeRoom()"> Завершить бои и определить победителя</button>
         <button onclick = "ClearCurrentGameLog()"> Очистить бой</button>
-        <button onclick = "Info()"> Info</button>
+        <button onclick = "Info()"> Info</button><br>
+        <button onclick="exportState()">💾 Сохранить состояние в файл</button>
+        <input type="file" id="importFileInput" style="display:none" accept=".json" onchange="importState(this.files[0])">
+        <button onclick="document.getElementById('importFileInput').click()">📂 Восстановить состояние из файла</button>
      
         
 
@@ -1842,7 +1845,110 @@
         
         return card
     }
+// Экспорт полного состояния
+function exportState() {
+    const exportData = {
+        version: 1,
+        timestamp: new Date().toISOString(),
+        roomId: gameState.roomId,
+        active: active,                         // список активных игроков
+        oneGameBlockArray: one_game_block_array, // заблокированные на одну игру
+        gameIndex: gameindex,                   // текущий номер игры
+        gameData: gameData,                     // структура вопросов/тем
+        gameState: gameState,                   // текущее состояние игры (ответы, очки, прогресс)
+        allMatches: matchStorage.allMatches     // все сохранённые матчи (история)
+    };
+    
+    const jsonStr = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonStr], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tournament_${gameState.roomId}_${new Date().toISOString().slice(0,19)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    alert('Состояние сохранено в файл');
+}
 
+// Импорт состояния из файла
+async function importState(file) {
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+        try {
+            const imported = JSON.parse(e.target.result);
+            
+            // Проверка версии (опционально)
+            if (!imported.version || imported.version !== 1) {
+                if (!confirm('Файл старой версии. Продолжить загрузку?')) return;
+            }
+            
+            // Подтверждение действия
+            if (!confirm('Восстановление заменит все текущие данные. Продолжить?')) return;
+            
+            // Восстанавливаем основные переменные
+            active = imported.active || [];
+            one_game_block_array = imported.oneGameBlockArray || [];
+            gameindex = imported.gameIndex || 1;
+            
+            // Обновляем gameData (темы, вопросы)
+            Object.assign(gameData, imported.gameData);
+            // Обновляем игроков в gameData
+            if (imported.gameData.players) gameData.players = imported.gameData.players;
+            
+            // Обновляем gameState
+            Object.assign(gameState, imported.gameState);
+            // Восстанавливаем массивы ответов (нужно создать копии)
+            if (imported.gameState.answers) {
+                gameState.answers = imported.gameState.answers.map(q => [...q]);
+            }
+            
+            // Обновляем локальное хранилище матчей
+            matchStorage.allMatches = imported.allMatches || {};
+            matchStorage.saveAllMatches();
+            
+            // Обновляем интерфейс
+            UpdateActivePlayer(active);               // обновить список активных игроков
+            refreshOneGameBlock();                    // обновить блокировки на одну игру
+            
+            // Обновляем поля ввода игроков
+            updatePlayerInputs();
+            update_players_names();                   // обновить gameData.players и таблицу
+            
+            // Перерисовываем таблицу в соответствии с текущим видом
+            if (gameState.horizontalView) {
+                renderHorizontalTable();
+            } else {
+                renderVerticalTable();
+            }
+            
+            // Обновляем очки на панели
+            updateScoresDisplay();
+            
+            // Обновляем номер игры в заголовке
+            document.getElementById("game").innerHTML = "Игра "+ gameindex;
+            
+            // Перезагружаем текущую игру (применит состояние answers, scores и т.д.)
+            loadGame(gameindex);
+            
+            // Обновляем историю игр (если есть)
+            GetGameHistory();
+            
+            // Обновляем веса
+            update_weight();
+            
+            alert('Состояние успешно восстановлено');
+        } catch (err) {
+            console.error(err);
+            alert('Ошибка при чтении файла: ' + err.message);
+        }
+    };
+    reader.readAsText(file);
+}
 
     </script>
 </body>

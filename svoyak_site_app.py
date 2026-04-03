@@ -562,7 +562,7 @@ def CreateRoomApi():
 
     if "rulesid" in data:
         if int(data["rulesid"]) > 0:
-            r = conn.execute(f"SELECT name, parameters FROM basic_rules WHERE rulesid={data["rulesid"]}").fetchone()
+            r = conn.execute(f"SELECT name, parameters FROM basic_rules WHERE rulesid={data['rulesid']}").fetchone()
             if not r is None:
                 rules_name = r["name"]
                 rules_param = r["parameters"]
