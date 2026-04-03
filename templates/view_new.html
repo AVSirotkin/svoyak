@@ -5,6 +5,91 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Результаты турниров</title>
     <style>
+/* Модальное окно */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0,0,0,0.5);
+}
+.modal-content {
+    background-color: #fefefe;
+    margin: 5% auto;
+    padding: 20px;
+    border: 1px solid #888;
+    width: 90%;
+    max-width: 1200px;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+.close {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+}
+.close:hover {
+    color: black;
+}
+.readonly-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed; /* фиксированная ширина столбцов */
+}
+.readonly-table th, .readonly-table td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: center;
+    vertical-align: top; /* для размещения маленького текста внизу */
+    position: relative;
+}
+.readonly-table th {
+    background-color: #f2f2f2;
+    position: sticky;
+    top: 0;
+}
+/* Первый столбец (номинал вопроса) — ширина 80px */
+.readonly-table th:first-child,
+.readonly-table td:first-child {
+    width: 80px;
+}
+/* Остальные столбцы (игроки) — равномерная ширина */
+.readonly-table th:not(:first-child),
+.readonly-table td:not(:first-child) {
+    width: auto;
+}
+/* Стиль для отображения суммы в правом нижнем углу */
+.cell-score {
+    font-size: 10px;
+    color: #666;
+    display: block;
+    text-align: right;
+    margin-top: 5px;
+}
+.cell-answer {
+    display: block;
+    font-weight: bold;
+}
+.correct {
+    background-color: #c8e6c9;
+}
+.incorrect {
+    background-color: #ffcdd2;
+}
+.theme-separator {
+    background-color: #e3f2fd;
+    font-weight: bold;
+}
+.theme-separator td {
+    text-align: left;
+    padding: 5px 8px;
+}
         :root {
             --card-width: 320px;
             --primary-color: #3498db;
@@ -545,6 +630,137 @@
                 return [];
             }
         }
+
+// Функция для открытия модального окна и загрузки данных
+async function showGameDetails(roomId, gameIndex) {
+    const modal = document.getElementById('gameDetailsModal');
+    const modalBody = document.getElementById('modalBody');
+    const modalTitle = document.getElementById('modalTitle');
+    
+    // Показываем загрузку
+    modalTitle.textContent = `Игра ${gameIndex} — загрузка...`;
+    modalBody.innerHTML = '<p>Загрузка данных...</p>';
+    modal.style.display = 'block';
+    
+    try {
+        // Запрос к API (замените URL на ваш эндпоинт)
+        const response = await fetch(`/api/detailed/${roomId}/${gameIndex}`);
+        if (!response.ok) throw new Error('Ошибка загрузки');
+        const data = await response.json();
+        
+        // Отображаем данные
+        renderReadonlyGameTable(data, gameIndex);
+        modalTitle.textContent = `Игра ${gameIndex} — результаты`;
+    } catch (error) {
+        console.error(error);
+        modalBody.innerHTML = `<p style="color:red;">Ошибка загрузки: ${error.message}</p>`;
+    }
+}
+
+// Рендер таблицы только для чтения
+function renderReadonlyGameTable(data, gameIndex) {
+    const { players, scores, answers, date } = data;
+    if (!players || !answers) {
+        document.getElementById('modalBody').innerHTML = '<p>Некорректные данные</p>';
+        return;
+    }
+    
+    const questionsPerBlock = 5;
+    const blocks = [];
+    for (let i = 0; i < answers.length; i += questionsPerBlock) {
+        blocks.push(answers.slice(i, i + questionsPerBlock));
+    }
+    
+    // Предварительный расчёт кумулятивных сумм для каждого игрока
+    // cumulativeScores[playerIndex][questionIndex] = сумма очков после ответа на этот вопрос (включая его)
+    const numPlayers = players.length;
+    const numQuestions = answers.length;
+    const cumulativeScores = Array(numPlayers).fill().map(() => Array(numQuestions).fill(0));
+    
+    for (let p = 0; p < numPlayers; p++) {
+        let runningSum = 0;
+        for (let q = 0; q < numQuestions; q++) {
+            const answer = answers[q].playerAnswers[p];
+            if (answer === true) {
+                runningSum += answers[q].value;
+            } else if (answer === false) {
+                runningSum -= answers[q].value;
+            }
+            cumulativeScores[p][q] = runningSum;
+        }
+    }
+    
+    let html = `<p><strong>Дата:</strong> ${new Date(date).toLocaleString()}</p>`;
+    html += `<p><strong>Итоговые очки:</strong> ${players.map((p, idx) => `${escapeHtml(p)}: ${scores[idx]}`).join(', ')}</p>`;
+    html += `<div style="overflow-x: auto;"><table class="readonly-table">`;
+    html += `<thead><tr><th>Вопрос</th>`;
+    players.forEach(player => {
+        html += `<th>${escapeHtml(player)}</th>`;
+    });
+    html += `</thead></tr><tbody>`;
+    
+    let questionIndex = 0;
+    blocks.forEach((block, blockIdx) => {
+        const themeName = block[0]?.theme || `Тема ${blockIdx + 1}`;
+        html += `<tr class="theme-separator"><td colspan="${players.length + 1}"><strong>${escapeHtml(themeName)}</strong></td></tr>`;
+        
+        block.forEach((question, qIdx) => {
+            const value = question.value;
+            const playerAnswers = question.playerAnswers;
+            html += `<tr>`;
+            html += `<td style="font-weight:bold;">${value}</td>`;
+            
+            playerAnswers.forEach((answer, pIdx) => {
+                let cellClass = '';
+                let answerText = '';
+                if (answer === true) {
+                    cellClass = 'correct';
+                    answerText = `+${value}`;
+                } else if (answer === false) {
+                    cellClass = 'incorrect';
+                    answerText = `-${value}`;
+                } else {
+                    answerText = '';
+                }
+                const cumulative = cumulativeScores[pIdx][questionIndex];
+                html += `<td class="${cellClass}">`;
+                html += `<span class="cell-answer">${answerText}</span>`;
+                html += `<span class="cell-score">${cumulative}</span>`;
+                html += `</td>`;
+            });
+            html += `</tr>`;
+            questionIndex++;
+        });
+    });
+    
+    html += `</tbody></table></div>`;
+    document.getElementById('modalBody').innerHTML = html;
+}
+
+// Вспомогательная функция для экранирования HTML
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/[&<>]/g, function(m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        return m;
+    });
+}
+
+// Закрытие модального окна
+document.addEventListener('DOMContentLoaded', function() {
+    const modal = document.getElementById('gameDetailsModal');
+    const closeBtn = document.querySelector('#gameDetailsModal .close');
+    if (closeBtn) {
+        closeBtn.onclick = function() { modal.style.display = 'none'; };
+    }
+    window.onclick = function(event) {
+        if (event.target == modal) modal.style.display = 'none';
+    };
+});
+
+
     </script>
 </body>
 </html>
