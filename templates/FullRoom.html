@@ -235,140 +235,505 @@
         .plmover {
             width: 40px
         }
+        /* Контейнер сетки */
+        /* .panels-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            padding: 20px;
+            align-items: flex-start;
+        } */
+
+        .panels-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(450px, 1fr));
+            gap: 20px;
+            padding: 20px;
+            align-items: start;
+        }
+
+
+        .panel {
+            flex: 1 1 450px; /* минимум 400px, растягивается */
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            background: white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .panel {
+            position: relative;
+            resize: horizontal;
+            overflow: auto;
+            min-width: 250px;
+        }
+        .panel-header {
+            background: #f5f5f5;
+            padding: 10px;
+            cursor: move; /* если нужен drag & drop для перестановки блоков */
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #ddd;
+        }
+        .panel-title {
+            font-weight: bold;
+        }
+        .panel-expand {
+            background: none;
+            border: none;
+            font-size: 18px;
+            cursor: pointer;
+        }
+        .panel-body {
+            padding: 15px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        /* Модальное окно */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 10000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-container {
+            background: white;
+            width: 90%;
+            max-width: 1200px;
+            max-height: 90%;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+        }
+        .modal-header {
+            padding: 15px;
+            background: #f5f5f5;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+        }
+        .modal-body {
+            padding: 20px;
+            overflow-y: auto;
+        }
+        /* Адаптив: на маленьких экранах блоки скрыты, только кнопки для открытия? 
+        Альтернатива: скрыть panel-body и показывать кнопку "развернуть" */
+        @media (max-width: 768px) {
+            .panel-body {
+                display: none;
+            }
+            .panel-header {
+                background: #e0e0e0;
+            }
+        }
+
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            z-index: 10000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-container {
+            background: white;
+            width: 90%;
+            max-width: 1200px;
+            max-height: 90%;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        .modal-header {
+            padding: 15px;
+            background: #f5f5f5;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-radius: 8px 8px 0 0;
+        }
+        .modal-title {
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 28px;
+            cursor: pointer;
+            line-height: 1;
+        }
+        .modal-body {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        /* Заглушка на месте блока */
+        .panel-placeholder {
+            background: #f0f0f0;
+            border: 2px dashed #aaa;
+            border-radius: 8px;
+            min-height: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #666;
+            font-style: italic;
+        }
+        .panel.dragging {
+            opacity: 0.5;
+            cursor: grabbing;
+        }
+        .panel-header {
+            cursor: grab; /* курсор "захват" при наведении на заголовок */
+        }
+        .panel-header:active {
+            cursor: grabbing;
+        }
+        /* Отключаем перетаскивание текста внутри заголовка */
+        .panel-header {
+            user-select: none;
+        }
+/* Широкий блок (занимает 2 колонки) */
+.panel.wide {
+    grid-column: span 2;
+}
+/* Узкий блок (если нужно, но обычно не требуется) */
+.panel.narrow {
+    grid-column: span 1;
+}
+/* Очень широкий (3 колонки) */
+.panel.extra-wide {
+    grid-column: span 3;
+}
+@media (max-width: 1800px) {
+    .panels-container {
+        grid-template-columns: repeat(3, 1fr);
+    }
+    .panel.wide {
+        grid-column: span 2;
+    }
+}
+@media (max-width: 1200px) {
+    .panels-container {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .panel.wide {
+        grid-column: span 2;
+    }
+}
+@media (max-width: 768px) {
+    .panels-container {
+        grid-template-columns: 1fr;
+    }
+    .panel.wide, .panel.extra-wide {
+        grid-column: span 1;
+    }
+}
+.panel-collapse {
+    transition: transform 0.2s;
+}
+.panel-collapse.rotated {
+    transform: rotate(-90deg);
+}
+.panel-body {
+    transition: all 0.2s ease;
+}
+.panel-body.collapsed {
+    display: none;
+}
+.panel-collapse {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    margin-right: 5px;
+}
+.panel-collapse.rotated {
+    transform: rotate(-90deg);
+}
+
     </style>
 </head>
 <body>
 
-<div>
-    <table>
-        <tr>
-        <td width = 20% valign="top">
-        <div id="page-wrapper">
-        
-            <h1>Список игроков</h1>
-        
-           <label>Игрок для добавления</label> <br>
-           <input type="text" id="player_to_add" list="players_list" placeholder="игрок">
-           <button onclick = "addActive()"> Добавить </button>
-           <datalist id="players_list">
-            {% for player in Players %}
-            <option>{{player["name"]}}</option>
-            {% endfor %}
-           </datalist>
-           
-           <br>
-           <div id="activeplayers"></div>
-           <input placeholder="удалить" id="remove_player" data-type="remove" ondrop="drop_handler(event)" ondragover = "dragsover(event)" onchange="remove_pl(event)">
-           <br>
-           <br>
-           <a href="/admin/{{roomid}}">админка</a>
+<!-- <div> -->
+    <div id="panels-container" class="panels-container">
+        <!-- Блок: Активные игроки -->
+        <div class="panel" id="panel-players" data-title="Игроки">
+            <div class="panel-header" draggable="true" 
+                ondragstart="panelDragStart(event)" 
+                ondragend="panelDragEnd(event)">
+                
+                <span class="panel-title">Список игроков</span>
+                <button class="panel-collapse" title="Свернуть/развернуть">▼</button>
+                <button class="panel-expand">⛶</button>
+            </div>
+            <div class="panel-body">
+                <label>Игрок для добавления</label><br>
+                <input type="text" id="player_to_add" list="players_list" placeholder="игрок">
+                <button onclick="addActive()">Добавить</button>
+                <datalist id="players_list">{% for player in Players %}<option>{{player["name"]}}</option>{% endfor %}</datalist>
+                <div id="activeplayers">
+                    <div id="active_players_list"></div>
+                </div>
+            <input placeholder="удалить" id="remove_player" data-type="remove" ondrop="drop_handler(event)" ondragover = "dragsover(event)" onchange="remove_pl(event)">
+            <br>
+            <br>
+            <a href="/admin/{{roomid}}">админка</a>
 
 
-           <hr>
-            <a href="/view/{{roomid}}">Подробные результаты</a>
-            <div id = "GameStory">
-            
+            <hr>
+                <a href="/view/{{roomid}}">Подробные результаты</a>
+                <div id = "GameStory">
+                
+                </div>
+            </div>
+        </div>
+        <!-- Блок: Текущий матч (ввод игроков и счёт) -->
+        <div class="panel" id="panel-match" data-title="Матч">
+            <div class="panel-header" draggable="true" 
+                ondragstart="panelDragStart(event)" 
+                ondragend="panelDragEnd(event)">
+                
+                <span class="panel-title">Текущая игра</span>
+                <button class="panel-collapse" title="Свернуть/развернуть">▼</button>
+                <button class="panel-expand">⛶</button>
+            </div>
+
+            <div class="panel-body">
+                <div id="active_game_field">
+                    <h3 id="game">Игра 1</h3>
+                    <table id="player_table">
+                        <tr draggable="false" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><button onclick = "(function(){document.getElementById('player1').value = '';document.getElementById('score1').value = ''})()">🗑</button><input type="text" class = "player_input" data-type = "players" id="player1" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 1"><input type="int" class = "player_input_score" id="score1" placeholder="счет" tabindex = 5 size = 5pt></td><td><button class="plmover" onclick = "pl_move(1,1)"> ⬇ </button></td><td><button class="plmover" onclick = "pl_move(1,2)"> ⬇⬇</button></td><td><button class="plmover" onclick = "pl_move(1,3)">⬇⬇⬇</button></td></tr>
+                        <tr draggable="false" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><button onclick = "(function(){document.getElementById('player2').value = '';document.getElementById('score2').value = ''})()">🗑</button><input type="text" class = "player_input" data-type = "players" id="player2" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 2"><input type="int" class = "player_input_score" id="score2" placeholder="счет" tabindex = 5 size = 5pt></td><td><button class="plmover" onclick = "pl_move(2,-1)"> ⬆ </button></td><td><button class="plmover" onclick = "pl_move(2,1)"> ⬇</button></td><td><button class="plmover" onclick = "pl_move(2,2)">⬇⬇</button></td></tr>
+                        <tr draggable="false" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><button onclick = "(function(){document.getElementById('player3').value = '';document.getElementById('score3').value = ''})()">🗑</button><input type="text" class = "player_input" data-type = "players" id="player3" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 3"><input type="int" class = "player_input_score" id="score3" placeholder="счет" tabindex = 5 size = 5pt></td><td><button class="plmover" onclick = "pl_move(3,-2)"> ⬆⬆ </button></td><td><button class="plmover" onclick = "pl_move(3,-1)"> ⬆</button></td><td><button class="plmover" onclick = "pl_move(3,1)">⬇</button></td></tr>
+                        <tr draggable="false" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><button onclick = "(function(){document.getElementById('player4').value = '';document.getElementById('score4').value = ''})()">🗑</button><input type="text" class = "player_input" data-type = "players" id="player4" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 4"><input type="int" class = "player_input_score" id="score4" placeholder="счет" tabindex = 5 size = 5pt></td><td><button class="plmover" onclick = "pl_move(4,-3)"> ⬆⬆⬆ </button></td><td><button class="plmover" onclick = "pl_move(4,-2)">⬆⬆</button></td><td><button class="plmover" onclick = "pl_move(4,-1)">⬆</button></td></tr>
+                    </table>
+                </div>
+                <button onclick = "AddResult()"> Внести результат </button><button onclick = "FillPositions()"> Заполнить игроков </button><button onclick = "ClearPlayers()"> Очистить </button>
+                <button onclick = "predict_matches()"> Прогноз </button> <br>
+                <button onclick = "FinalizeRoom()"> Завершить бои и определить победителя</button>
+                <button onclick = "ClearCurrentGameLog()"> Очистить бой</button>
+                <button onclick = "Info()"> Info</button><br>
+                <button onclick="exportState()">💾 Сохранить состояние в файл</button>
+                <input type="file" id="importFileInput" style="display:none" accept=".json" onchange="importState(this.files[0])">
+                <button onclick="document.getElementById('importFileInput').click()">📂 Восстановить состояние из файла</button>
+            </div>
+        </div>
+
+        <!-- Блок: Таблица результатов викторины -->
+        <div class="panel wide" id="panel-quiz" data-title="Викторина">
+            <div class="panel-header" draggable="true" 
+                ondragstart="panelDragStart(event)" 
+                ondragend="panelDragEnd(event)">
+                <span class="panel-title">Ход игры</span>
+                <button class="panel-collapse" title="Свернуть/развернуть">▼</button>
+                <button class="panel-expand">⛶</button>
             </div>
             
-        </div>
-        
-        <datalist id="active_players_list">
-        </datalist>
-        </td>
-        
-        <td width="50%" valign="top">
-        
-        <div id="active_game_field">
-            <h3 id="game">Игра 1</h3>
-            <table id="player_table">
-           <tr draggable="false" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><button onclick = "(function(){document.getElementById('player1').value = '';document.getElementById('score1').value = ''})()">🗑</button><input type="text" class = "player_input" data-type = "players" id="player1" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 1"><input type="int" class = "player_input_score" id="score1" placeholder="счет" tabindex = 5 size = 5pt></td><td><button class="plmover" onclick = "pl_move(1,1)"> ⬇ </button></td><td><button class="plmover" onclick = "pl_move(1,2)"> ⬇⬇</button></td><td><button class="plmover" onclick = "pl_move(1,3)">⬇⬇⬇</button></td></tr>
-           <tr draggable="false" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><button onclick = "(function(){document.getElementById('player2').value = '';document.getElementById('score2').value = ''})()">🗑</button><input type="text" class = "player_input" data-type = "players" id="player2" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 2"><input type="int" class = "player_input_score" id="score2" placeholder="счет" tabindex = 5 size = 5pt></td><td><button class="plmover" onclick = "pl_move(2,-1)"> ⬆ </button></td><td><button class="plmover" onclick = "pl_move(2,1)"> ⬇</button></td><td><button class="plmover" onclick = "pl_move(2,2)">⬇⬇</button></td></tr>
-           <tr draggable="false" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><button onclick = "(function(){document.getElementById('player3').value = '';document.getElementById('score3').value = ''})()">🗑</button><input type="text" class = "player_input" data-type = "players" id="player3" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 3"><input type="int" class = "player_input_score" id="score3" placeholder="счет" tabindex = 5 size = 5pt></td><td><button class="plmover" onclick = "pl_move(3,-2)"> ⬆⬆ </button></td><td><button class="plmover" onclick = "pl_move(3,-1)"> ⬆</button></td><td><button class="plmover" onclick = "pl_move(3,1)">⬇</button></td></tr>
-           <tr draggable="false" ondragstart='tab_drag_start()' ondragover='tab_drag_dragover()' ondragend='tab_drag_end()'><td><button onclick = "(function(){document.getElementById('player4').value = '';document.getElementById('score4').value = ''})()">🗑</button><input type="text" class = "player_input" data-type = "players" id="player4" ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 4"><input type="int" class = "player_input_score" id="score4" placeholder="счет" tabindex = 5 size = 5pt></td><td><button class="plmover" onclick = "pl_move(4,-3)"> ⬆⬆⬆ </button></td><td><button class="plmover" onclick = "pl_move(4,-2)">⬆⬆</button></td><td><button class="plmover" onclick = "pl_move(4,-1)">⬆</button></td></tr>
-            </table>
-         </div>
-        <button onclick = "AddResult()"> Внести результат </button><button onclick = "FillPositions()"> Заполнить игроков </button><button onclick = "ClearPlayers()"> Очистить </button>
-        <button onclick = "predict_matches()"> Прогноз </button> <br>
-        <button onclick = "FinalizeRoom()"> Завершить бои и определить победителя</button>
-        <button onclick = "ClearCurrentGameLog()"> Очистить бой</button>
-        <button onclick = "Info()"> Info</button><br>
-        <button onclick="exportState()">💾 Сохранить состояние в файл</button>
-        <input type="file" id="importFileInput" style="display:none" accept=".json" onchange="importState(this.files[0])">
-        <button onclick="document.getElementById('importFileInput').click()">📂 Восстановить состояние из файла</button>
-     
-        
-
-    <div class="header">
-        <div class="mode-buttons">
-            <button id="toggleViewBtn" class="player-button view-mode-button">Горизонтальное отображение</button>
-        </div>
-        <div class="player-scores" id="playerScores"></div>
-    </div>
+            <div class="panel-body">
+                <div class="mode-buttons">
+                    <button id="toggleViewBtn" class="player-button view-mode-button">Горизонтальное отображение</button>
+                </div>
+            
+                <div class="player-scores" id="playerScores"></div>
+            
+                <div class="table-container">
+                    <table class="score-table vertical" id="scoreTable">
+                        <thead>
+                            <tr id="headerRow"></tr>
+                        </thead>
+                        <tbody id="tableBody"></tbody>
+                    </table>
+                </div>
+            
+                <div id="gameOverMessage" class="game-over" style="display: none;"></div>
+                <div id="warningMessage" class="warning" style="display: none;"></div>
+                <button id="saveResultsBtn" class="save-results" style="display: none;">Сохранить результаты</button>
     
-    <div class="table-container">
-        <table class="score-table vertical" id="scoreTable">
-            <thead>
-                <tr id="headerRow"></tr>
-            </thead>
-            <tbody id="tableBody"></tbody>
-        </table>
-    </div>
-    
-    <div id="gameOverMessage" class="game-over" style="display: none;"></div>
-    <div id="warningMessage" class="warning" style="display: none;"></div>
-    <button id="saveResultsBtn" class="save-results" style="display: none;">Сохранить результаты</button>
-    
-    <div class="controls">
-        <div class="question-info" id="questionInfo"></div>
-        <div class="control-buttons" id="controlButtons">
-            <!-- Кнопки будут добавлены через JavaScript -->
+                <div class="controls">
+                    <div class="question-info" id="questionInfo"></div>
+                    <div class="control-buttons" id="controlButtons">
+                    <!-- Кнопки будут добавлены через JavaScript -->
+                    </div>
+                    <div style="text-align: center; margin-top: 15px;">
+                        <button id="nextQuestionBtn" class="next-button">Следующий вопрос (0)</button>
+                        <button id="editModeBtn" style="margin-left: 10px;" class="player-button">Режим исправления</button>
+                    </div>
+                </div>
+
+            </div>
         </div>
-        <div style="text-align: center; margin-top: 15px;">
-            <button id="nextQuestionBtn" class="next-button">Следующий вопрос (0)</button>
-            <button id="editModeBtn" style="margin-left: 10px;" class="player-button">Режим исправления</button>
+
+        <!-- Блок: Блокировка на одну игру -->
+        <div class="panel" id="panel-block" data-title="Блокировки">
+            <div class="panel-header" draggable="true" 
+                ondragstart="panelDragStart(event)" 
+                ondragend="panelDragEnd(event)">
+                <span class="panel-title">Блокировка на одну игру</span>
+                <button class="panel-collapse" title="Свернуть/развернуть">▼</button>
+                <button class="panel-expand">⛶</button>
+            </div>
+            <div class="panel-body">
+                <div id="blocked_for_one_game" data-type="one_game_block" ondrop="drop_handler(event)" ondragover="dragsover(event)">
+                    <list id="one_game_block_list" data-type="one_game_block"></list>
+                </div>
+            </div>
+        </div>
+
+        <!-- Блок: Веса игроков -->
+        <div class="panel" id="panel-weights" data-title="Веса">
+            <div class="panel-header" draggable="true" 
+                ondragstart="panelDragStart(event)" 
+                ondragend="panelDragEnd(event)">
+                <span class="panel-title">Веса</span>
+                <button class="panel-collapse" title="Свернуть/развернуть">▼</button>
+                <button class="panel-expand">⛶</button>
+            </div>
+            <div class="panel-body">
+                <button onclick="update_weight()">Веса</button>
+                <table id="weight"></table>
+            </div>
         </div>
     </div>
 
-</td>
-<td valign="top">
+    <!-- Модальное окно (общее) -->
+    <div id="modal-overlay" class="modal-overlay" style="display: none;">
+        <div class="modal-container">
+            <div class="modal-header">
+                <span class="modal-title"></span>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
 
-<div hei style="border:dotted; min-height:150px" id="blocked_for_one_game" data-type="one_game_block" ondrop="drop_handler(event);" ondragover="dragsover(event);">
-    Блокировка на одну игру:
-    <list id="one_game_block_list" data-type="one_game_block"></list>
-</div>
+            </div>
+        </div>
+    </div>
+<!-- </div>    -->
 
+<!-- <button onclick = "show_saved()"> Сохраненные игры </button> 
 
-
-
-<div id="weight_info">
-<button onclick = "update_weight()"> Веса </button> 
-Табличка текущих весов
-
-<table id="weight">
-
-</table>
-</div>   
-
-<button onclick = "show_saved()"> Сохраненные игры </button> 
-
-<div class= "local-saved-info" id="local_saved_info">
-
-</div>
-
-</td>
-
-</tr>
-</table>
-</div>
+<div class= "local-saved-info" id="local_saved_info"></div> -->
 
 
-<div id="StatePrint">
 
-</div>
+<!-- <div id="StatePrint">
+
+</div> -->
 
 
 
     <script>
+        let draggedPanel = null;
+
+        function panelDragStart(event) {
+            // Разрешаем перетаскивание, только если цель - сам заголовок или его дети (но не кнопка)
+            const header = event.target.closest('.panel-header');
+            if (!header) {
+                event.preventDefault();
+                return false;
+            }
+            // Если цель - кнопка развёртывания, отменяем перетаскивание
+            if (event.target.closest('.panel-expand')) {
+                event.preventDefault();
+                return false;
+            }
+            
+            draggedPanel = header.closest('.panel');
+            if (!draggedPanel) return;
+            
+            event.dataTransfer.setData('text/plain', draggedPanel.id);
+            event.dataTransfer.effectAllowed = 'move';
+            draggedPanel.classList.add('dragging');
+        }
+        function panelDragOver(event) {
+            event.preventDefault(); // Разрешаем сброс
+            event.dataTransfer.dropEffect = 'move';
+        }
+
+        function panelDrop(event) {
+            event.preventDefault();
+            const targetPanel = event.target.closest('.panel');
+            if (!targetPanel || !draggedPanel || targetPanel === draggedPanel) return;
+            
+            // Меняем местами блоки в DOM
+            const container = document.getElementById('panels-container');
+            const panels = Array.from(container.children);
+            const draggedIndex = panels.indexOf(draggedPanel);
+            const targetIndex = panels.indexOf(targetPanel);
+            
+            if (draggedIndex < targetIndex) {
+                targetPanel.after(draggedPanel);
+            } else {
+                targetPanel.before(draggedPanel);
+            }
+            
+            // Сохраняем новый порядок
+            savePanelsOrder();
+            
+            draggedPanel.classList.remove('dragging');
+            draggedPanel = null;
+        }
+
+        function panelDragEnd(event) {
+            if (draggedPanel) {
+                draggedPanel.classList.remove('dragging');
+                draggedPanel = null;
+            }
+        }
+
+        // Сохранение порядка блоков в localStorage
+        function savePanelsOrder() {
+            const container = document.getElementById('panels-container');
+            const panelIds = Array.from(container.querySelectorAll('.panel')).map(panel => panel.id);
+            localStorage.setItem('panels_order', JSON.stringify(panelIds));
+        }
+
+        // Восстановление порядка блоков при загрузке
+        function restorePanelsOrder() {
+            const savedOrder = localStorage.getItem('panels_order');
+            if (!savedOrder) return;
+            
+            const container = document.getElementById('panels-container');
+            const panelIds = JSON.parse(savedOrder);
+            const panelsMap = new Map();
+            container.querySelectorAll('.panel').forEach(panel => {
+                panelsMap.set(panel.id, panel);
+            });
+            
+            panelIds.forEach(panelId => {
+                const panel = panelsMap.get(panelId);
+                if (panel) container.appendChild(panel); // перемещаем в конец в нужном порядке
+            });
+        }
+
+        // Инициализация drag & drop для контейнера
+        document.getElementById('panels-container').addEventListener('dragover', panelDragOver);
+        document.getElementById('panels-container').addEventListener('drop', panelDrop);
+
+        // Восстанавливаем порядок при загрузке страницы
+        document.addEventListener('DOMContentLoaded', () => {
+            restorePanelsOrder();
+        });
+
+
+
+
+
     // Добавляем систему хранения с привязкой к комнате и матчу
         class MatchStorage {
             constructor() {
@@ -1274,6 +1639,7 @@
         }
     
     function UpdateActivePlayer(activelist){
+        
         var listDiv = document.getElementById('activeplayers');
         var listAct = document.getElementById('active_players_list');
         listDiv.innerHTML = "";
@@ -1950,6 +2316,162 @@ async function importState(file) {
     reader.readAsText(file);
 }
 
+
+// Переменные для хранения состояния перемещаемого блока
+let movedPanel = null;          // сам блок
+let originalParent = null;      // родитель, откуда забрали
+let placeholder = null;         // заглушка
+
+// Функция открытия модального окна с переносом блока
+// Функция открытия модального окна с переносом блока (исправленная)
+function expandPanel(panelId) {
+    const panel = document.getElementById(panelId);
+    if (!panel) return;
+
+    // Если блок уже находится внутри модального окна — ничего не делаем
+    if (panel.closest('.modal-body')) {
+        return;
+    }
+
+    // Запоминаем оригинальное место
+    originalParent = panel.parentNode;
+    // Создаём заглушку
+    placeholder = document.createElement('div');
+    placeholder.className = 'panel-placeholder';
+    placeholder.style.height = panel.offsetHeight + 'px';
+    placeholder.style.width = panel.offsetWidth + 'px';
+    placeholder.innerHTML = 'Блок развёрнут в модальном окне';
+    originalParent.replaceChild(placeholder, panel);
+
+    // Скрываем кнопку развёртывания внутри блока
+    const expandBtn = panel.querySelector('.panel-expand');
+    if (expandBtn) expandBtn.style.display = 'none';
+
+    const body = panel.querySelector('.panel-body');
+    const collapseBtn = panel.querySelector('.panel-collapse');
+    if (body && body.classList.contains('collapsed')) {
+        body.classList.remove('collapsed');
+        if (collapseBtn) collapseBtn.classList.remove('rotated');
+        // Сохраняем состояние (необязательно)
+        saveCollapseState(panel.id, false);
+    }
+
+    // Перемещаем блок в модальное окно
+    const modalBody = document.querySelector('#modal-overlay .modal-body');
+    modalBody.innerHTML = '';
+    modalBody.appendChild(panel);
+
+    // Устанавливаем заголовок модалки
+    const panelTitle = panel.querySelector('.panel-title')?.innerText || 'Блок';
+    document.querySelector('#modal-overlay .modal-title').innerText = panelTitle;
+
+    document.getElementById('modal-overlay').style.display = 'flex';
+    movedPanel = panel;
+}
+
+// Функция закрытия и возврата блока (исправленная)
+function closeModalAndRestore() {
+    const modalBody = document.querySelector('#modal-overlay .modal-body');
+    const panel = modalBody.querySelector('.panel');
+    if (panel && placeholder && originalParent) {
+        // Показываем кнопку развёртывания обратно
+        const expandBtn = panel.querySelector('.panel-expand');
+        if (expandBtn) expandBtn.style.display = '';
+        // Возвращаем блок на место заглушки
+        originalParent.replaceChild(panel, placeholder);
+        placeholder = null;
+        originalParent = null;
+        movedPanel = null;
+    }
+    document.getElementById('modal-overlay').style.display = 'none';
+}
+// Навешиваем обработчики на все кнопки "Развернуть" (они должны быть у каждого блока)
+document.querySelectorAll('.panel-expand').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        const panel = btn.closest('.panel');
+        if (panel && panel.id) {
+            expandPanel(panel.id);
+        }
+    });
+});
+
+// Закрытие по крестику
+document.querySelector('.modal-close').addEventListener('click', closeModalAndRestore);
+// Закрытие по клику на оверлей (но не на контент)
+document.getElementById('modal-overlay').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('modal-overlay')) {
+        closeModalAndRestore();
+    }
+});
+
+// Функция сворачивания/разворачивания блока
+function togglePanelCollapse(panelId) {
+    const panel = document.getElementById(panelId);
+    if (!panel) return;
+    const body = panel.querySelector('.panel-body');
+    const collapseBtn = panel.querySelector('.panel-collapse');
+    if (!body || !collapseBtn) return;
+    
+    body.classList.toggle('collapsed');
+    collapseBtn.classList.toggle('rotated');
+    
+    // Сохраняем состояние свернутости
+    saveCollapseState(panelId, body.classList.contains('collapsed'));
+}
+
+// Сохранение состояния в localStorage
+function saveCollapseState(panelId, isCollapsed) {
+    let collapseStates = localStorage.getItem('panels_collapsed');
+    collapseStates = collapseStates ? JSON.parse(collapseStates) : {};
+    collapseStates[panelId] = isCollapsed;
+    localStorage.setItem('panels_collapsed', JSON.stringify(collapseStates));
+}
+
+// Восстановление состояния при загрузке
+function restoreCollapseStates() {
+    const collapseStates = localStorage.getItem('panels_collapsed');
+    if (!collapseStates) return;
+    const states = JSON.parse(collapseStates);
+    for (const [panelId, isCollapsed] of Object.entries(states)) {
+        const panel = document.getElementById(panelId);
+        if (panel) {
+            const body = panel.querySelector('.panel-body');
+            const collapseBtn = panel.querySelector('.panel-collapse');
+            if (body && collapseBtn) {
+                if (isCollapsed) {
+                    body.classList.add('collapsed');
+                    collapseBtn.classList.add('rotated');
+                } else {
+                    body.classList.remove('collapsed');
+                    collapseBtn.classList.remove('rotated');
+                }
+            }
+        }
+    }
+}
+
+// Навешиваем обработчики на все кнопки сворачивания
+function bindCollapseButtons() {
+    document.querySelectorAll('.panel-collapse').forEach(btn => {
+        // Убираем старый обработчик, чтобы не дублировать
+        btn.removeEventListener('click', handleCollapseClick);
+        btn.addEventListener('click', handleCollapseClick);
+    });
+}
+
+function handleCollapseClick(e) {
+    e.stopPropagation(); // Чтобы не конфликтовать с перетаскиванием
+    const panel = e.target.closest('.panel');
+    if (panel && panel.id) {
+        togglePanelCollapse(panel.id);
+    }
+}
+
+// При инициализации страницы
+document.addEventListener('DOMContentLoaded', () => {
+    bindCollapseButtons();
+    restoreCollapseStates();
+});
     </script>
 </body>
 </html>
