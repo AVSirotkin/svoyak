@@ -111,7 +111,7 @@ def SvoyakViewPage(roomid):
 
     if "brackets" in rules:
         if not rules["brackets"] is None:
-            return redirect(f"/viewbrackets/{roomid}", code=302)
+            return SvoyakViewBracketsPage(roomid)
 
 
     conn = get_db_connection()
