@@ -533,7 +533,7 @@
                         </div>
                     </div>
                     <div class="game-footer">
-                        ✔ Завершена
+                        ✔ Завершена <button onclick = "showGameDetails({{roomid}}, ${game.gameindex})"> Подробно </button>;
                     </div>
                 `;
                 
@@ -762,5 +762,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
     </script>
+
+    <div id="gameDetailsModal" class="modal">
+    <div class="modal-content">
+        <span class="close">&times;</span>
+        <h2 id="modalTitle">Детали игры</h2>
+        <div id="modalBody">
+            <!-- Сюда будет вставлена таблица -->
+        </div>
+    </div>
+</div>
+
 </body>
 </html>
