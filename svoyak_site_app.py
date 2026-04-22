@@ -76,19 +76,39 @@ def SvoyakNewMainPage(roomid):
     else:
         gameindex = gi["max(gameindex)"] + 1
     ActivePalayers = []
-    return render_template("FullRoom.html", roomid = roomid, Players = all_players, gameindex = gameindex)
+
+    rules = get_room_rules(roomid)
+    # with open("12-2-azart.json", "rt", encoding="UTF8") as fo:
+    #     rules["brackets"] = json.load(fo)    
+
+    return render_template("FullRoom.html", roomid = roomid, Players = all_players, gameindex = gameindex, rules = rules)
 
 @app.route('/view/<int:roomid>', subdomain = "svoyak")
 def SvoyakViewPage(roomid):
-    # gamehistory = json.loads(GetResult(roomid)
     
     rules = get_room_rules(roomid)
-    
+
+    if "brackets" in rules:
+        if not rules["brackets"] is None:
+            return redirect(f"/viewbrackets/{roomid}", code=302)
+
+
     conn = get_db_connection()
     all_players_stats = conn.execute('SELECT name, COUNT(position) as games, sum(position) as position, sum(score) as score, sum(points) as points FROM results WHERE roomid == '+str(roomid)+' AND gamenumber <= '+ str(rules["parameters"]["basic_game_number"]) +' GROUP BY name ORDER BY points DESC').fetchall()
     
     all_places = pd.Series([r["points"] for r in all_players_stats]).rank(ascending=False).to_list()
     return render_template("view_new.html", roomid = roomid, PlayersStat = all_players_stats, places = all_places, rules = rules)
+
+@app.route('/viewbrackets/<int:roomid>', subdomain = "svoyak")
+def SvoyakViewBracketsPage(roomid):
+    rules = get_room_rules(roomid)
+
+    # print(rules)
+    if "brackets" in rules:
+        if not rules["brackets"] is None:
+            return render_template("view_brackets.html", roomid = roomid, rules = rules)
+
+    return "Нет сетки для этой комнаты"
 
 
 

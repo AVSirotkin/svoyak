@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Результаты турниров</title>
+
+
+{% block styles %}
+    <!-- <link rel="stylesheet" href="{{ url_for('static', filename='css/bracket.css') }}"> -->
+{% endblock %}
+
+    <style>
+.brackets {
+    display: flex;
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 20px;
+    gap: 20px;
+}
+.bracket-round {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+.match-card {
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    padding: 10px;
+    min-width: 200px;
+    background: white;
+}
+.match-title {
+    font-weight: bold;
+    text-align: center;
+    margin-bottom: 8px;
+}
+.participant-slot {
+    padding: 4px;
+    margin: 2px 0;
+    background: #f5f5f5;
+    text-align: center;
+}
+.match-results {
+    margin-top: 8px;
+    font-size: 12px;
+    color: #555;
+    text-align: center;
+}
+.match-card.virtual {
+    background: #fafafa;
+    border-style: dashed;
+} 
+
+        /* Стили для карточек игр */
+        .games-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(var(--card-width), 1fr));
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+        
+        .game-card {
+            border-radius: 8px;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.1);
+            padding: 12px;
+            background-color: white;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .game-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 5px 10px rgba(0,0,0,0.15);
+        }
+        
+        .game-card.past {
+            border-left: 4px solid var(--winner-color);
+        }
+        
+        .game-card.future {
+            border-left: 4px solid #f39c12;
+        }
+        
+        .game-card.tournament {
+            border-left: 4px solid #e74c3c;
+        }
+        
+        .game-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .game-id {
+            font-weight: bold;
+            color: var(--primary-color);
+            font-size: 1.1rem;
+        }
+        
+        .game-date {
+            color: #7f8c8d;
+            font-size: 0.85rem;
+        }
+        
+        .game-type {
+            font-size: 0.75rem;
+            background-color: #e0e0e0;
+            padding: 2px 8px;
+            border-radius: 10px;
+            margin-left: 8px;
+        }
+        
+        .game-type.tournament {
+            background-color: #fde8e8;
+            color: #e74c3c;
+        }
+        
+        .gc-players-container {
+            display: flex;
+        }
+        
+        .gc-players-column {
+            flex-grow: 1;
+        }
+        
+        .gc-player-row {
+            display: flex;
+            margin-bottom: 6px;
+            align-items: center;
+        }
+        
+        .gc-player-place {
+            width: 24px;
+            text-align: center;
+            font-weight: bold;
+            margin-right: 8px;
+            flex-shrink: 0;
+        }
+        
+        .place-1 { color: #f1c40f; }
+        .place-2 { color: #95a5a6; }
+        .place-3 { color: #cd7f32; }
+        .place-4 { color: #7f8c8d; }
+        
+        .gc-player-name {
+            flex-grow: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            min-width: 100px;
+        }
+        
+        .gc-player-score {
+            width: 50px;
+            text-align: right;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            color: var(--secondary-color);
+        }
+        
+        .gc-player-points {
+            width: 50px;
+            text-align: right;
+            font-size: 0.85rem;
+            color: #7f8c8d;
+        }
+        
+        .positive-score {
+            color: #27ae60;
+        }
+        
+        .negative-score {
+            color: #e74c3c;
+        }
+        
+        .game-footer {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: #7f8c8d;
+            margin-top: 10px;
+            padding-top: 8px;
+            border-top: 1px solid #eee;
+        }
+        seed-card {
+    background: #fef7e0;
+    border: 2px solid #ffb74d;
+    border-radius: 12px;
+    padding: 12px;
+    min-width: 220px;
+}
+.seed-players-list {
+    margin: 10px 0;
+}
+.seed-player-row {
+    display: flex;
+    padding: 6px;
+    border-bottom: 1px solid #f0e0c0;
+}
+.seed-slot {
+    width: 30px;
+    font-weight: bold;
+    color: #e67e22;
+}
+.seed-name {
+    flex: 1;
+}
+.seed-refresh-btn {
+    background: #ff9800;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 12px;
+    cursor: pointer;
+    width: 100%;
+    margin-top: 8px;
+}
+   </style>
+
+
+</head>
+<body>
+
+<div class="brackets" id="brackets">
+
+</div>
+
+
+{% block scripts %}
+    <script src="{{ url_for('static', filename='js/bracket-renderer.js') }}"></script>
+{% endblock %}
+
+<script>
+
+async function GetGameHistory() {
+    console.log("/gameresult/{{roomid}}");
+    try {
+        const response = await fetch("/gameresult/{{roomid}}", {
+            headers: { 'Accept': 'application/json' },
+            method: "GET"
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log("history", data);
+        
+        // Гарантируем, что возвращаем массив
+        return Array.isArray(data) ? data : [];
+    } catch (err) {
+        console.error("GetGameHistory failed:", err);
+        return []; // при любой ошибке возвращаем пустой массив
+    }
+}
+
+
+async function redrawBrackets(){
+    const rules = {{rules | tojson }}
+    console.log(rules.brackets)
+
+    if (rules.brackets) {
+
+        if (typeof rules.brackets == 'string')
+        {
+            rules.brackets = JSON.parse(rules.brackets)
+        }
+        const activePlayers = await fetch('/activeplayers/{{roomid}}').then(r => r.json());
+        const playerNames = activePlayers.map(p => p.name);
+        console.log(playerNames)
+        
+        GetGameHistory().then(gameArray => {
+            console.log("Полученный массив:", gameArray);
+
+            renderBracket(rules.brackets, gameArray, 'brackets', {
+                readOnly: true,
+                activePlayers: playerNames,
+                onShowDetails: (matchId, data) => {
+                   showMatchDetailsModal(data);
+                }}
+            );
+
+
+        });
+    
+    };
+}
+
+
+document.addEventListener('DOMContentLoaded', () => {
+    redrawBrackets()
+});
+
+</script>
+</body>
+</html>
+
+

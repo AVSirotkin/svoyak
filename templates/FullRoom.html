@@ -8,7 +8,7 @@
         body {
             font-family: Arial, sans-serif;
             margin: 0;
-            padding: 20px;
+            padding: 5px;
             display: flex;
             flex-direction: column;
             height: 100vh;
@@ -222,7 +222,7 @@
         .game-card {
             border-radius: 8px;
             box-shadow: 0 3px 6px rgba(0,0,0,0.1);
-            padding: 12px;
+            padding: 5px;
             background-color: white;
             display: flex;
             flex-direction: column;
@@ -247,8 +247,8 @@
         .panels-container {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(450px, 1fr));
-            gap: 20px;
-            padding: 20px;
+            gap: 5px;
+            padding: 5px;
             align-items: start;
         }
 
@@ -256,20 +256,17 @@
         .panel {
             flex: 1 1 450px; /* минимум 400px, растягивается */
             border: 1px solid #ccc;
-            border-radius: 8px;
+            border-radius: 2px;
             background: white;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            overflow: hidden;
-        }
-        .panel {
             position: relative;
-            resize: horizontal;
+            resize: both;
             overflow: auto;
             min-width: 250px;
         }
         .panel-header {
             background: #f5f5f5;
-            padding: 10px;
+            padding: 2px;
             cursor: move; /* если нужен drag & drop для перестановки блоков */
             display: flex;
             justify-content: space-between;
@@ -282,12 +279,12 @@
         .panel-expand {
             background: none;
             border: none;
-            font-size: 18px;
+            font-size: 14px;
             cursor: pointer;
         }
         .panel-body {
-            padding: 15px;
-            max-height: 600px;
+            padding: 4px;
+            max-height: 800px;
             overflow-y: auto;
         }
         /* Модальное окно */
@@ -381,6 +378,7 @@
             overflow-y: auto;
             flex: 1;
         }
+
         /* Заглушка на месте блока */
         .panel-placeholder {
             background: #f0f0f0;
@@ -451,6 +449,8 @@
 }
 .panel-body {
     transition: all 0.2s ease;
+    overflow-y: auto;
+    max-height: 70vh;
 }
 .panel-body.collapsed {
     display: none;
@@ -465,10 +465,227 @@
 .panel-collapse.rotated {
     transform: rotate(-90deg);
 }
+.brackets {
+    display: flex;
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 20px;
+    gap: 20px;
+}
+.bracket-round {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+.match-card {
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    padding: 10px;
+    min-width: 200px;
+    background: white;
+}
+.match-title {
+    font-weight: bold;
+    text-align: center;
+    margin-bottom: 8px;
+}
+.participant-slot {
+    padding: 4px;
+    margin: 2px 0;
+    background: #f5f5f5;
+    text-align: center;
+}
+.match-results {
+    margin-top: 8px;
+    font-size: 12px;
+    color: #555;
+    text-align: center;
+}
+.match-card.virtual {
+    background: #fafafa;
+    border-style: dashed;
+} 
+
+        /* Стили для карточек игр */
+        .games-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(var(--card-width), 1fr));
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+        
+        .game-card {
+            border-radius: 8px;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.1);
+            padding: 12px;
+            background-color: white;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .game-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 5px 10px rgba(0,0,0,0.15);
+        }
+        
+        .game-card.past {
+            border-left: 4px solid var(--winner-color);
+        }
+        
+        .game-card.future {
+            border-left: 4px solid #f39c12;
+        }
+        
+        .game-card.tournament {
+            border-left: 4px solid #e74c3c;
+        }
+        
+        .game-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .game-id {
+            font-weight: bold;
+            color: var(--primary-color);
+            font-size: 1.1rem;
+        }
+        
+        .game-date {
+            color: #7f8c8d;
+            font-size: 0.85rem;
+        }
+        
+        .game-type {
+            font-size: 0.75rem;
+            background-color: #e0e0e0;
+            padding: 2px 8px;
+            border-radius: 10px;
+            margin-left: 8px;
+        }
+        
+        .game-type.tournament {
+            background-color: #fde8e8;
+            color: #e74c3c;
+        }
+        
+        .gc-players-container {
+            display: flex;
+        }
+        
+        .gc-players-column {
+            flex-grow: 1;
+        }
+        
+        .gc-player-row {
+            display: flex;
+            margin-bottom: 6px;
+            align-items: center;
+        }
+        
+        .gc-player-place {
+            width: 24px;
+            text-align: center;
+            font-weight: bold;
+            margin-right: 8px;
+            flex-shrink: 0;
+        }
+        
+        .place-1 { color: #f1c40f; }
+        .place-2 { color: #95a5a6; }
+        .place-3 { color: #cd7f32; }
+        .place-4 { color: #7f8c8d; }
+        
+        .gc-player-name {
+            flex-grow: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            min-width: 100px;
+        }
+        
+        .gc-player-score {
+            width: 50px;
+            text-align: right;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            color: var(--secondary-color);
+        }
+        
+        .gc-player-points {
+            width: 50px;
+            text-align: right;
+            font-size: 0.85rem;
+            color: #7f8c8d;
+        }
+        
+        .positive-score {
+            color: #27ae60;
+        }
+        
+        .negative-score {
+            color: #e74c3c;
+        }
+        
+        .game-footer {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: #7f8c8d;
+            margin-top: 10px;
+            padding-top: 8px;
+            border-top: 1px solid #eee;
+        }
+
+seed-card {
+    background: #fef7e0;
+    border: 2px solid #ffb74d;
+    border-radius: 12px;
+    padding: 12px;
+    min-width: 220px;
+}
+.seed-players-list {
+    margin: 10px 0;
+}
+.seed-player-row {
+    display: flex;
+    padding: 6px;
+    border-bottom: 1px solid #f0e0c0;
+}
+.seed-slot {
+    width: 30px;
+    font-weight: bold;
+    color: #e67e22;
+}
+.seed-name {
+    flex: 1;
+}
+.seed-refresh-btn {
+    background: #ff9800;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 12px;
+    cursor: pointer;
+    width: 100%;
+    margin-top: 8px;
+}
 
     </style>
 </head>
 <body>
+
+
+{% block scripts %}
+    <script src="{{ url_for('static', filename='js/bracket-renderer.js') }}"></script>
+{% endblock %}
+
+
 
 <!-- <div> -->
     <div id="panels-container" class="panels-container">
@@ -487,9 +704,8 @@
                 <input type="text" id="player_to_add" list="players_list" placeholder="игрок">
                 <button onclick="addActive()">Добавить</button>
                 <datalist id="players_list">{% for player in Players %}<option>{{player["name"]}}</option>{% endfor %}</datalist>
-                <div id="activeplayers">
-                    <div id="active_players_list"></div>
-                </div>
+                <div id="activeplayers"></div>
+                <div id="active_players_list"></div>
             <input placeholder="удалить" id="remove_player" data-type="remove" ondrop="drop_handler(event)" ondragover = "dragsover(event)" onchange="remove_pl(event)">
             <br>
             <br>
@@ -540,7 +756,7 @@
             <div class="panel-header" draggable="true" 
                 ondragstart="panelDragStart(event)" 
                 ondragend="panelDragEnd(event)">
-                <span class="panel-title">Ход игры</span>
+                <span class="panel-title">Протокол боя </span>
                 <button class="panel-collapse" title="Свернуть/развернуть">▼</button>
                 <button class="panel-expand">⛶</button>
             </div>
@@ -609,7 +825,36 @@
                 <table id="weight"></table>
             </div>
         </div>
+
+
+            <!-- Блок: Сетка -->
+        <div class="panel 
+        wide" id="panel-tournament-brakets" data-title="Сетка">
+                <div class="panel-header" draggable="true" 
+                    ondragstart="panelDragStart(event)" 
+                    ondragend="panelDragEnd(event)">
+                    <span class="panel-title">Турнирная сетка</span>
+                    <button class="panel-collapse" title="Свернуть/развернуть">▼</button>
+                    <button class="panel-expand">⛶</button>
+                </div>
+
+                <div class="panel-body" >
+                    <!-- Контейнер для загрузки схемы и отображения сетки -->
+                    <div style="margin: 20px 0;">
+                        <button onclick="redrawBrackets()">Обновить</button>
+                    </div>
+
+                    <div class="brackets" id="current-bracket"></div>
+
+                </div>
+
+
+        </div>
     </div>
+
+
+
+
 
     <!-- Модальное окно (общее) -->
     <div id="modal-overlay" class="modal-overlay" style="display: none;">
@@ -1255,6 +1500,11 @@
 
             console.log("load start", matchId)
             const targetMatchId = matchId || getCurrentMatchId();
+
+            console.log("load start", targetMatchId)
+
+            console.log(matchStorage.allMatches)
+
             const savedMatch = matchStorage.getMatchState(gameState.roomId, targetMatchId);
             
             if (savedMatch) {
@@ -1357,7 +1607,7 @@
             initControlButtons();
             
             // Загружаем сохранённую игру
-            loadGame();
+            // loadGame();
         }
         
         // Обновление информации о текущем вопросе
@@ -1796,10 +2046,15 @@
                             saveGame();
                             
                             // Переходим к следующей игре
-                            switchMatch(gameindex + 1)
+                            switchMatch(Number(gameindex) + 1)
                             // gameindex = gameindex + 1;
                             // document.getElementById("game").innerHTML = "Игра "+ gameindex;
                             // RefreshGame();
+                            redrawBrackets()
+
+
+
+
                         }
                         return data;
                     }).catch((err) => {
@@ -1815,7 +2070,7 @@
             <div style="margin: 10px 0;">
                 <button onclick="switchMatch(Math.max(1, gameindex - 1))">← Предыдущая</button>
                 <span style="margin: 0 10px;">Игра ${gameindex}</span>
-                <button onclick="switchMatch(gameindex + 1)">Следующая →</button>
+                <button onclick="switchMatch(Number(gameindex) + 1)">Следующая →</button>
             </div>
         `;
         gameHeader.insertAdjacentHTML('afterend', navigationHTML);
@@ -1948,6 +2203,8 @@
             GetGameHistory();
             // update_weight();
         }
+
+
 
 
         var row = null;
@@ -2170,47 +2427,52 @@
         // document.getElementById("StatePrint").textContent = gameData.JSON() + gameState.stringify.JSON()
     }
     
+function arraysEqualUnordered(arr1, arr2) {
+    if (arr1.length !== arr2.length) return false;
+    const sorted1 = [...arr1].sort();
+    const sorted2 = [...arr2].sort();
+    return sorted1.every((value, index) => value === sorted2[index]);
+}
 
-
-    function renderMatchCard(matchid, matchinfo){
-        const card = document.createElement('div');
-        card.className = 'game-card';
+    // function renderMatchCard(matchid, matchinfo){
+    //     const card = document.createElement('div');
+    //     card.className = 'game-card';
         
-        console.log(matchinfo.gameState.scores)
+    //     console.log(matchinfo.gameState.scores)
         
-        const MPlayers = matchinfo.gameData.players;
-        const MScore = matchinfo.gameState.scores;
-        let playersHtml = '';
-        for( i=0; i<MPlayers.length; i++){
-            // const scoreClass = MScore[i] >= 0 ? 'positive-score' : 'negative-score';
-            playersHtml += `
-                <div class="player-row">
-                    <span class="player-place"></span>
-                    <span class="player-name" title="${MPlayers[i]}">${MPlayers[i]}</span>
-                    <span class="player-card-score">${MScore[i] > 0 ? '+' : ''}${MScore[i]}</span>
-                    <span class="player-points"></span>
-                </div>
-            `;
+    //     const MPlayers = matchinfo.gameData.players;
+    //     const MScore = matchinfo.gameState.scores;
+    //     let playersHtml = '';
+    //     for( i=0; i<MPlayers.length; i++){
+    //         // const scoreClass = MScore[i] >= 0 ? 'positive-score' : 'negative-score';
+    //         playersHtml += `
+    //             <div class="gc-player-row">
+    //                 <span class="gc-player-place"></span>
+    //                 <span class="gc-player-name" title="${MPlayers[i]}">${MPlayers[i]}</span>
+    //                 <span class="gc-player-card-score">${MScore[i] > 0 ? '+' : ''}${MScore[i]}</span>
+    //                 <span class="gc-player-points"></span>
+    //             </div>
+    //         `;
 
-        }
+    //     }
 
-        card.innerHTML = `
-            <div class="game-header">
-                <span class="game-id"><a href="#" onclick="loadGame(${matchid})">Игра #${matchid}</a></span>
-                <span class="game-type">обычная</span>
-            </div>
-            <div class="players-container">
-                <div class="players-column">
-                    ${playersHtml}
-                </div>
-            </div>
-            <div class="game-footer">
-                ${matchinfo.gameState.gameFinished? "✔ Завершена" : ""}
-            </div>
-        `;
+    //     card.innerHTML = `
+    //         <div class="gc-game-header">
+    //             <span class="gc-game-id"><a href="#" onclick="loadGame(${matchid})">Игра #${matchid}</a></span>
+    //             <span class="gc-game-type">обычная</span>
+    //         </div>
+    //         <div class="gc-players-container">
+    //             <div class="gc-players-column">
+    //                 ${playersHtml}
+    //             </div>
+    //         </div>
+    //         <div class="gc-game-footer">
+    //             ${matchinfo.gameState.gameFinished? "✔ Завершена" : ""}
+    //         </div>
+    //     `;
         
-        return card
-    }
+    //     return card
+    // }
 // Экспорт полного состояния
 function exportState() {
     const exportData = {
@@ -2467,11 +2729,129 @@ function handleCollapseClick(e) {
     }
 }
 
+// Функция переключения матча (ваша глобальная)
+
+function switchToMatch(matchId, players, isCompleted) {
+    switchMatch(matchId)
+    switched_players = []
+    if (document.getElementById('player1').value) switched_players.push(document.getElementById('player1').value)
+    if (document.getElementById('player2').value) switched_players.push(document.getElementById('player2').value)
+    if (document.getElementById('player3').value) switched_players.push(document.getElementById('player3').value)
+    if (document.getElementById('player4').value) switched_players.push(document.getElementById('player4').value)
+  
+    if (switched_players.length == 0){
+        document.getElementById('player1').value = players[0]
+        document.getElementById('player2').value = players[1]
+        document.getElementById('player3').value = players[2]
+        document.getElementById('player4').value = players[3]
+        update_players_names()
+    }
+    else if (!arraysEqualUnordered(switched_players, players)){
+        alert("Игроки не совпадают")
+    }
+    // currentMatchId = matchId;
+    // заполнить поля ввода и загрузить состояние
+    // ...
+}
+
+
+
 // При инициализации страницы
 document.addEventListener('DOMContentLoaded', () => {
     bindCollapseButtons();
     restoreCollapseStates();
 });
+
+    // Функция переключения матча (ваша глобальная)
+    // function switchToMatch(matchId, players, isCompleted) {
+    //     currentMatchId = matchId;
+    //     // заполнить поля ввода и загрузить состояние
+    //     // ...
+    // }
+    
+    // fetch('/api/tournament_schema')
+    //     .then(r => r.json())
+    //     .then(schema => {
+    //         window.tournamentSchema = schema;
+    //         return fetch('/api/completed_matches');
+    //     })
+    //     .then(r => r.json())
+    //     .then(completed => {
+    //         renderBracket(schema, completed, 'bracket-container', {
+    //             readOnly: false,
+    //             onPlayMatch: (matchId, players, isCompleted) => {
+    //                 switchToMatch(matchId, players, isCompleted);
+    //             },
+    //             onShowDetails: (matchId, data) => {
+    //                 // опционально, можно использовать ту же функцию, что и на странице просмотра
+    //                 showMatchDetailsModal(data);
+    //             }
+    //         });
+    //     });
+
+async function GetGameHistoryArray() {
+    console.log("/gameresult/{{roomid}}");
+    try {
+        const response = await fetch("/gameresult/{{roomid}}", {
+            headers: { 'Accept': 'application/json' },
+            method: "GET"
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log("history", data);
+        
+        // Гарантируем, что возвращаем массив
+        return Array.isArray(data) ? data : [];
+    } catch (err) {
+        console.error("GetGameHistory failed:", err);
+        return []; // при любой ошибке возвращаем пустой массив
+    }
+}
+
+
+async function redrawBrackets(){
+    const rules = {{rules | tojson}}
+
+    if (rules.brackets) {
+        if (typeof rules.brackets == 'string'){
+            rules.brackets = JSON.parse(rules.brackets)
+        }
+
+        const activePlayers = await fetch('/activeplayers/{{roomid}}').then(r => r.json());
+        const playerNames = activePlayers.map(p => p.name);
+        
+        GetGameHistoryArray().then(gameArray => {
+            console.log("Полученный массив:", gameArray);
+
+            renderBracket(rules.brackets, gameArray, 'current-bracket', {
+                readOnly: false,
+                activePlayers: playerNames,
+                onPlayMatch: (matchId, players, isCompleted) => {
+                    switchToMatch(matchId, players, isCompleted);
+                },
+                onShowDetails: (matchId, data) => {
+                    // опционально, можно использовать ту же функцию, что и на странице просмотра
+                    showMatchDetailsModal(data);
+                }
+            });
+
+
+        });
+    
+    };
+}
+
+        // Запуск при загрузке страницы
+document.addEventListener('DOMContentLoaded', () => {
+        redrawBrackets();
+    });
+
+
+
     </script>
 </body>
 </html>
