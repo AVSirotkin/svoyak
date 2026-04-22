@@ -574,6 +574,7 @@ def CreateRoomApi():
     
     rules_name = None
     rules_param = None
+    rules_brackets = None
     
     if "rules_name" in data:
         rules_name = data["rules_name"]
@@ -582,11 +583,11 @@ def CreateRoomApi():
 
     if "rulesid" in data:
         if int(data["rulesid"]) > 0:
-            r = conn.execute(f"SELECT name, parameters FROM basic_rules WHERE rulesid={data['rulesid']}").fetchone()
+            r = conn.execute(f"SELECT name, parameters, brackets FROM basic_rules WHERE rulesid={data['rulesid']}").fetchone()
             if not r is None:
                 rules_name = r["name"]
                 rules_param = r["parameters"]
-
+                rules_brackets = r["brackets"]
 
 
     new_room_id = 0
@@ -636,11 +637,8 @@ def CreateRoomApi():
         conn.executescript('DELETE FROM rules WHERE roomid == '+str(new_room_id))
 
     if not rules_name is None:
-        if not rules_param is None:
-            conn.executescript(f"INSERT INTO rules(roomid, name, parameters) VALUES({new_room_id}, '{rules_name}', '{rules_param}')")
-        else:
-            conn.executescript(f'INSERT INTO rules(roomid, name) VALUES({new_room_id}, "{rules_name}")')
-
+        conn.execute("INSERT INTO rules(roomid, name, parameters, brackets) VALUES(?,?,?,?)",(new_room_id, rules_name, rules_param, rules_brackets))
+        conn.commit()
     return json.dumps({"Status": "Ok", "RoomId": new_room_id})
 
 @app.route('/api/finalizeroom/<int:roomid>', subdomain = "svoyak")
