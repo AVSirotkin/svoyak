@@ -1145,6 +1145,19 @@ if (typeof module !== 'undefined' && module.exports) {
                 <div class="mode-buttons">
                     <button id="toggleViewBtn" class="player-button view-mode-button">Горизонтальное отображение</button>
                 </div>
+                <div class="theme-control">
+                    <label>Количество тем: 
+                        <select id="themeCountSelect">
+                            <option value="3">3 темы</option>
+                            <option value="4">4 темы</option>
+                            <option value="6" selected>6 тем</option>
+                            <option value="8">8 тем</option>
+                            <option value="10">10 тем</option>
+                        </select>
+                    </label>
+                    <button id="applyThemeCountBtn" class="player-button">Изменить</button>
+                </div>
+
             
                 <div class="player-scores" id="playerScores"></div>
             
@@ -1407,69 +1420,21 @@ if (typeof module !== 'undefined' && module.exports) {
         // Данные игры (6 тем по 5 вопросов)
         const gameData = {
             players: ["", "", "", ""],
-            questionBlocks: [
-                {
-                    theme: "",
-                    questions: [
-                        { value: 10, text: "Вопрос 1", answer: "" },
-                        { value: 20, text: "Вопрос 2", answer: "" },
-                        { value: 30, text: "Вопрос 3", answer: "" },
-                        { value: 40, text: "Вопрос 4", answer: "" },
-                        { value: 50, text: "Вопрос 5", answer: "" }
-                    ]
-                },
-                {
-                    theme: "",
-                    questions: [
-                        { value: 10, text: "Вопрос 1", answer: "" },
-                        { value: 20, text: "Вопрос 2", answer: "" },
-                        { value: 30, text: "Вопрос 3", answer: "" },
-                        { value: 40, text: "Вопрос 4", answer: "" },
-                        { value: 50, text: "Вопрос 5", answer: "" }
-                    ]
-                },
-                {
-                    theme: "",
-                    questions: [
-                        { value: 10, text: "Вопрос 1", answer: "" },
-                        { value: 20, text: "Вопрос 2", answer: "" },
-                        { value: 30, text: "Вопрос 3", answer: "" },
-                        { value: 40, text: "Вопрос 4", answer: "" },
-                        { value: 50, text: "Вопрос 5", answer: "" }
-                    ]
-                },
-                {
-                    theme: "",
-                    questions: [
-                        { value: 10, text: "Вопрос 1", answer: "" },
-                        { value: 20, text: "Вопрос 2", answer: "" },
-                        { value: 30, text: "Вопрос 3", answer: "" },
-                        { value: 40, text: "Вопрос 4", answer: "" },
-                        { value: 50, text: "Вопрос 5", answer: "" }
-                    ]
-                },
-                {
-                    theme: "",
-                    questions: [
-                        { value: 10, text: "Вопрос 1", answer: "" },
-                        { value: 20, text: "Вопрос 2", answer: "" },
-                        { value: 30, text: "Вопрос 3", answer: "" },
-                        { value: 40, text: "Вопрос 4", answer: "" },
-                        { value: 50, text: "Вопрос 5", answer: "" }
-                    ]
-                },
-                {
-                    theme: "",
-                    questions: [
-                        { value: 10, text: "Вопрос 1", answer: "" },
-                        { value: 20, text: "Вопрос 2", answer: "" },
-                        { value: 30, text: "Вопрос 3", answer: "" },
-                        { value: 40, text: "Вопрос 4", answer: "" },
-                        { value: 50, text: "Вопрос 5", answer: "" }
-                    ]
-                }
-            ]
-        };
+            questionBlocks: []
+        }
+
+        for(let i = 1; i<7; i++){
+            gameData.questionBlocks.push({
+                theme: "",
+                questions: [
+                    { value: 10, text: "Вопрос 1", answer: "" },
+                    { value: 20, text: "Вопрос 2", answer: "" },
+                    { value: 30, text: "Вопрос 3", answer: "" },
+                    { value: 40, text: "Вопрос 4", answer: "" },
+                    { value: 50, text: "Вопрос 5", answer: "" }
+                ]
+            })
+        }
 
         // Состояние игры
         const gameState = {
@@ -3168,6 +3133,98 @@ document.addEventListener('DOMContentLoaded', () => {
     //             }
     //         });
     //     });
+
+function resizeThemes(newThemeCount) {
+    const oldBlocks = gameData.questionBlocks;
+    const oldTotalQuestions = oldBlocks.length * 5;
+    const newTotalQuestions = newThemeCount * 5;
+    
+    // 1. Перестраиваем блоки
+    const newBlocks = [];
+    for (let i = 0; i < newThemeCount; i++) {
+        if (i < oldBlocks.length) {
+            // Копируем существующий блок (тему)
+            newBlocks.push(JSON.parse(JSON.stringify(oldBlocks[i])));
+        } else {
+            // Новый блок с пустыми вопросами
+            newBlocks.push({
+                theme: "",
+                questions: [
+                    { value: 10, text: "Вопрос 1", answer: "" },
+                    { value: 20, text: "Вопрос 2", answer: "" },
+                    { value: 30, text: "Вопрос 3", answer: "" },
+                    { value: 40, text: "Вопрос 4", answer: "" },
+                    { value: 50, text: "Вопрос 5", answer: "" }
+                ]
+            });
+        }
+    }
+    gameData.questionBlocks = newBlocks;
+    
+    // 2. Перестраиваем answers
+    const oldAnswers = gameState.answers;
+    const newAnswers = [];
+    for (let i = 0; i < newTotalQuestions; i++) {
+        if (i < oldAnswers.length) {
+            // Копируем ответы для существующего вопроса
+            newAnswers.push([...oldAnswers[i]]);
+        } else {
+            // Новый вопрос – все ответы null
+            newAnswers.push(Array(gameData.players.length).fill(null));
+        }
+    }
+    gameState.answers = newAnswers;
+    
+    // 3. Пересчитываем очки с нуля (на основе сохранённых ответов)
+    const newScores = Array(gameData.players.length).fill(0);
+    for (let qIdx = 0; qIdx < newTotalQuestions; qIdx++) {
+        const blockIdx = Math.floor(qIdx / 5);
+        const qInBlock = qIdx % 5;
+        const questionValue = gameData.questionBlocks[blockIdx].questions[qInBlock].value;
+        const answersForQ = gameState.answers[qIdx];
+        if (answersForQ) {
+            for (let pIdx = 0; pIdx < answersForQ.length; pIdx++) {
+                if (answersForQ[pIdx] === true) {
+                    newScores[pIdx] += questionValue;
+                } else if (answersForQ[pIdx] === false) {
+                    newScores[pIdx] -= questionValue;
+                }
+            }
+        }
+    }
+    gameState.scores = newScores;
+    
+    // 4. Корректируем текущий вопрос, если он стал вне диапазона
+    const currentAbsolute = gameState.currentBlock * 5 + gameState.currentQuestion;
+    if (currentAbsolute >= newTotalQuestions) {
+        // Перемещаем на последний вопрос
+        gameState.currentBlock = newThemeCount - 1;
+        gameState.currentQuestion = 4; // последний вопрос в теме
+    }
+    
+    // 5. Обновляем интерфейс
+    updateScoresDisplay();
+    if (gameState.horizontalView) {
+        renderHorizontalTable();
+    } else {
+        renderVerticalTable();
+    }
+    updateQuestionInfo();
+    saveGame(); // если есть функция сохранения
+}
+
+document.getElementById('applyThemeCountBtn').addEventListener('click', () => {
+    const newCount = parseInt(document.getElementById('themeCountSelect').value);
+    const currentCount = gameData.questionBlocks.length;
+    if (newCount === currentCount) return;
+    
+    const confirmMsg = `Изменить количество тем с ${currentCount} на ${newCount}? 
+Ответы на вопросы, которые останутся, будут сохранены.`;
+    if (confirm(confirmMsg)) {
+        resizeThemes(newCount);
+    }
+});
+
 
 async function GetGameHistoryArray() {
     console.log("/gameresult/{{roomid}}");
