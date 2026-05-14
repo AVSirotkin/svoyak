@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Глобальная статистика игрока: {{ player_name }}</title>
+    <style>
+        /* Базовые стили – сохранены из view_new.html */
+        :root {
+            --card-width: 320px;
+            --primary-color: #3498db;
+            --secondary-color: #2980b9;
+            --winner-color: #27ae60;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 15px;
+            background-color: #f0f2f5;
+            color: #333;
+            line-height: 1.5;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        h1, h2 {
+            color: #2c3e50;
+            margin-top: 0;
+        }
+        h1 {
+            margin-bottom: 20px;
+            font-size: 1.8rem;
+        }
+        h2 {
+            font-size: 1.4rem;
+            margin-bottom: 15px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid var(--primary-color);
+        }
+        .stats-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 25px;
+            background-color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .stats-table th, .stats-table td {
+            padding: 10px 15px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        .stats-table th {
+            background-color: #f2f6fa;
+            font-weight: 600;
+        }
+        .stats-table tbody tr {
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .stats-table tbody tr:hover {
+            background-color: #e8f4fc;
+        }
+        .stats-table tr.active-filter {
+            background-color: #fff3cd;
+            font-weight: bold;
+        }
+        .games-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+        .game-card {
+            border-radius: 8px;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.1);
+            padding: 12px;
+            background-color: white;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.2s, box-shadow 0.2s;
+            border-left: 4px solid var(--winner-color);
+        }
+        .game-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 5px 10px rgba(0,0,0,0.15);
+        }
+        .game-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #eee;
+        }
+        .game-id {
+            font-weight: bold;
+            color: var(--primary-color);
+            font-size: 1rem;
+        }
+        .room-id {
+            font-size: 0.8rem;
+            color: #7f8c8d;
+            background: #f0f0f0;
+            padding: 2px 6px;
+            border-radius: 10px;
+        }
+        .game-type {
+            font-size: 0.75rem;
+            background-color: #e0e0e0;
+            padding: 2px 8px;
+            border-radius: 10px;
+        }
+        .players-container {
+            display: flex;
+        }
+        .players-column {
+            flex-grow: 1;
+        }
+        .player-row {
+            display: flex;
+            margin-bottom: 6px;
+            align-items: center;
+        }
+        .player-row.current-player {
+            background-color: #fff9c4;
+            font-weight: bold;
+            border-radius: 4px;
+            padding: 2px 0;
+        }
+        .player-place {
+            width: 24px;
+            text-align: center;
+            font-weight: bold;
+            margin-right: 8px;
+            flex-shrink: 0;
+        }
+        .place-1 { color: #f1c40f; }
+        .place-2 { color: #95a5a6; }
+        .place-3 { color: #cd7f32; }
+        .place-4 { color: #7f8c8d; }
+        .player-name {
+            flex-grow: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            min-width: 100px;
+        }
+        .player-score {
+            width: 50px;
+            text-align: right;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            color: var(--secondary-color);
+        }
+        .positive-score {
+            color: #27ae60;
+        }
+        .negative-score {
+            color: #e74c3c;
+        }
+        .player-points {
+            width: 50px;
+            text-align: right;
+            font-size: 0.85rem;
+            color: #7f8c8d;
+        }
+        .game-footer {
+            font-size: 0.75rem;
+            color: #7f8c8d;
+            margin-top: 10px;
+            padding-top: 8px;
+            border-top: 1px solid #eee;
+        }
+        @media (max-width: 768px) {
+            .games-grid {
+                grid-template-columns: 1fr;
+            }
+            .stats-table {
+                font-size: 0.9rem;
+            }
+            .stats-table th, .stats-table td {
+                padding: 8px 10px;
+            }
+        }
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        .total-stats {
+            background: #e8f4fc;
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        .total-stats div {
+            font-size: 1rem;
+        }
+        .total-stats strong {
+            color: var(--secondary-color);
+        }
+        .filter-info {
+            margin: 10px 0 20px;
+            padding: 8px 12px;
+            background: #fef9e6;
+            border-left: 4px solid #f39c12;
+            border-radius: 4px;
+        }
+        .clear-filter {
+            margin-left: 15px;
+            padding: 4px 10px;
+            background: #e0e0e0;
+            border-radius: 15px;
+            text-decoration: none;
+            color: #333;
+            font-size: 0.85rem;
+        }
+        .clear-filter:hover {
+            background: #ccc;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <a href="/" class="back-link">← На главную</a>
+    <h1>Глобальная статистика игрока: {{ player_name }}</h1>
+
+    <!-- Общая сводка -->
+    <div class="total-stats">
+        <div><strong>Всего турниров (комнат):</strong> {{ total_rooms }}</div>
+        <div><strong>Всего игр:</strong> {{ total_games }}</div>
+        <div><strong>Сумма очков (score):</strong> {{ total_score }}</div>
+        <div><strong>Сумма баллов (points):</strong> {{ total_points|round(2) }}</div>
+        <div><strong>Среднее место:</strong> {{ avg_position|round(2) }}</div>
+        <div><strong>Лучшее место:</strong> {{ best_position }}</div>
+        <div><strong>Худшее место:</strong> {{ worst_position }}</div>
+    </div>
+
+    <!-- Таблица статистики против соперников (кликабельна) -->
+    <h2>Статистика против соперников (кликните для фильтрации)</h2>
+    <table class="stats-table">
+        <thead>
+            <tr>
+                <th>Соперник</th>
+                <th>Совместных игр</th>
+                <th>Побед</th>
+                <th>Ничьих</th>
+                <th>Поражений</th>
+                <th>Средняя разница счёта</th>
+                <th>Медианная разница счёта</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for opp in opponents_stats %}
+            <tr data-opponent-id="{{ opp.playerid }}" data-opponent-name="{{ opp.name }}" class="{% if opp.playerid == current_filter %}active-filter{% endif %}">
+                <td>>{{ opp.name }}</td>
+                <td style="text-align: center;">{{ opp.games_count }}</td>
+                <td style="text-align: center;">{{ opp.wins }}</td>
+                <td style="text-align: center;">{{ opp.draws }}</td>
+                <td style="text-align: center;">{{ opp.losses }}</td>
+                <td style="text-align: center;">{{ opp.avg_score_diff|round(2) }}</td>
+                <td style="text-align: center;">{{ opp.median_score_diff|round(2) }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7">Нет данных о соперниках</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- Список игр участника с возможной фильтрацией -->
+    <h2>Игры участника
+        {% if current_filter %}
+        <span style="font-size: 0.9rem;">(фильтр: только бои с {{ filter_opponent_name }})</span>
+        <a href="?clear=1" class="clear-filter">Сбросить фильтр</a>
+        {% endif %}
+    </h2>
+    <div id="games-grid" class="games-grid">
+        {% for game in games %}
+        <div class="game-card past">
+            <div class="game-header">
+                <span class="game-id">Игра #{{ game.gameindex }}</span>
+                <span class="room-id">Комната {{ game.roomid }}</span>
+                <span class="game-type">обычная</span>
+            </div>
+            <div class="players-container">
+                <div class="players-column">
+                    {% for player in game.players|sort(attribute='position') %}
+                    <div class="player-row {% if player.playerid == player_id %}current-player{% endif %}">
+                        <span class="player-place place-{{ player.position|round(0)|int }}">{{ player.position }}</span>
+                        <span class="player-name" title="{{ player.name }}">{{ player.name }}</span>
+                        <span class="player-score {% if player.score >= 0 %}positive-score{% else %}negative-score{% endif %}">
+                            {% if player.score > 0 %}+{% endif %}{{ player.score }}
+                        </span>
+                        <span class="player-points">{{ player.points|round(2) }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="game-footer">
+                Завершена
+            </div>
+        </div>
+        {% else %}
+        <p>Нет игр, соответствующих фильтру (или игрок ещё не участвовал).</p>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+    // Обработка клика по строке соперника – перезагрузка с параметром opponent_id
+    document.querySelectorAll('.stats-table tbody tr[data-opponent-id]').forEach(row => {
+        row.addEventListener('click', () => {
+            const opponentId = row.getAttribute('data-opponent-id');
+            if (opponentId) {
+                window.location.search = `?opponent=${opponentId}`;
+            }
+        });
+    });
+</script>
+</body>
+</html>

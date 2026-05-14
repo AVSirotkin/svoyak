@@ -6,7 +6,8 @@ import json
 from shuffle import * 
 from player_state import player_state
 import pandas as pd
-
+from statistics import median
+from collections import defaultdict
 
 
 app = Flask(__name__)
@@ -784,6 +785,317 @@ def detailed(roomid, gameindex, return_json = True):
                 res = rj["detailed"]    
             break 
     return(json.dumps(res))
+
+
+
+@app.route('/room/<int:roomid>/player/<int:playerid>', subdomain = "svoyak")
+def player_stats(roomid, playerid):
+    conn = get_db_connection()
+    
+    # 1. Получить имя игрока и все его игры
+    player_info = conn.execute(
+        'SELECT name FROM results WHERE roomid = ? AND playerid = ? LIMIT 1',
+        (roomid, playerid)
+    ).fetchone()
+    
+    if not player_info:
+        conn.close()
+        abort(404, description="Игрок не найден в этой комнате")
+    
+    player_name = player_info['name']
+    
+    # Список уникальных игр, в которых участвовал игрок
+    games_list = conn.execute(
+        'SELECT DISTINCT gameindex FROM results WHERE roomid = ? AND playerid = ?',
+        (roomid, playerid)
+    ).fetchall()
+    
+    games_data = []
+    total_score = 0
+    total_points = 0.0
+    total_positions_sum = 0.0
+    best_position = float('inf')
+    worst_position = float('-inf')
+    
+    # Для каждого gameindex получим всех участников
+    for row in games_list:
+        game_idx = row['gameindex']
+        players = conn.execute(
+            'SELECT playerid, name, score, position, points FROM results WHERE roomid = ? AND gameindex = ?',
+            (roomid, game_idx)
+        ).fetchall()
+        
+        # Преобразуем в список словарей
+        players_list = []
+        for p in players:
+            pl = dict(p)
+            # Для подсчёта статистики по текущему игроку
+            if pl['playerid'] == playerid:
+                total_score += pl['score']
+                total_points += pl['points']
+                total_positions_sum += pl['position']
+                best_position = min(best_position, pl['position'])
+                worst_position = max(worst_position, pl['position'])
+            players_list.append(pl)
+        
+        games_data.append({
+            'gameindex': game_idx,
+            'players': players_list
+        })
+    
+    total_games = len(games_data)
+    avg_position = total_positions_sum / total_games if total_games else 0
+    best_position = best_position if total_games else None
+    worst_position = worst_position if total_games else None
+    
+    # 2. Статистика против соперников
+    opponents = defaultdict(lambda: {
+        'name': None,
+        'games_count': 0,
+        'wins': 0,
+        'losses': 0,
+        'draws': 0,
+        'score_diffs': []
+    })
+    
+    for game in games_data:
+        current_player_info = None
+        other_players = []
+        for p in game['players']:
+            if p['playerid'] == playerid:
+                current_player_info = p
+            else:
+                other_players.append(p)
+        
+        if not current_player_info:
+            continue
+        
+        for opp in other_players:
+            opp_id = opp['playerid']
+            opp_name = opp['name']
+            data = opponents[opp_id]
+            data['name'] = opp_name
+            data['games_count'] += 1
+            
+            # Сравнение мест (чем меньше число – тем лучше)
+            if current_player_info['position'] < opp['position']:
+                data['wins'] += 1
+            elif current_player_info['position'] > opp['position']:
+                data['losses'] += 1
+            else:
+                data['draws'] += 1
+            
+            # Разница в счёте
+            score_diff = current_player_info['score'] - opp['score']
+            data['score_diffs'].append(score_diff)
+    
+    # Постобработка: вычисляем среднее и медиану
+    opponents_stats = []
+    for opp_id, data in opponents.items():
+        diffs = data['score_diffs']
+        avg_diff = sum(diffs) / len(diffs) if diffs else 0
+        median_diff = median(diffs) if diffs else 0
+        opponents_stats.append({
+            'name': data['name'],
+            'games_count': data['games_count'],
+            'wins': data['wins'],
+            'losses': data['losses'],
+            'draws': data['draws'],
+            'avg_score_diff': avg_diff,
+            'median_score_diff': median_diff
+        })
+    
+    # Сортируем соперников по количеству совместных игр (по убыванию)
+    opponents_stats.sort(key=lambda x: x['games_count'], reverse=True)
+    
+    conn.close()
+    
+    return render_template('player_stats.html',
+                           roomid=roomid,
+                           player_id=playerid,
+                           player_name=player_name,
+                           total_games=total_games,
+                           total_score=total_score,
+                           total_points=total_points,
+                           avg_position=avg_position,
+                           best_position=best_position,
+                           worst_position=worst_position,
+                           games=games_data,
+                           opponents_stats=opponents_stats)
+
+@app.route('/player/<int:playerid>/global', subdomain = "svoyak")
+def global_player_stats(playerid):
+    # Получаем параметр фильтра по сопернику (опционально)
+    opponent_filter = request.args.get('opponent', type=int)
+    clear = request.args.get('clear')
+    if clear:
+        opponent_filter = None
+
+    conn = get_db_connection()  # адаптируйте под своё подключение
+
+    # 1. Информация об игроке (имя)
+    player_info = conn.execute(
+        'SELECT name FROM results WHERE playerid = ? LIMIT 1',
+        (playerid,)
+    ).fetchone()
+    if not player_info:
+        conn.close()
+        abort(404, description="Игрок не найден")
+    player_name = player_info['name']
+
+    # 2. Получить все уникальные (roomid, gameindex) где участвовал игрок
+    games_rows = conn.execute('''
+        SELECT DISTINCT roomid, gameindex
+        FROM results
+        WHERE playerid = ?
+        ORDER BY roomid, gameindex
+    ''', (playerid,)).fetchall()
+
+    # Словарь для сбора данных о каждой игре
+    games_data = []
+    total_score = 0
+    total_points = 0.0
+    total_positions_sum = 0.0
+    best_position = float('inf')
+    worst_position = float('-inf')
+    rooms_set = set()
+
+    # Для фильтрации: если задан opponent_filter, будем пропускать игры без этого соперника
+    for row in games_rows:
+        roomid = row['roomid']
+        game_idx = row['gameindex']
+        rooms_set.add(roomid)
+
+        # Получаем всех участников этой игры
+        players = conn.execute('''
+            SELECT playerid, name, score, position, points
+            FROM results
+            WHERE roomid = ? AND gameindex = ?
+        ''', (roomid, game_idx)).fetchall()
+
+        # Преобразуем в список словарей
+        players_list = []
+        current_player_info = None
+        other_player_ids = set()
+
+        for p in players:
+            pl = dict(p)
+            players_list.append(pl)
+            if pl['playerid'] == playerid:
+                current_player_info = pl
+            else:
+                other_player_ids.add(pl['playerid'])
+
+        # Применяем фильтр по сопернику
+        if opponent_filter is not None and opponent_filter not in other_player_ids:
+            continue
+
+        # Обновляем общую статистику игрока
+        if current_player_info:
+            total_score += current_player_info['score']
+            total_points += current_player_info['points']
+            total_positions_sum += current_player_info['position']
+            best_position = min(best_position, current_player_info['position'])
+            worst_position = max(worst_position, current_player_info['position'])
+
+        games_data.append({
+            'roomid': roomid,
+            'gameindex': game_idx,
+            'players': players_list
+        })
+
+    total_games = len(games_data)
+    total_rooms = len(rooms_set)
+    avg_position = total_positions_sum / total_games if total_games else 0
+    best_position = best_position if total_games else None
+    worst_position = worst_position if total_games else None
+
+    # 3. Статистика против соперников (на основе отфильтрованных игр или всех? Лучше по всем, но с учётом фильтра? 
+    #    Для единообразия будем считать статистику против соперников только по отфильтрованным играм,
+    #    чтобы таблица отражала контекст текущего фильтра. Если фильтра нет – по всем играм.
+    #    Альтернативно: всегда показывать полную таблицу, но это может сбивать с толку. Выберем логику: таблица соответствует отфильтрованным боям.
+    opponents = defaultdict(lambda: {
+        'name': None,
+        'playerid': None,
+        'games_count': 0,
+        'wins': 0,
+        'losses': 0,
+        'draws': 0,
+        'score_diffs': []
+    })
+
+    for game in games_data:
+        current_player = None
+        others = []
+        for p in game['players']:
+            if p['playerid'] == playerid:
+                current_player = p
+            else:
+                others.append(p)
+        if not current_player:
+            continue
+
+        for opp in others:
+            opp_id = opp['playerid']
+            data = opponents[opp_id]
+            data['playerid'] = opp_id
+            data['name'] = opp['name']
+            data['games_count'] += 1
+
+            if current_player['position'] < opp['position']:
+                data['wins'] += 1
+            elif current_player['position'] > opp['position']:
+                data['losses'] += 1
+            else:
+                data['draws'] += 1
+
+            score_diff = current_player['score'] - opp['score']
+            data['score_diffs'].append(score_diff)
+
+    opponents_stats = []
+    for opp_id, data in opponents.items():
+        diffs = data['score_diffs']
+        avg_diff = sum(diffs) / len(diffs) if diffs else 0
+        median_diff = median(diffs) if diffs else 0
+        opponents_stats.append({
+            'playerid': opp_id,
+            'name': data['name'],
+            'games_count': data['games_count'],
+            'wins': data['wins'],
+            'losses': data['losses'],
+            'draws': data['draws'],
+            'avg_score_diff': avg_diff,
+            'median_score_diff': median_diff
+        })
+
+    # Сортируем по количеству встреч (убывание)
+    opponents_stats.sort(key=lambda x: x['games_count'], reverse=True)
+
+    # Имя соперника для отображения фильтра
+    filter_opponent_name = None
+    if opponent_filter:
+        opp_info = next((o for o in opponents_stats if o['playerid'] == opponent_filter), None)
+        filter_opponent_name = opp_info['name'] if opp_info else str(opponent_filter)
+
+    conn.close()
+
+    return render_template('player_global_stats.html',
+                           player_id=playerid,
+                           player_name=player_name,
+                           total_rooms=total_rooms,
+                           total_games=total_games,
+                           total_score=total_score,
+                           total_points=total_points,
+                           avg_position=avg_position,
+                           best_position=best_position,
+                           worst_position=worst_position,
+                           games=games_data,
+                           opponents_stats=opponents_stats,
+                           current_filter=opponent_filter,
+                           filter_opponent_name=filter_opponent_name)
+
+
+
 
 
 def read_cfg():
