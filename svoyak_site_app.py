@@ -116,7 +116,7 @@ def SvoyakViewPage(roomid):
 
 
     conn = get_db_connection()
-    all_players_stats = conn.execute('SELECT name, COUNT(position) as games, sum(position) as position, sum(score) as score, sum(points) as points FROM results WHERE roomid == '+str(roomid)+' AND gamenumber <= '+ str(rules["parameters"]["basic_game_number"]) +' GROUP BY name ORDER BY points DESC').fetchall()
+    all_players_stats = conn.execute('SELECT playerid, name, COUNT(position) as games, sum(position) as position, sum(score) as score, sum(points) as points FROM results WHERE roomid == '+str(roomid)+' AND gamenumber <= '+ str(rules["parameters"]["basic_game_number"]) +' GROUP BY playerid, name ORDER BY points DESC').fetchall()
     
     all_places = pd.Series([r["points"] for r in all_players_stats]).rank(ascending=False).to_list()
     return render_template("view_new.html", roomid = roomid, PlayersStat = all_players_stats, places = all_places, rules = rules)

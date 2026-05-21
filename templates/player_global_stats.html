@@ -261,7 +261,7 @@
         <tbody>
             {% for opp in opponents_stats %}
             <tr data-opponent-id="{{ opp.playerid }}" data-opponent-name="{{ opp.name }}" class="{% if opp.playerid == current_filter %}active-filter{% endif %}">
-                <td>>{{ opp.name }}</td>
+                <td>><a href = "/player/{{opp.playerid}}/global">{{ opp.name }}</a></td>
                 <td style="text-align: center;">{{ opp.games_count }}</td>
                 <td style="text-align: center;">{{ opp.wins }}</td>
                 <td style="text-align: center;">{{ opp.draws }}</td>

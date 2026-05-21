@@ -340,7 +340,7 @@
                 <tbody id="stats-body">
                     {% for result, place in PlayersStat |zip(places) %}
                     <tr>
-                      <td>{{ result.name }}</td>
+                      <td><a href="/player/{{result.playerid}}/global">{{ result.name }}</a></td>
                       <td style = "text-align: center;">{{ result.games }}</td>
                       <td style = "text-align: center;">{{ result.position }}</td>
                       <td style = "text-align: center;">{{ result.score | round(3) }}</td>
