@@ -1077,7 +1077,7 @@
 
             <div id="gameOverMessage" class="game-over" style="display:none;"></div>
             <div id="warningMessage" class="warning" style="display:none;"></div>
-            <button id="saveResultsBtn" class="btn btn-success" style="display:none;">💾 Сохранить результаты</button>
+            <button id="saveResultsBtn" class="btn btn-success" style="display:none;">💾 Внести результат</button>
 
             <div class="game-controls-row">
                 <button id="nextQuestionBtn" class="btn btn-primary">Следующий вопрос (0)</button>
@@ -1795,7 +1795,7 @@ function nextQuestion() {
 function showGameOver() {
     document.getElementById('gameOverMessage').style.display = 'block';
     document.getElementById('gameOverMessage').textContent = '🏆 Игра завершена! Финальные результаты:';
-    document.getElementById('saveResultsBtn').style.display = 'block';
+    document.getElementById('saveResultsBtn').style.display = 'none';
     document.getElementById('answerControls').style.display = 'none';
     document.getElementById('nextQuestionBtn').style.display = 'none';
     renderScoreCards();
@@ -1997,10 +1997,11 @@ document.getElementById('applyThemeCountBtn').addEventListener('click', () => {
 });
 
 document.getElementById('saveResultsBtn').addEventListener('click', () => {
-    const results = getGameResults();
-    console.log("Результаты:", JSON.stringify(results, null, 2));
-    alert("✅ Результаты сохранены в консоль браузера (F12)");
-    showResetGameOver();
+    // AddResult()
+    // const results = getGameResults();
+    // console.log("Результаты:", JSON.stringify(results, null, 2));
+    // alert("✅ Результаты сохранены в консоль браузера (F12)");
+    // showResetGameOver();
 });
 
 // ============================================================
@@ -2190,6 +2191,7 @@ function AddResult() {
             saveGame();
             switchMatch(Number(gameindex) + 1);
             redrawBrackets();
+            showResetGameOver()
         }
     }).catch(console.error);
 }
