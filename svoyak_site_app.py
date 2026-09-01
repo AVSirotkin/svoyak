@@ -41,7 +41,7 @@ def AllPalayers():
     all_players = conn.execute('SELECT playerid, name FROM players').fetchall()
     return json.dumps( [dict(ix) for ix in all_players])
 
-@app.route('/room/<int:roomid>', subdomain = "svoyak")
+@app.route('/oldroom/<int:roomid>', subdomain = "svoyak")
 def SvoyakMainPage(roomid):
     conn = get_db_connection()
     roomstate = conn.execute(f"SELECT * FROM activerooms WHERE roomid={roomid}").fetchone()
@@ -60,7 +60,7 @@ def SvoyakMainPage(roomid):
     ActivePalayers = []
     return render_template("SvoyakRoom.html", roomid = roomid, Players = all_players, gameindex = gameindex)
 
-@app.route('/fullroom/<int:roomid>', subdomain = "svoyak")
+@app.route('/room/<int:roomid>', subdomain = "svoyak")
 def SvoyakNewMainPage(roomid):
     conn = get_db_connection()
     roomstate = conn.execute(f"SELECT * FROM activerooms WHERE roomid={roomid}").fetchone()
@@ -101,8 +101,12 @@ def SvoyakNewMainPage2(roomid):
     else:
         gameindex = gi["max(gameindex)"] + 1
     ActivePalayers = []
-    return render_template("FullRoomv2.html", roomid = roomid, Players = all_players, gameindex = gameindex)
 
+    rules = get_room_rules(roomid)
+    # with open("12-2-azart.json", "rt", encoding="UTF8") as fo:
+    #     rules["brackets"] = json.load(fo)    
+
+    return render_template("FullRoom2.html", roomid = roomid, Players = all_players, gameindex = gameindex, rules = rules)
 
 
 @app.route('/view/<int:roomid>', subdomain = "svoyak")
