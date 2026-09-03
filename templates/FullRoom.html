@@ -444,8 +444,8 @@
         .answer-controls {
             background: var(--gray-50);
             border-radius: 8px;
-            padding: 16px;
-            margin-bottom: 16px;
+            padding: 6px;
+            margin-bottom: 6px;
             border: 1px solid var(--gray-200);
         }
 
@@ -460,7 +460,7 @@
         .answer-buttons-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-            gap: 8px;
+            gap: 4px;
         }
 
         .player-answer-group {
@@ -516,7 +516,7 @@
             opacity: 0.8;
             font-weight: 400;
             background: rgba(255,255,255,0.2);
-            padding: 2px 8px;
+            padding: 2px 4px;
             border-radius: 4px;
         }
 
@@ -826,7 +826,7 @@
             font-size: 14px;
             transition: var(--transition);
             outline: none;
-            width: 260px; /* Увеличено вдвое (было 130px) */
+            width: 260px;
         }
 
         .player-input-row input[type="text"]:focus {
@@ -1026,7 +1026,44 @@
         </div>
     </div>
 
-    <!-- ПАНЕЛЬ 3: Протокол (широкая) -->
+    <!-- ПАНЕЛЬ 3: Управление игрой (кнопки ответов + настройки) -->
+    <div class="panel" id="panel-controls">
+        <div class="panel-header" draggable="true" 
+            ondragstart="panelDragStart(event)" 
+            ondragend="panelDragEnd(event)">
+            <span class="panel-title"><span class="icon">🎮</span> Управление игрой</span>
+            <div class="panel-controls">
+                <button class="panel-collapse" title="Свернуть">▼</button>
+                <button class="panel-expand" title="Развернуть">⛶</button>
+            </div>
+        </div>
+        <div class="panel-body">
+            <!-- КНОПКИ ОТВЕТОВ -->
+            <div class="answer-controls" id="answerControls">
+                <span class="label">🎯 Ответы игроков</span>
+                <div id="controlButtons" class="answer-buttons-grid"></div>
+            </div>
+
+            <!-- НАСТРОЙКИ И УПРАВЛЕНИЕ -->
+            <div class="game-controls-row">
+                <button id="nextQuestionBtn" class="btn btn-primary">Следующий вопрос (0)</button>
+                <button onclick="ClearCurrentGameLog(false)" class="btn btn-outline">🔄 Сбросить</button>
+                <label class="checkbox-group" title="При включении за неправильный ответ начисляется половина номинала">
+                    <input type="checkbox" id="halfMinusToggle" onchange="toggleHalfMinus()">
+                    ½ Половинные минусы
+                </label>
+                <label class="checkbox-group" title="Включить/выключить управление с клавиатуры">
+                    <input type="checkbox" id="keyboardToggle" checked onchange="toggleKeyboard()">
+                    ⌨️ Клавиатура
+                </label>
+            </div>
+
+            <div id="gameOverMessage" class="game-over" style="display:none;"></div>
+            <div id="warningMessage" class="warning" style="display:none;"></div>
+        </div>
+    </div>
+
+    <!-- ПАНЕЛЬ 4: Протокол (широкая) -->
     <div class="panel wide" id="panel-quiz">
         <div class="panel-header" draggable="true" 
             ondragstart="panelDragStart(event)" 
@@ -1057,12 +1094,6 @@
 
             <div id="playerScores" class="player-scores"></div>
 
-            <!-- КНОПКИ ОТВЕТОВ -->
-            <div class="answer-controls" id="answerControls">
-                <span class="label">🎮 Ответы игроков</span>
-                <div id="controlButtons" class="answer-buttons-grid"></div>
-            </div>
-
             <div class="question-info" id="questionInfo">
                 <span>Вопрос готов</span>
                 <span class="progress">0/0</span>
@@ -1075,22 +1106,11 @@
                 </table>
             </div>
 
-            <div id="gameOverMessage" class="game-over" style="display:none;"></div>
-            <div id="warningMessage" class="warning" style="display:none;"></div>
             <button id="saveResultsBtn" class="btn btn-success" style="display:none;">💾 Внести результат</button>
-
-            <div class="game-controls-row">
-                <button id="nextQuestionBtn" class="btn btn-primary">Следующий вопрос (0)</button>
-                <button onclick="ClearCurrentGameLog(false)" class="btn btn-outline">🔄 Сбросить</button>
-                <label class="checkbox-group" title="При включении за неправильный ответ начисляется половина номинала">
-                    <input type="checkbox" id="halfMinusToggle" onchange="toggleHalfMinus()">
-                    ½ Половинные минусы
-                </label>
-            </div>
         </div>
     </div>
 
-    <!-- ПАНЕЛЬ 4: Блокировка -->
+    <!-- ПАНЕЛЬ 5: Блокировка -->
     <div class="panel" id="panel-block">
         <div class="panel-header" draggable="true" 
             ondragstart="panelDragStart(event)" 
@@ -1112,7 +1132,7 @@
         </div>
     </div>
 
-    <!-- ПАНЕЛЬ 5: Веса -->
+    <!-- ПАНЕЛЬ 6: Веса -->
     <div class="panel" id="panel-weights">
         <div class="panel-header" draggable="true" 
             ondragstart="panelDragStart(event)" 
@@ -1134,7 +1154,7 @@
         </div>
     </div>
 
-    <!-- ПАНЕЛЬ 6: Турнирная сетка (широкая) -->
+    <!-- ПАНЕЛЬ 7: Турнирная сетка (широкая) -->
     <div class="panel wide" id="panel-tournament-brackets">
         <div class="panel-header" draggable="true" 
             ondragstart="panelDragStart(event)" 
@@ -1173,6 +1193,17 @@
 // 1. ПАНЕЛИ: Drag & Drop
 // ============================================================
 let draggedPanel = null;
+
+// Задаем порядок по умолчанию (сетка в конце)
+const DEFAULT_PANELS_ORDER = [
+    'panel-players',
+    'panel-match',
+    'panel-controls',
+    'panel-quiz',
+    'panel-block',
+    'panel-weights',
+    'panel-tournament-brackets'
+];
 
 function panelDragStart(event) {
     const header = event.target.closest('.panel-header');
@@ -1222,12 +1253,36 @@ function savePanelsOrder() {
 
 function restorePanelsOrder() {
     const savedOrder = localStorage.getItem('panels_order');
-    if (!savedOrder) return;
     const container = document.getElementById('panels-container');
-    const panelIds = JSON.parse(savedOrder);
+    
+    let orderToUse = DEFAULT_PANELS_ORDER;
+    if (savedOrder) {
+        try {
+            const parsedOrder = JSON.parse(savedOrder);
+            const currentPanelIds = Array.from(container.querySelectorAll('.panel')).map(p => p.id);
+            const allPanelsExist = parsedOrder.every(id => currentPanelIds.includes(id));
+            const allPanelsIncluded = currentPanelIds.every(id => parsedOrder.includes(id));
+            if (allPanelsExist && allPanelsIncluded) {
+                orderToUse = parsedOrder;
+            } else {
+                localStorage.removeItem('panels_order');
+            }
+        } catch (e) {
+            localStorage.removeItem('panels_order');
+        }
+    }
+    
     const panelsMap = new Map();
     container.querySelectorAll('.panel').forEach(p => panelsMap.set(p.id, p));
-    panelIds.forEach(id => { const p = panelsMap.get(id); if (p) container.appendChild(p); });
+    
+    orderToUse.forEach(id => {
+        const panel = panelsMap.get(id);
+        if (panel) container.appendChild(panel);
+    });
+    
+    container.querySelectorAll('.panel').forEach(panel => {
+        if (!orderToUse.includes(panel.id)) container.appendChild(panel);
+    });
 }
 
 function togglePanelCollapse(panelId) {
@@ -1318,7 +1373,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     document.querySelector('.modal-close').addEventListener('click', closeModalAndRestore);
     document.getElementById('modal-overlay').addEventListener('click', (e) => {
-        if (e.target === document.getElementById('modal-overlay')) closeModalAndRestore();
+        if (e.target === document.getElementById('modal-overlay')) closeModalAndRestore;
     });
 });
 
@@ -1350,7 +1405,8 @@ const gameState = {
     gameFinished: false,
     editMode: false,
     horizontalView: false,
-    halfMinus: false, // Новая переменная для половинных минусов
+    halfMinus: false,
+    keyboardEnabled: true,
     roomId: '{{roomid}}'
 };
 
@@ -1358,6 +1414,7 @@ let active = [];
 let one_game_block_array = [];
 let player_name_drag = null;
 let gameindex = {{gameindex}};
+let editModeActive = false;
 
 // ============================================================
 // 3. ХРАНИЛИЩЕ МАТЧЕЙ (локальное сохранение)
@@ -1555,6 +1612,17 @@ function renderVerticalTable() {
             questionIndex++;
         });
     });
+    
+    // Восстанавливаем обработчики для режима исправления
+    if (gameState.editMode) {
+        const cells = document.querySelectorAll('#tableBody td[id^="answer"]');
+        cells.forEach(cell => {
+            cell.style.cursor = 'pointer';
+            cell.onclick = function(e) {
+                handleCellClick(e);
+            };
+        });
+    }
 }
 
 function renderHorizontalTable() {
@@ -1623,6 +1691,17 @@ function renderHorizontalTable() {
         tableBody.appendChild(row);
         questionIndex++;
     });
+    
+    // Восстанавливаем обработчики для режима исправления
+    if (gameState.editMode) {
+        const cells = document.querySelectorAll('#tableBody td[id^="answer"]');
+        cells.forEach(cell => {
+            cell.style.cursor = 'pointer';
+            cell.onclick = function(e) {
+                handleCellClick(e);
+            };
+        });
+    }
 }
 
 function updateQuestionHighlight() {
@@ -1662,7 +1741,7 @@ function updateQuestionInfo() {
 }
 
 // ============================================================
-// 6. КНОПКИ ОТВЕТОВ
+// 6. КНОПКИ ОТВЕТОВ (исправленная версия)
 // ============================================================
 function initControlButtons() {
     const container = document.getElementById('controlButtons');
@@ -1710,16 +1789,32 @@ function toggleTableView() {
 }
 
 function toggleEditMode() {
-    if (gameState.editMode && !validateAnswers()) return;
+    if (gameState.editMode && !validateAnswers()) {
+        return;
+    }
     gameState.editMode = !gameState.editMode;
+    editModeActive = gameState.editMode;
     const btn = document.getElementById('editModeBtn');
     btn.textContent = gameState.editMode ? '✅ Завершить исправление' : '✏️ Режим исправления';
     btn.className = gameState.editMode ? 'btn btn-warning' : 'btn btn-outline';
-    document.querySelectorAll('#tableBody td[id^="answer"]').forEach(cell => {
-        cell.style.cursor = gameState.editMode ? 'pointer' : '';
-        cell.onclick = gameState.editMode ? handleCellClick : null;
+    
+    // Назначаем обработчики кликов на ячейки
+    const cells = document.querySelectorAll('#tableBody td[id^="answer"]');
+    cells.forEach(cell => {
+        if (gameState.editMode) {
+            cell.style.cursor = 'pointer';
+            cell.onclick = function(e) {
+                handleCellClick(e);
+            };
+        } else {
+            cell.style.cursor = '';
+            cell.onclick = null;
+        }
     });
-    if (!gameState.editMode) document.getElementById('warningMessage').style.display = 'none';
+    
+    if (!gameState.editMode) {
+        document.getElementById('warningMessage').style.display = 'none';
+    }
 }
 
 function validateAnswers() {
@@ -1740,23 +1835,40 @@ function validateAnswers() {
 }
 
 function handleCellClick(e) {
+    // Проверяем, что режим исправления активен
     if (!gameState.editMode) return;
-    const parts = e.target.id.split('_');
+    
+    // Получаем ячейку, по которой кликнули
+    const cell = e.target;
+    
+    // Проверяем, что это действительно ячейка с ответом
+    if (!cell.id || !cell.id.startsWith('answer')) return;
+    
+    const parts = cell.id.split('_');
     const qIdx = parseInt(parts[0].replace('answer', ''));
     const pIdx = parseInt(parts[1]);
+    
+    // Проверяем валидность индексов
+    if (isNaN(qIdx) || isNaN(pIdx)) return;
+    if (qIdx >= gameState.answers.length || pIdx >= gameState.answers[qIdx].length) return;
+    
     const current = gameState.answers[qIdx][pIdx];
     let newVal;
     if (current === null) newVal = true;
     else if (current === true) newVal = false;
     else newVal = null;
+    
     const oldVal = current;
     gameState.answers[qIdx][pIdx] = newVal;
     const q = getQuestionByIndex(qIdx);
+    if (!q) return;
+    
     const penalty = getPenaltyValue(q.value);
     if (oldVal === true) gameState.scores[pIdx] -= q.value;
     else if (oldVal === false) gameState.scores[pIdx] += penalty;
     if (newVal === true) gameState.scores[pIdx] += q.value;
     else if (newVal === false) gameState.scores[pIdx] -= penalty;
+    
     updateScoresDisplay();
     refreshTable();
     saveGame();
@@ -1795,7 +1907,7 @@ function nextQuestion() {
 function showGameOver() {
     document.getElementById('gameOverMessage').style.display = 'block';
     document.getElementById('gameOverMessage').textContent = '🏆 Игра завершена! Финальные результаты:';
-    document.getElementById('saveResultsBtn').style.display = 'none';
+    document.getElementById('saveResultsBtn').style.display = 'block';
     document.getElementById('answerControls').style.display = 'none';
     document.getElementById('nextQuestionBtn').style.display = 'none';
     renderScoreCards();
@@ -1831,27 +1943,26 @@ function getGameResults() {
 }
 
 // ============================================================
-// 7. ПОЛОВИННЫЕ МИНУСЫ
+// 7. ПОЛОВИННЫЕ МИНУСЫ И КЛАВИАТУРА
 // ============================================================
 function toggleHalfMinus() {
     const checkbox = document.getElementById('halfMinusToggle');
     gameState.halfMinus = checkbox.checked;
-    
-    // Пересчитываем очки заново на основе ответов
     recalculateScores();
-    
-    // Обновляем отображение
     refreshTable();
     updateScoresDisplay();
     updateQuestionInfo();
     saveGame();
 }
 
+function toggleKeyboard() {
+    const checkbox = document.getElementById('keyboardToggle');
+    gameState.keyboardEnabled = checkbox.checked;
+    saveGame();
+}
+
 function recalculateScores() {
-    // Сбрасываем очки
     gameState.scores = Array(gameData.players.length).fill(0);
-    
-    // Пересчитываем все ответы
     gameState.answers.forEach((questionAnswers, qIdx) => {
         const q = getQuestionByIndex(qIdx);
         if (!q) return;
@@ -1878,8 +1989,8 @@ function loadGame(matchId) {
             gameData.players = saved.gameData.players;
             updatePlayerInputs();
         }
-        // Восстанавливаем состояние чекбокса
         document.getElementById('halfMinusToggle').checked = gameState.halfMinus || false;
+        document.getElementById('keyboardToggle').checked = gameState.keyboardEnabled !== false;
         updateScoresDisplay();
         if (gameState.gameFinished) showGameOver();
         refreshTable();
@@ -1903,7 +2014,9 @@ function loadGame(matchId) {
         gameState.currentQuestion = 0;
         gameState.scores = Array(gameData.players.length).fill(0);
         gameState.halfMinus = false;
+        gameState.keyboardEnabled = true;
         document.getElementById('halfMinusToggle').checked = false;
+        document.getElementById('keyboardToggle').checked = true;
         refreshTable();
         updateQuestionInfo();
         initControlButtons();
@@ -1934,10 +2047,13 @@ function switchMatch(newMatchId) {
 }
 
 // ============================================================
-// 9. КЛАВИАТУРНЫЕ ЯРЛЫКИ
+// 9. КЛАВИАТУРНЫЕ ЯРЛЫКИ (с проверкой keyboardEnabled)
 // ============================================================
 document.addEventListener('keydown', (e) => {
+    // Проверяем, включена ли клавиатура
+    if (!gameState.keyboardEnabled) return;
     if (gameState.gameFinished || gameState.editMode) return;
+    
     const map = {
         '1': { p: 0, c: true }, '2': { p: 1, c: true }, '3': { p: 2, c: true }, '4': { p: 3, c: true },
         'q': { p: 0, c: false }, 'Q': { p: 0, c: false }, 'й': { p: 0, c: false }, 'Й': { p: 0, c: false },
@@ -1947,6 +2063,7 @@ document.addEventListener('keydown', (e) => {
         '0': () => nextQuestion(), '`': () => nextQuestion(), 'ё': () => nextQuestion(), 'Ё': () => nextQuestion()
     };
     if (map[e.key]) {
+        e.preventDefault();
         if (typeof map[e.key] === 'function') map[e.key]();
         else handleAnswer(map[e.key].p, map[e.key].c);
     }
@@ -1996,13 +2113,7 @@ document.getElementById('applyThemeCountBtn').addEventListener('click', () => {
     }
 });
 
-document.getElementById('saveResultsBtn').addEventListener('click', () => {
-    // AddResult()
-    // const results = getGameResults();
-    // console.log("Результаты:", JSON.stringify(results, null, 2));
-    // alert("✅ Результаты сохранены в консоль браузера (F12)");
-    // showResetGameOver();
-});
+document.getElementById('saveResultsBtn').addEventListener('click', AddResult);
 
 // ============================================================
 // 11. РАБОТА С ИГРОКАМИ
@@ -2191,7 +2302,7 @@ function AddResult() {
             saveGame();
             switchMatch(Number(gameindex) + 1);
             redrawBrackets();
-            showResetGameOver()
+            showResetGameOver();
         }
     }).catch(console.error);
 }
@@ -2657,8 +2768,8 @@ async function importState(file) {
             if (imported.gameState.answers) {
                 gameState.answers = imported.gameState.answers.map(q => [...q]);
             }
-            // Восстанавливаем состояние чекбокса
             document.getElementById('halfMinusToggle').checked = gameState.halfMinus || false;
+            document.getElementById('keyboardToggle').checked = gameState.keyboardEnabled !== false;
             matchStorage.allMatches = imported.allMatches || {};
             matchStorage.saveAllMatches();
             UpdateActivePlayer(active);
@@ -2704,7 +2815,9 @@ function ClearCurrentGameLog(forced = true) {
     gameState.currentQuestion = 0;
     gameState.gameFinished = false;
     gameState.halfMinus = false;
+    gameState.keyboardEnabled = true;
     document.getElementById('halfMinusToggle').checked = false;
+    document.getElementById('keyboardToggle').checked = true;
     initAnswers();
     refreshTable();
     updateScoresDisplay();
@@ -2782,6 +2895,7 @@ window.refreshOneGameBlock = refreshOneGameBlock;
 window.showMatchDetailsModal = showMatchDetailsModal;
 window.renderBracket = renderBracket;
 window.toggleHalfMinus = toggleHalfMinus;
+window.toggleKeyboard = toggleKeyboard;
 
 document.addEventListener('DOMContentLoaded', init_page);
 </script>
