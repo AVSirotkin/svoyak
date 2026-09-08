@@ -117,7 +117,7 @@
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 20px;
-            max-width: 1400px;
+            max-width: 1600px;
             margin: 0 auto;
         }
 
@@ -570,6 +570,81 @@
             color: var(--gray-500);
         }
 
+        .question-card {
+            background: white;
+            border: 2px solid var(--gray-200);
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin: 12px 0 16px 0;
+            box-shadow: var(--shadow);
+            transition: var(--transition);
+        }
+
+        .question-card .q-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+
+        .question-card .q-theme {
+            font-weight: 600;
+            color: var(--primary);
+            font-size: 15px;
+        }
+
+        .question-card .q-value {
+            font-weight: 700;
+            font-size: 18px;
+            color: var(--gray-800);
+            background: var(--primary-light);
+            padding: 2px 14px;
+            border-radius: 20px;
+        }
+
+        .question-card .q-text {
+            font-size: 17px;
+            line-height: 1.6;
+            margin: 12px 0 8px 0;
+            color: var(--gray-900);
+        }
+
+        .question-card .q-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px 20px;
+            margin-top: 6px;
+            font-size: 14px;
+            color: var(--gray-600);
+            border-top: 1px solid var(--gray-100);
+            padding-top: 10px;
+        }
+
+        .question-card .q-meta .label {
+            font-weight: 500;
+            color: var(--gray-700);
+        }
+
+        .question-card .q-answer {
+            font-weight: 600;
+            color: var(--success);
+        }
+
+        .question-card .q-additional {
+            color: var(--gray-500);
+            font-style: italic;
+        }
+
+        .question-card .q-comment {
+            background: var(--gray-50);
+            padding: 8px 12px;
+            border-radius: 6px;
+            border-left: 3px solid var(--warning);
+            margin-top: 6px;
+        }
+
         .brackets {
             display: flex;
             flex-direction: row;
@@ -911,6 +986,8 @@
         <button onclick="exportState()" class="btn btn-primary btn-sm">💾 Сохранить</button>
         <button onclick="document.getElementById('importFileInput').click()" class="btn btn-outline btn-sm">📂 Восстановить</button>
         <input type="file" id="importFileInput" style="display:none" accept=".json" onchange="importState(this.files[0])">
+        <button onclick="document.getElementById('questionsFileInput').click()" class="btn btn-outline btn-sm">📖 Загрузить вопросы</button>
+        <input type="file" id="questionsFileInput" style="display:none" accept=".json" onchange="loadQuestionsFromFile(this.files[0])">
     </div>
 </header>
 
@@ -1046,7 +1123,8 @@
 
             <!-- НАСТРОЙКИ И УПРАВЛЕНИЕ -->
             <div class="game-controls-row">
-                <button id="nextQuestionBtn" class="btn btn-primary">Следующий вопрос (0)</button>
+                <button id="prevQuestionBtn" class="btn btn-outline">⬅️ Предыдущий</button>
+                <button id="nextQuestionBtn" class="btn btn-primary">Следующий ➡️</button>
                 <button onclick="ClearCurrentGameLog(false)" class="btn btn-outline">🔄 Сбросить</button>
                 <label class="checkbox-group" title="При включении за неправильный ответ начисляется половина номинала">
                     <input type="checkbox" id="halfMinusToggle" onchange="toggleHalfMinus()">
@@ -1063,7 +1141,38 @@
         </div>
     </div>
 
-    <!-- ПАНЕЛЬ 4: Протокол (широкая) -->
+    <!-- ПАНЕЛЬ 4: Карточка вопроса (один слот) -->
+    <div class="panel" id="panel-question-card">
+        <div class="panel-header" draggable="true" 
+            ondragstart="panelDragStart(event)" 
+            ondragend="panelDragEnd(event)">
+            <span class="panel-title"><span class="icon">❓</span> Текущий вопрос</span>
+            <div class="panel-controls">
+                <button class="panel-collapse" title="Свернуть">▼</button>
+                <button class="panel-expand" title="Развернуть">⛶</button>
+            </div>
+        </div>
+        <div class="panel-body">
+            <div id="questionCardContainer">
+                <div class="question-card" id="questionCard">
+                    <div class="q-header">
+                        <span class="q-theme" id="qTheme">Тема не загружена</span>
+                        <span class="q-value" id="qValue">0</span>
+                    </div>
+                    <div class="q-text" id="qText">Загрузите файл с вопросами для отображения</div>
+                    <div class="q-meta">
+                        <span><span class="label">Ответ:</span> <span class="q-answer" id="qAnswer">—</span></span>
+                        <span><span class="label">Форма:</span> <span id="qForm">—</span></span>
+                        <span><span class="label">Доп.:</span> <span class="q-additional" id="qAdditional">—</span></span>
+                        <span><span class="label">Источник:</span> <span id="qSource">—</span></span>
+                    </div>
+                    <div class="q-comment" id="qComment" style="display:none;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ПАНЕЛЬ 5: Протокол (широкая) -->
     <div class="panel wide" id="panel-quiz">
         <div class="panel-header" draggable="true" 
             ondragstart="panelDragStart(event)" 
@@ -1110,7 +1219,7 @@
         </div>
     </div>
 
-    <!-- ПАНЕЛЬ 5: Блокировка -->
+    <!-- ПАНЕЛЬ 6: Блокировка -->
     <div class="panel" id="panel-block">
         <div class="panel-header" draggable="true" 
             ondragstart="panelDragStart(event)" 
@@ -1132,7 +1241,7 @@
         </div>
     </div>
 
-    <!-- ПАНЕЛЬ 6: Веса -->
+    <!-- ПАНЕЛЬ 7: Веса -->
     <div class="panel" id="panel-weights">
         <div class="panel-header" draggable="true" 
             ondragstart="panelDragStart(event)" 
@@ -1154,7 +1263,7 @@
         </div>
     </div>
 
-    <!-- ПАНЕЛЬ 7: Турнирная сетка (широкая) -->
+    <!-- ПАНЕЛЬ 8: Турнирная сетка (широкая) -->
     <div class="panel wide" id="panel-tournament-brackets">
         <div class="panel-header" draggable="true" 
             ondragstart="panelDragStart(event)" 
@@ -1194,11 +1303,11 @@
 // ============================================================
 let draggedPanel = null;
 
-// Задаем порядок по умолчанию (сетка в конце)
 const DEFAULT_PANELS_ORDER = [
     'panel-players',
     'panel-match',
     'panel-controls',
+    'panel-question-card',
     'panel-quiz',
     'panel-block',
     'panel-weights',
@@ -1397,6 +1506,11 @@ for (let i = 1; i < 7; i++) {
     });
 }
 
+let loadedQuestions = {
+    topics: [],
+    currentMatchQuestions: []
+};
+
 const gameState = {
     currentBlock: 0,
     currentQuestion: 0,
@@ -1417,7 +1531,7 @@ let gameindex = {{gameindex}};
 let editModeActive = false;
 
 // ============================================================
-// 3. ХРАНИЛИЩЕ МАТЧЕЙ (локальное сохранение)
+// 3. ХРАНИЛИЩЕ МАТЧЕЙ
 // ============================================================
 class MatchStorage {
     constructor() {
@@ -1428,8 +1542,12 @@ class MatchStorage {
     saveMatchState(roomId, matchId, gameState, gameData) {
         if (!this.allMatches[roomId]) this.allMatches[roomId] = {};
         this.allMatches[roomId][matchId] = {
-            gameState: { ...gameState },
-            gameData: { ...gameData, players: [...gameData.players] },
+            gameState: JSON.parse(JSON.stringify(gameState)),
+            gameData: { 
+                ...gameData, 
+                players: [...gameData.players], 
+                questionBlocks: JSON.parse(JSON.stringify(gameData.questionBlocks)) 
+            },
             timestamp: new Date().toISOString()
         };
         this.saveAllMatches();
@@ -1444,7 +1562,97 @@ class MatchStorage {
 const matchStorage = new MatchStorage();
 
 // ============================================================
-// 4. ОСНОВНЫЕ ФУНКЦИИ ИГРЫ
+// 4. ЗАГРУЗКА ВОПРОСОВ ИЗ JSON
+// ============================================================
+function loadQuestionsFromFile(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const data = JSON.parse(e.target.result);
+            if (data.topics && Array.isArray(data.topics)) {
+                loadedQuestions.topics = data.topics;
+                syncQuestionsToBlocks();
+                refreshTable();
+                updateQuestionInfo();
+                updateQuestionCard();
+                alert(`✅ Загружено ${data.topics.length} тем и ${data.topics.reduce((acc, t) => acc + (t.questions?.length || 0), 0)} вопросов`);
+            } else {
+                alert('❌ Неверный формат файла: ожидается поле "topics"');
+            }
+        } catch (err) {
+            alert('❌ Ошибка при чтении файла: ' + err.message);
+        }
+    };
+    reader.readAsText(file);
+}
+
+function syncQuestionsToBlocks() {
+    const topics = loadedQuestions.topics;
+    const newBlocks = [];
+    
+    if (!topics || topics.length === 0) {
+        gameData.questionBlocks = [];
+        gameState.answers = [];
+        return;
+    }
+    
+    for (let i = 0; i < topics.length; i++) {
+        const topic = topics[i];
+        const questions = topic.questions || [];
+        const block = {
+            theme: topic.topic || `Тема ${i+1}`,
+            questions: questions.map(q => ({
+                value: q.value || 0,
+                text: q.text || `Вопрос ${i+1}`,
+                answer: q.answer || '',
+                form: q.form || '',
+                additional: q.additional || '',
+                comment: q.comment || '',
+                source: q.source || ''
+            }))
+        };
+        newBlocks.push(block);
+    }
+    
+    gameData.questionBlocks = newBlocks;
+    
+    const totalQuestions = gameData.questionBlocks.reduce((acc, b) => acc + b.questions.length, 0);
+    const newAnswers = [];
+    const oldAnswers = gameState.answers || [];
+    
+    for (let i = 0; i < totalQuestions; i++) {
+        if (i < oldAnswers.length && oldAnswers[i]) {
+            newAnswers.push([...oldAnswers[i]]);
+        } else {
+            newAnswers.push(Array(gameData.players.length).fill(null));
+        }
+    }
+    gameState.answers = newAnswers;
+    
+    const total = totalQuestions;
+    let absPos = 0;
+    for (let i = 0; i < gameState.currentBlock; i++) {
+        if (i < gameData.questionBlocks.length) {
+            absPos += gameData.questionBlocks[i].questions.length;
+        }
+    }
+    absPos += gameState.currentQuestion;
+    if (absPos >= total && total > 0) {
+        gameState.currentBlock = 0;
+        gameState.currentQuestion = 0;
+    }
+    
+    recalculateScores();
+    saveGame();
+    updateQuestionCard();
+    refreshTable();
+    updateQuestionInfo();
+    updateScoresDisplay();
+}
+
+// ============================================================
+// 5. ОСНОВНЫЕ ФУНКЦИИ ИГРЫ
 // ============================================================
 function initAnswers() {
     gameState.answers = [];
@@ -1458,17 +1666,33 @@ function initAnswers() {
 function getAbsoluteQuestionNumber() {
     let abs = 0;
     for (let i = 0; i < gameState.currentBlock; i++) {
-        abs += gameData.questionBlocks[i].questions.length;
+        if (i < gameData.questionBlocks.length) {
+            abs += gameData.questionBlocks[i].questions.length;
+        }
     }
     return abs + gameState.currentQuestion;
 }
 
+function getTotalQuestions() {
+    return gameData.questionBlocks.reduce((acc, b) => acc + b.questions.length, 0);
+}
+
 function getCurrentQuestion() {
+    if (gameData.questionBlocks.length === 0) {
+        return { theme: 'Нет тем', questions: [], current: { value: 0, text: 'Загрузите вопросы', answer: '' } };
+    }
+    if (gameState.currentBlock >= gameData.questionBlocks.length) {
+        gameState.currentBlock = 0;
+        gameState.currentQuestion = 0;
+    }
     const block = gameData.questionBlocks[gameState.currentBlock];
+    if (gameState.currentQuestion >= block.questions.length) {
+        gameState.currentQuestion = 0;
+    }
     return {
-        theme: block.theme,
+        theme: block.theme || 'Без названия',
         questions: block.questions,
-        current: block.questions[gameState.currentQuestion]
+        current: block.questions[gameState.currentQuestion] || { value: 0, text: 'Нет вопроса', answer: '' }
     };
 }
 
@@ -1542,6 +1766,7 @@ function reset_players_names() {
 function refreshTable() {
     if (gameState.horizontalView) renderHorizontalTable();
     else renderVerticalTable();
+    updateQuestionHighlight();
 }
 
 function clearPlayer(id) {
@@ -1551,7 +1776,7 @@ function clearPlayer(id) {
 }
 
 // ============================================================
-// 5. РЕНДЕР ТАБЛИЦЫ
+// 6. РЕНДЕР ТАБЛИЦЫ
 // ============================================================
 function renderVerticalTable() {
     const table = document.getElementById('scoreTable');
@@ -1613,7 +1838,6 @@ function renderVerticalTable() {
         });
     });
     
-    // Восстанавливаем обработчики для режима исправления
     if (gameState.editMode) {
         const cells = document.querySelectorAll('#tableBody td[id^="answer"]');
         cells.forEach(cell => {
@@ -1692,7 +1916,6 @@ function renderHorizontalTable() {
         questionIndex++;
     });
     
-    // Восстанавливаем обработчики для режима исправления
     if (gameState.editMode) {
         const cells = document.querySelectorAll('#tableBody td[id^="answer"]');
         cells.forEach(cell => {
@@ -1730,18 +1953,43 @@ function updateQuestionInfo() {
         return;
     }
     const q = getCurrentQuestion();
-    const total = gameData.questionBlocks.reduce((acc, b) => acc + b.questions.length, 0);
+    const total = getTotalQuestions();
     const current = getAbsoluteQuestionNumber() + 1;
     const penaltyInfo = gameState.halfMinus ? ' (½ минусы)' : '';
     info.innerHTML = `
-        <span>📌 Тема ${gameState.currentBlock+1}: ${q.theme || 'Без названия'} — ${q.current.value} очков${penaltyInfo}</span>
+        <span>📌 Тема ${gameState.currentBlock+1}: ${q.theme || 'Без названия'} — ${q.current.value || 0} очков${penaltyInfo}</span>
         <span class="progress">${current}/${total}</span>
     `;
     updateQuestionHighlight();
+    updateQuestionCard();
 }
 
 // ============================================================
-// 6. КНОПКИ ОТВЕТОВ (исправленная версия)
+// 7. КАРТОЧКА ВОПРОСА
+// ============================================================
+function updateQuestionCard() {
+    const q = getCurrentQuestion();
+    const currentQ = q.current || {};
+    
+    document.getElementById('qTheme').textContent = q.theme || 'Без названия';
+    document.getElementById('qValue').textContent = currentQ.value || 0;
+    document.getElementById('qText').textContent = currentQ.text || 'Нет текста вопроса';
+    document.getElementById('qAnswer').textContent = currentQ.answer || '—';
+    document.getElementById('qForm').textContent = currentQ.form || '—';
+    document.getElementById('qAdditional').textContent = currentQ.additional || '—';
+    document.getElementById('qSource').textContent = currentQ.source || '—';
+    
+    const commentEl = document.getElementById('qComment');
+    if (currentQ.comment) {
+        commentEl.textContent = '💬 ' + currentQ.comment;
+        commentEl.style.display = 'block';
+    } else {
+        commentEl.style.display = 'none';
+    }
+}
+
+// ============================================================
+// 8. КНОПКИ ОТВЕТОВ И НАВИГАЦИЯ ПО ВОПРОСАМ
 // ============================================================
 function initControlButtons() {
     const container = document.getElementById('controlButtons');
@@ -1776,8 +2024,61 @@ function initControlButtons() {
     });
     
     document.getElementById('nextQuestionBtn').onclick = nextQuestion;
+    document.getElementById('prevQuestionBtn').onclick = prevQuestion;
     document.getElementById('editModeBtn').onclick = toggleEditMode;
     document.getElementById('toggleViewBtn').onclick = toggleTableView;
+}
+
+function prevQuestion() {
+    if (gameState.editMode) return;
+    if (gameState.gameFinished) return;
+    
+    const total = getTotalQuestions();
+    if (total === 0) return;
+    
+    const absPos = getAbsoluteQuestionNumber();
+    if (absPos > 0) {
+        if (gameState.currentQuestion > 0) {
+            gameState.currentQuestion--;
+        } else if (gameState.currentBlock > 0) {
+            gameState.currentBlock--;
+            gameState.currentQuestion = gameData.questionBlocks[gameState.currentBlock].questions.length - 1;
+        }
+        updateQuestionInfo();
+        updateQuestionCard();
+        refreshTable();
+        saveGame();
+    }
+}
+
+function nextQuestion() {
+    if (gameState.editMode) return;
+    if (gameState.gameFinished) return;
+    
+    const block = gameData.questionBlocks[gameState.currentBlock];
+    if (!block) return;
+    
+    const total = getTotalQuestions();
+    const absPos = getAbsoluteQuestionNumber();
+    
+    if (absPos < total - 1) {
+        if (gameState.currentQuestion < block.questions.length - 1) {
+            gameState.currentQuestion++;
+        } else if (gameState.currentBlock < gameData.questionBlocks.length - 1) {
+            gameState.currentBlock++;
+            gameState.currentQuestion = 0;
+        }
+        updateQuestionInfo();
+        updateQuestionCard();
+        refreshTable();
+        saveGame();
+    } else {
+        gameState.gameFinished = true;
+        showGameOver();
+        updateQuestionInfo();
+        updateQuestionCard();
+        saveGame();
+    }
 }
 
 function toggleTableView() {
@@ -1798,7 +2099,6 @@ function toggleEditMode() {
     btn.textContent = gameState.editMode ? '✅ Завершить исправление' : '✏️ Режим исправления';
     btn.className = gameState.editMode ? 'btn btn-warning' : 'btn btn-outline';
     
-    // Назначаем обработчики кликов на ячейки
     const cells = document.querySelectorAll('#tableBody td[id^="answer"]');
     cells.forEach(cell => {
         if (gameState.editMode) {
@@ -1835,20 +2135,14 @@ function validateAnswers() {
 }
 
 function handleCellClick(e) {
-    // Проверяем, что режим исправления активен
     if (!gameState.editMode) return;
-    
-    // Получаем ячейку, по которой кликнули
     const cell = e.target;
-    
-    // Проверяем, что это действительно ячейка с ответом
     if (!cell.id || !cell.id.startsWith('answer')) return;
     
     const parts = cell.id.split('_');
     const qIdx = parseInt(parts[0].replace('answer', ''));
     const pIdx = parseInt(parts[1]);
     
-    // Проверяем валидность индексов
     if (isNaN(qIdx) || isNaN(pIdx)) return;
     if (qIdx >= gameState.answers.length || pIdx >= gameState.answers[qIdx].length) return;
     
@@ -1877,31 +2171,51 @@ function handleCellClick(e) {
 function handleAnswer(playerIdx, isCorrect) {
     if (gameState.gameFinished || gameState.editMode) return;
     const qNum = getAbsoluteQuestionNumber();
-    if (gameState.answers[qNum][playerIdx] !== null) return;
+    
+    // Проверяем, есть ли уже правильный ответ на этот вопрос
+    const questionAnswers = gameState.answers[qNum];
+    const hasCorrect = questionAnswers.some(ans => ans === true);
+    
+    if (isCorrect && hasCorrect) {
+        alert('На вопрос уже дан правильный ответ. Если он указан ошибочно, воспользуйтесь режимом исправления.');
+        return;
+    }
+    
+    if (questionAnswers[playerIdx] !== null) {
+        // Игрок уже ответил на этот вопрос
+        if (questionAnswers[playerIdx] === true) {
+            alert('Этот игрок уже дал правильный ответ на данный вопрос.');
+        } else {
+            alert('Этот игрок уже дал неправильный ответ на данный вопрос.');
+        }
+        return;
+    }
+    
     const q = getCurrentQuestion().current;
     const penalty = getPenaltyValue(q.value);
     gameState.answers[qNum][playerIdx] = isCorrect;
     gameState.scores[playerIdx] += isCorrect ? q.value : -penalty;
     updateScoresDisplay();
     refreshTable();
-    if (isCorrect) setTimeout(nextQuestion, 400);
     saveGame();
-}
-
-function nextQuestion() {
-    if (gameState.editMode) return;
-    const block = gameData.questionBlocks[gameState.currentBlock];
-    if (gameState.currentQuestion < block.questions.length - 1) {
-        gameState.currentQuestion++;
-    } else if (gameState.currentBlock < gameData.questionBlocks.length - 1) {
-        gameState.currentBlock++;
-        gameState.currentQuestion = 0;
-    } else {
-        gameState.gameFinished = true;
-        showGameOver();
+    
+    // Проверяем, все ли игроки ответили на вопрос (все получили минус)
+    // и есть ли хотя бы один правильный ответ
+    const allAnswered = gameState.answers[qNum].every(ans => ans !== null);
+    const hasCorrectAnswer = gameState.answers[qNum].some(ans => ans === true);
+    
+    // Если все ответили, но нет правильных ответов - переходим к следующему вопросу
+    if (allAnswered && !hasCorrectAnswer) {
+        setTimeout(() => {
+            alert('Никто не дал правильный ответ. Переходим к следующему вопросу.');
+            nextQuestion();
+        }, 300);
     }
-    updateQuestionInfo();
-    saveGame();
+    
+    // Если был дан правильный ответ, переходим к следующему вопросу (как раньше)
+    if (isCorrect) {
+        setTimeout(nextQuestion, 400);
+    }
 }
 
 function showGameOver() {
@@ -1910,6 +2224,7 @@ function showGameOver() {
     document.getElementById('saveResultsBtn').style.display = 'block';
     document.getElementById('answerControls').style.display = 'none';
     document.getElementById('nextQuestionBtn').style.display = 'none';
+    document.getElementById('prevQuestionBtn').style.display = 'none';
     renderScoreCards();
 }
 
@@ -1918,6 +2233,7 @@ function showResetGameOver() {
     document.getElementById('saveResultsBtn').style.display = 'none';
     document.getElementById('answerControls').style.display = 'block';
     document.getElementById('nextQuestionBtn').style.display = 'inline-flex';
+    document.getElementById('prevQuestionBtn').style.display = 'inline-flex';
 }
 
 function getGameResults() {
@@ -1943,7 +2259,7 @@ function getGameResults() {
 }
 
 // ============================================================
-// 7. ПОЛОВИННЫЕ МИНУСЫ И КЛАВИАТУРА
+// 9. ПОЛОВИННЫЕ МИНУСЫ И КЛАВИАТУРА
 // ============================================================
 function toggleHalfMinus() {
     const checkbox = document.getElementById('halfMinusToggle');
@@ -1978,53 +2294,96 @@ function recalculateScores() {
 }
 
 // ============================================================
-// 8. ЗАГРУЗКА / СОХРАНЕНИЕ ИГРЫ
+// 10. ЗАГРУЗКА / СОХРАНЕНИЕ ИГРЫ
 // ============================================================
 function loadGame(matchId) {
     const target = matchId || getCurrentMatchId();
     const saved = matchStorage.getMatchState(gameState.roomId, target);
+    
     if (saved) {
         Object.assign(gameState, saved.gameState);
+        
         if (saved.gameData?.players) {
             gameData.players = saved.gameData.players;
             updatePlayerInputs();
         }
+        
+        if (saved.gameData?.questionBlocks) {
+            gameData.questionBlocks = saved.gameData.questionBlocks;
+        }
+        
+        if (saved.gameState?.answers) {
+            gameState.answers = saved.gameState.answers.map(q => [...q]);
+        } else {
+            initAnswers();
+        }
+        
         document.getElementById('halfMinusToggle').checked = gameState.halfMinus || false;
         document.getElementById('keyboardToggle').checked = gameState.keyboardEnabled !== false;
+        
         updateScoresDisplay();
-        if (gameState.gameFinished) showGameOver();
+        
+        if (gameState.gameFinished) {
+            showGameOver();
+        } else {
+            showResetGameOver();
+        }
+        
         refreshTable();
         updateQuestionInfo();
+        updateQuestionCard();
+        
         if (gameState.horizontalView) {
             document.getElementById('toggleViewBtn').textContent = 'Вертикальное';
         } else {
             document.getElementById('toggleViewBtn').textContent = 'Горизонтальное';
         }
+        
         initControlButtons();
+        
         if (!gameState.gameFinished) {
             document.getElementById('answerControls').style.display = 'block';
             document.getElementById('nextQuestionBtn').style.display = 'inline-flex';
+            document.getElementById('prevQuestionBtn').style.display = 'inline-flex';
         }
     } else {
         reset_players_names();
         updatePlayerInputs();
-        initAnswers();
+        
+        if (loadedQuestions.topics.length > 0) {
+            syncQuestionsToBlocks();
+        } else {
+            initAnswers();
+        }
+        
         gameState.gameFinished = false;
         gameState.currentBlock = 0;
         gameState.currentQuestion = 0;
         gameState.scores = Array(gameData.players.length).fill(0);
         gameState.halfMinus = false;
         gameState.keyboardEnabled = true;
+        gameState.editMode = false;
+        
         document.getElementById('halfMinusToggle').checked = false;
         document.getElementById('keyboardToggle').checked = true;
+        
         refreshTable();
         updateQuestionInfo();
+        updateQuestionCard();
         initControlButtons();
+        
         document.getElementById('answerControls').style.display = 'block';
         document.getElementById('nextQuestionBtn').style.display = 'inline-flex';
+        document.getElementById('prevQuestionBtn').style.display = 'inline-flex';
+        document.getElementById('gameOverMessage').style.display = 'none';
+        document.getElementById('saveResultsBtn').style.display = 'none';
     }
+    
     renderScoreCards();
     document.getElementById('game').textContent = `🎯 Игра ${target}`;
+    refreshTable();
+    updateQuestionHighlight();
+    updateQuestionCard();
 }
 
 function getCurrentMatchId() {
@@ -2038,19 +2397,27 @@ function saveGame() {
 
 function switchMatch(newMatchId) {
     saveGame();
-    gameState.scores = Array(gameData.players.length).fill(0);
+    const oldIndex = gameindex;
     gameindex = newMatchId;
     document.getElementById('game').textContent = `🎯 Игра ${gameindex}`;
+    
     ClearPlayers();
+    gameState.scores = Array(gameData.players.length).fill(0);
+    
     loadGame(newMatchId);
+    
     GetGameHistory();
+    update_weight();
+    redrawBrackets();
+    refreshTable();
+    updateQuestionHighlight();
+    updateQuestionCard();
 }
 
 // ============================================================
-// 9. КЛАВИАТУРНЫЕ ЯРЛЫКИ (с проверкой keyboardEnabled)
+// 11. КЛАВИАТУРНЫЕ ЯРЛЫКИ
 // ============================================================
 document.addEventListener('keydown', (e) => {
-    // Проверяем, включена ли клавиатура
     if (!gameState.keyboardEnabled) return;
     if (gameState.gameFinished || gameState.editMode) return;
     
@@ -2060,7 +2427,8 @@ document.addEventListener('keydown', (e) => {
         'w': { p: 1, c: false }, 'W': { p: 1, c: false }, 'ц': { p: 1, c: false }, 'Ц': { p: 1, c: false },
         'e': { p: 2, c: false }, 'E': { p: 2, c: false }, 'у': { p: 2, c: false }, 'У': { p: 2, c: false },
         'r': { p: 3, c: false }, 'R': { p: 3, c: false }, 'к': { p: 3, c: false }, 'К': { p: 3, c: false },
-        '0': () => nextQuestion(), '`': () => nextQuestion(), 'ё': () => nextQuestion(), 'Ё': () => nextQuestion()
+        '0': () => nextQuestion(), '`': () => nextQuestion(), 'ё': () => nextQuestion(), 'Ё': () => nextQuestion(),
+        '9': () => prevQuestion(), '(': () => prevQuestion()
     };
     if (map[e.key]) {
         e.preventDefault();
@@ -2070,7 +2438,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ============================================================
-// 10. ИЗМЕНЕНИЕ КОЛИЧЕСТВА ТЕМ
+// 12. ИЗМЕНЕНИЕ КОЛИЧЕСТВА ТЕМ
 // ============================================================
 function resizeThemes(newCount) {
     const oldBlocks = gameData.questionBlocks;
@@ -2102,6 +2470,7 @@ function resizeThemes(newCount) {
     updateScoresDisplay();
     refreshTable();
     updateQuestionInfo();
+    updateQuestionCard();
     saveGame();
 }
 
@@ -2116,7 +2485,7 @@ document.getElementById('applyThemeCountBtn').addEventListener('click', () => {
 document.getElementById('saveResultsBtn').addEventListener('click', AddResult);
 
 // ============================================================
-// 11. РАБОТА С ИГРОКАМИ
+// 13. РАБОТА С ИГРОКАМИ
 // ============================================================
 function addActive() {
     const name = document.getElementById('player_to_add').value.trim();
@@ -2219,7 +2588,7 @@ function pl_move(id, pos) {
 }
 
 // ============================================================
-// 12. DRAG & DROP ДЛЯ БЛОКИРОВКИ
+// 14. DRAG & DROP ДЛЯ БЛОКИРОВКИ
 // ============================================================
 function dragstart_handler(ev) {
     player_name_drag = ev.target.textContent.replace('✕', '').trim();
@@ -2278,7 +2647,7 @@ function removeFromBlock(name) {
 window.removeFromBlock = removeFromBlock;
 
 // ============================================================
-// 13. РЕЗУЛЬТАТЫ И ИСТОРИЯ
+// 15. РЕЗУЛЬТАТЫ И ИСТОРИЯ
 // ============================================================
 function AddResult() {
     const scores = [];
@@ -2340,7 +2709,7 @@ async function GetGameHistoryArray() {
 }
 
 // ============================================================
-// 14. ВЕСА
+// 16. ВЕСА
 // ============================================================
 function update_weight() {
     const to_send = [
@@ -2370,7 +2739,7 @@ function update_weight() {
 }
 
 // ============================================================
-// 15. ПРОГНОЗ
+// 17. ПРОГНОЗ
 // ============================================================
 function predict_matches() {
     const to_send = {
@@ -2398,7 +2767,7 @@ function predict_matches() {
 }
 
 // ============================================================
-// 16. ТУРНИРНАЯ СЕТКА (renderBracket)
+// 18. ТУРНИРНАЯ СЕТКА
 // ============================================================
 function renderBracket(schema, completedMatches, container, options = {}) {
     const containerEl = typeof container === 'string' ? document.getElementById(container) : container;
@@ -2526,8 +2895,7 @@ function renderBracket(schema, completedMatches, container, options = {}) {
                     map.get(src.matchId).push({
                         targetMatchId: m.id,
                         targetSlot: src.slot,
-                        place: src.place
-                    });
+                        place: src.place                    });
                 }
             });
         });
@@ -2729,7 +3097,7 @@ function showMatchDetailsModal(data) {
 }
 
 // ============================================================
-// 17. ЭКСПОРТ / ИМПОРТ СОСТОЯНИЯ
+// 19. ЭКСПОРТ / ИМПОРТ СОСТОЯНИЯ
 // ============================================================
 function exportState() {
     const data = {
@@ -2741,7 +3109,8 @@ function exportState() {
         gameIndex: gameindex,
         gameData: gameData,
         gameState: gameState,
-        allMatches: matchStorage.allMatches
+        allMatches: matchStorage.allMatches,
+        loadedQuestions: loadedQuestions
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -2768,6 +3137,9 @@ async function importState(file) {
             if (imported.gameState.answers) {
                 gameState.answers = imported.gameState.answers.map(q => [...q]);
             }
+            if (imported.loadedQuestions) {
+                loadedQuestions = imported.loadedQuestions;
+            }
             document.getElementById('halfMinusToggle').checked = gameState.halfMinus || false;
             document.getElementById('keyboardToggle').checked = gameState.keyboardEnabled !== false;
             matchStorage.allMatches = imported.allMatches || {};
@@ -2782,6 +3154,7 @@ async function importState(file) {
             loadGame(gameindex);
             GetGameHistory();
             update_weight();
+            updateQuestionCard();
             redrawBrackets();
             alert('✅ Состояние успешно восстановлено');
         } catch (err) {
@@ -2792,7 +3165,7 @@ async function importState(file) {
 }
 
 // ============================================================
-// 18. ЗАВЕРШЕНИЕ КОМНАТЫ
+// 20. ЗАВЕРШЕНИЕ КОМНАТЫ
 // ============================================================
 function FinalizeRoom() {
     if (confirm('После завершения боев вы не сможете изменять данные. Вы уверены?')) {
@@ -2822,10 +3195,12 @@ function ClearCurrentGameLog(forced = true) {
     refreshTable();
     updateScoresDisplay();
     updateQuestionInfo();
+    updateQuestionCard();
     saveGame();
     showResetGameOver();
     document.getElementById('answerControls').style.display = 'block';
     document.getElementById('nextQuestionBtn').style.display = 'inline-flex';
+    document.getElementById('prevQuestionBtn').style.display = 'inline-flex';
 }
 
 function Info() {
@@ -2833,10 +3208,11 @@ function Info() {
     console.log('gameState:', gameState);
     console.log('active:', active);
     console.log('one_game_block_array:', one_game_block_array);
+    console.log('loadedQuestions:', loadedQuestions);
 }
 
 // ============================================================
-// 19. ИНИЦИАЛИЗАЦИЯ
+// 21. ИНИЦИАЛИЗАЦИЯ
 // ============================================================
 function init_page() {
     gameindex = {{gameindex}};
@@ -2864,6 +3240,7 @@ function init_page() {
         });
     });
     setTimeout(redrawBrackets, 500);
+    updateQuestionCard();
 }
 
 // Глобальные функции для HTML
@@ -2896,6 +3273,7 @@ window.showMatchDetailsModal = showMatchDetailsModal;
 window.renderBracket = renderBracket;
 window.toggleHalfMinus = toggleHalfMinus;
 window.toggleKeyboard = toggleKeyboard;
+window.loadQuestionsFromFile = loadQuestionsFromFile;
 
 document.addEventListener('DOMContentLoaded', init_page);
 </script>
