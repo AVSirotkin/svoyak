@@ -42,7 +42,7 @@
         }
 
         .page-header {
-            max-width: 1400px;
+            max-width: 1600px;
             margin: 0 auto 24px;
             display: flex;
             justify-content: space-between;
@@ -642,7 +642,166 @@
             padding: 8px 12px;
             border-radius: 6px;
             border-left: 3px solid var(--warning);
-            margin-top: 6px;
+            margin-top: 8px;
+            font-size: 14px;
+            color: var(--gray-700);
+        }
+
+        /* КОММЕНТАРИЙ К ТЕМЕ (важное предупреждение) */
+        .question-card .q-theme-comment {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            border-left: 4px solid var(--warning);
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 14px;
+            font-size: 14px;
+            color: #78350f;
+            font-weight: 600;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            box-shadow: 0 2px 4px rgba(245, 158, 11, 0.15);
+        }
+
+        .question-card .q-theme-comment .icon {
+            font-size: 20px;
+            flex-shrink: 0;
+            line-height: 1;
+        }
+
+        .question-card .q-theme-comment .comment-text {
+            flex: 1;
+            line-height: 1.5;
+        }
+
+        /* СПОЙЛЕР ДЛЯ ДЛИННЫХ КОММЕНТАРИЕВ К ВОПРОСУ */
+        .q-spoiler {
+            margin-top: 10px;
+            border: 1px solid var(--gray-200);
+            border-radius: 8px;
+            overflow: hidden;
+            background: var(--gray-50);
+        }
+
+        .q-spoiler summary {
+            cursor: pointer;
+            color: var(--primary);
+            font-weight: 500;
+            font-size: 14px;
+            padding: 10px 14px;
+            user-select: none;
+            transition: var(--transition);
+            list-style: none;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .q-spoiler summary::-webkit-details-marker { display: none; }
+
+        .q-spoiler summary::before {
+            content: '▶';
+            font-size: 10px;
+            transition: transform 0.2s;
+            display: inline-block;
+        }
+
+        .q-spoiler[open] summary::before {
+            transform: rotate(90deg);
+        }
+
+        .q-spoiler summary:hover {
+            background: var(--primary-light);
+        }
+
+        .q-spoiler[open] summary {
+            border-bottom: 1px solid var(--gray-200);
+        }
+
+        .q-spoiler .q-spoiler-content {
+            padding: 12px 16px;
+            font-size: 14px;
+            line-height: 1.6;
+            color: var(--gray-700);
+            background: white;
+            white-space: pre-wrap;
+        }
+
+        /* ПАНЕЛЬ ПАКЕТА ВОПРОСОВ */
+        .package-info {
+            background: var(--primary-light);
+            border: 1px solid var(--primary);
+            border-radius: 8px;
+            padding: 14px 16px;
+            font-size: 14px;
+        }
+
+        .package-info .pkg-title {
+            font-weight: 600;
+            color: var(--primary-dark);
+            margin-bottom: 8px;
+            font-size: 15px;
+        }
+
+        .package-info .pkg-stats {
+            color: var(--gray-700);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px 16px;
+            font-size: 13px;
+        }
+
+        .package-info .pkg-stats span {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .package-info .pkg-stats strong {
+            color: var(--primary-dark);
+        }
+
+        .package-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(99, 102, 241, 0.2);
+        }
+
+        .package-controls label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 14px;
+            color: var(--gray-700);
+            font-weight: 500;
+        }
+
+        .package-controls input[type="number"] {
+            padding: 6px 10px;
+            border: 2px solid var(--gray-200);
+            border-radius: 6px;
+            font-size: 14px;
+            width: 70px;
+            outline: none;
+            text-align: center;
+        }
+
+        .package-controls input[type="number"]:focus {
+            border-color: var(--primary);
+        }
+
+        .package-split {
+            font-size: 12px;
+            color: var(--gray-600);
+            margin-top: 8px;
+            padding: 8px 10px;
+            background: rgba(255,255,255,0.6);
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
         }
 
         .brackets {
@@ -954,6 +1113,373 @@
             transform: scale(0.98);
         }
 
+
+        /* ===== УПРАВЛЕНИЕ ТЕМАМИ ===== */
+        .theme-manager {
+            background: white;
+            border: 1px solid var(--gray-200);
+            border-radius: 8px;
+            padding: 12px 14px;
+        }
+
+        .theme-manager-title {
+            font-weight: 600;
+            color: var(--gray-800);
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+
+        .theme-nav-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+
+        .theme-nav-info {
+            font-size: 13px;
+            color: var(--gray-600);
+            padding: 4px 10px;
+            background: var(--gray-50);
+            border-radius: 6px;
+        }
+
+        .theme-nav-info strong {
+            color: var(--primary-dark);
+        }
+
+        .theme-setup-row {
+            display: flex;
+            gap: 14px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+            padding: 10px 12px;
+            background: var(--gray-50);
+            border-radius: 6px;
+        }
+
+        .theme-setup-row label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: var(--gray-700);
+            font-weight: 500;
+        }
+
+        .theme-setup-row input[type="number"] {
+            padding: 5px 8px;
+            border: 2px solid var(--gray-200);
+            border-radius: 6px;
+            font-size: 13px;
+            width: 70px;
+            outline: none;
+            text-align: center;
+        }
+
+        .theme-setup-row input[type="number"]:focus {
+            border-color: var(--primary);
+        }
+
+        .theme-preview {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            margin-bottom: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .theme-preview-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            background: var(--gray-50);
+            border-radius: 6px;
+            font-size: 13px;
+            border-left: 3px solid var(--primary);
+        }
+
+        .theme-preview-item.skipped {
+            border-left-color: var(--gray-400);
+            background: var(--gray-100);
+            opacity: 0.7;
+        }
+
+        .theme-preview-item .tp-num {
+            font-weight: 700;
+            color: var(--primary);
+            min-width: 32px;
+        }
+
+        .theme-preview-item.skipped .tp-num {
+            color: var(--gray-500);
+        }
+
+        .theme-preview-item .tp-name {
+            flex: 1;
+            color: var(--gray-800);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .theme-preview-item.skipped .tp-name {
+            text-decoration: line-through;
+            color: var(--gray-500);
+        }
+
+        .theme-preview-item .tp-comment {
+            font-size: 11px;
+            color: var(--warning);
+            font-weight: 600;
+        }
+
+        .theme-preview-item .tp-actions {
+            display: flex;
+            gap: 4px;
+        }
+
+        .theme-preview-item .tp-actions button {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+            transition: var(--transition);
+        }
+
+        .theme-preview-item .tp-actions button:hover {
+            background: var(--gray-200);
+        }
+
+        .theme-manager-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            padding-top: 10px;
+            border-top: 1px solid var(--gray-200);
+        }
+
+        /* Список пропущенных */
+        .skipped-list-container {
+            margin-top: 12px;
+            padding: 10px 12px;
+            background: var(--danger-bg);
+            border-radius: 6px;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        .skipped-list-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 600;
+            font-size: 13px;
+            color: var(--danger);
+            margin-bottom: 8px;
+        }
+
+        .skipped-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .skipped-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: white;
+            color: var(--danger);
+            padding: 4px 10px;
+            border-radius: 14px;
+            font-size: 12px;
+            font-weight: 500;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .skipped-tag .remove-btn {
+            background: none;
+            border: none;
+            color: var(--danger);
+            cursor: pointer;
+            font-size: 13px;
+            padding: 0 2px;
+        }
+
+        .skipped-tag .remove-btn:hover {
+            color: #dc2626;
+        }
+
+        /* Модальное окно списка тем */
+        .themes-list-toolbar {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--gray-200);
+        }
+
+        .themes-list-toolbar input[type="text"] {
+            flex: 1;
+            min-width: 200px;
+            padding: 8px 14px;
+            border: 2px solid var(--gray-200);
+            border-radius: 8px;
+            font-size: 14px;
+            outline: none;
+            transition: var(--transition);
+        }
+
+        .themes-list-toolbar input[type="text"]:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+        }
+
+        .themes-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+
+        .theme-list-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 14px;
+            background: var(--gray-50);
+            border-radius: 8px;
+            border-left: 4px solid var(--primary);
+            transition: var(--transition);
+        }
+
+        .theme-list-item:hover {
+            background: var(--primary-light);
+        }
+
+        .theme-list-item.skipped {
+            border-left-color: var(--gray-400);
+            background: var(--gray-100);
+            opacity: 0.7;
+        }
+
+        .theme-list-item.used {
+            border-left-color: var(--success);
+            background: var(--success-bg);
+        }
+
+        .theme-list-item.used.skipped {
+            border-left-color: var(--gray-500);
+            background: var(--gray-100);
+        }
+
+        .theme-list-item .tli-num {
+            font-weight: 700;
+            font-size: 14px;
+            color: var(--primary);
+            min-width: 40px;
+            text-align: center;
+            padding: 4px 8px;
+            background: white;
+            border-radius: 6px;
+            border: 1px solid var(--gray-200);
+        }
+
+        .theme-list-item.skipped .tli-num {
+            color: var(--gray-500);
+            text-decoration: line-through;
+        }
+
+        .theme-list-item.used .tli-num {
+            color: var(--success);
+        }
+
+        .theme-list-item .tli-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .theme-list-item .tli-name {
+            font-weight: 600;
+            color: var(--gray-800);
+            font-size: 14px;
+            margin-bottom: 2px;
+            word-wrap: break-word;
+        }
+
+        .theme-list-item.skipped .tli-name {
+            text-decoration: line-through;
+            color: var(--gray-500);
+        }
+
+        .theme-list-item .tli-comment {
+            font-size: 12px;
+            color: var(--warning);
+            font-weight: 600;
+            margin-top: 2px;
+        }
+
+        .theme-list-item .tli-meta {
+            font-size: 11px;
+            color: var(--gray-500);
+            margin-top: 2px;
+        }
+
+        .theme-list-item .tli-actions {
+            display: flex;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        .theme-list-item .tli-actions button {
+            padding: 5px 10px;
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition);
+            font-family: inherit;
+        }
+
+        .theme-list-item .tli-actions .btn-skip {
+            background: var(--gray-200);
+            color: var(--gray-700);
+        }
+
+        .theme-list-item .tli-actions .btn-skip:hover {
+            background: var(--danger);
+            color: white;
+        }
+
+        .theme-list-item .tli-actions .btn-restore {
+            background: var(--success-bg);
+            color: var(--success);
+        }
+
+        .theme-list-item .tli-actions .btn-restore:hover {
+            background: var(--success);
+            color: white;
+        }
+
+        .theme-list-item .tli-actions .btn-jump {
+            background: var(--primary-light);
+            color: var(--primary);
+        }
+
+        .theme-list-item .tli-actions .btn-jump:hover {
+            background: var(--primary);
+            color: white;
+        }
+
         .flex { display: flex; }
         .flex-wrap { flex-wrap: wrap; }
         .gap-8 { gap: 8px; }
@@ -1103,7 +1629,7 @@
         </div>
     </div>
 
-    <!-- ПАНЕЛЬ 3: Управление игрой (кнопки ответов + настройки) -->
+    <!-- ПАНЕЛЬ 3: Управление игрой -->
     <div class="panel" id="panel-controls">
         <div class="panel-header" draggable="true" 
             ondragstart="panelDragStart(event)" 
@@ -1115,13 +1641,11 @@
             </div>
         </div>
         <div class="panel-body">
-            <!-- КНОПКИ ОТВЕТОВ -->
             <div class="answer-controls" id="answerControls">
                 <span class="label">🎯 Ответы игроков</span>
                 <div id="controlButtons" class="answer-buttons-grid"></div>
             </div>
 
-            <!-- НАСТРОЙКИ И УПРАВЛЕНИЕ -->
             <div class="game-controls-row">
                 <button id="prevQuestionBtn" class="btn btn-outline">⬅️ Предыдущий</button>
                 <button id="nextQuestionBtn" class="btn btn-primary">Следующий ➡️</button>
@@ -1141,7 +1665,7 @@
         </div>
     </div>
 
-    <!-- ПАНЕЛЬ 4: Карточка вопроса (один слот) -->
+    <!-- ПАНЕЛЬ 4: Карточка вопроса -->
     <div class="panel" id="panel-question-card">
         <div class="panel-header" draggable="true" 
             ondragstart="panelDragStart(event)" 
@@ -1155,6 +1679,11 @@
         <div class="panel-body">
             <div id="questionCardContainer">
                 <div class="question-card" id="questionCard">
+                    <!-- КОММЕНТАРИЙ К ТЕМЕ (всегда виден) -->
+                    <div class="q-theme-comment" id="qThemeComment" style="display:none;">
+                        <span class="icon">⚠️</span>
+                        <span class="comment-text" id="qThemeCommentText"></span>
+                    </div>
                     <div class="q-header">
                         <span class="q-theme" id="qTheme">Тема не загружена</span>
                         <span class="q-value" id="qValue">0</span>
@@ -1166,13 +1695,89 @@
                         <span><span class="label">Доп.:</span> <span class="q-additional" id="qAdditional">—</span></span>
                         <span><span class="label">Источник:</span> <span id="qSource">—</span></span>
                     </div>
-                    <div class="q-comment" id="qComment" style="display:none;"></div>
+                    <!-- КОММЕНТАРИЙ К ВОПРОСУ (со спойлером для длинных) -->
+                    <div id="qCommentContainer"></div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- ПАНЕЛЬ 5: Протокол (широкая) -->
+<!-- ПАНЕЛЬ 5: Пакет вопросов -->
+<div class="panel" id="panel-package">
+    <div class="panel-header" draggable="true" 
+        ondragstart="panelDragStart(event)" 
+        ondragend="panelDragEnd(event)">
+        <span class="panel-title"><span class="icon">📦</span> Пакет вопросов</span>
+        <div class="panel-controls">
+            <button class="panel-collapse" title="Свернуть">▼</button>
+            <button class="panel-expand" title="Развернуть">⛶</button>
+        </div>
+    </div>
+    <div class="panel-body">
+        <div id="packageInfo" style="display:none;">
+            <div class="package-info">
+                <div class="pkg-title">📖 Загруженный пакет</div>
+                <div class="pkg-stats">
+                    <span>📁 Файл: <strong id="pkgFileName">—</strong></span>
+                    <span>📚 Всего тем: <strong id="pkgTotalThemes">0</strong></span>
+                    <span>❓ Всего вопросов: <strong id="pkgTotalQuestions">0</strong></span>
+                    <span>⏭️ Пропущено: <strong id="pkgSkippedThemes">0</strong></span>
+                    <span>📋 Осталось: <strong id="pkgRemainingThemes">0</strong></span>
+                </div>
+                <div class="package-split" id="pkgSplit">Разбивка: —</div>
+            </div>
+
+            <!-- УПРАВЛЕНИЕ ТЕМАМИ -->
+            <div class="theme-manager" style="margin-top:16px;">
+                <div class="theme-manager-title">🎛️ Управление темами</div>
+
+                <!-- Навигация по боям -->
+                <div class="theme-nav-row">
+                    <button onclick="pkgNavPrev()" class="btn btn-outline btn-sm">← Предыдущий бой</button>
+                    <span class="theme-nav-info">Бой <strong id="pkgCurrentGameNumber">1</strong> из <strong id="pkgTotalGames">1</strong></span>
+                    <button onclick="pkgNavNext()" class="btn btn-outline btn-sm">Следующий бой →</button>
+                </div>
+
+                <!-- Поля настройки текущего боя -->
+                <div class="theme-setup-row">
+                    <label>С какой темы начать (номер в пакете): 
+                        <input type="number" id="startThemeInput" min="1" value="1" onchange="onStartThemeChange()">
+                    </label>
+                    <label>Тем в бое: 
+                        <input type="number" id="themesPerGameInput" min="1" value="6" onchange="onThemesPerGameChange()" oninput="onThemesPerGameChange()">
+                    </label>
+                </div>
+
+                <div class="theme-preview" id="themePreview">
+                    <!-- Сюда рендерится предпросмотр тем боя -->
+                </div>
+
+                <div class="theme-manager-actions">
+                    <button onclick="openThemesList()" class="btn btn-primary btn-sm">📋 Список всех тем</button>
+                    <button onclick="applyThemeSetup()" class="btn btn-success btn-sm">✅ Применить</button>
+                    <button onclick="loadNextGameFromPackage()" class="btn btn-primary btn-sm">▶️ Следующий блок</button>
+                    <button onclick="resetPackageUsage()" class="btn btn-outline btn-sm">🔄 Сбросить</button>
+                    <button onclick="clearPackage()" class="btn btn-danger btn-sm">✕ Отключить</button>
+                </div>
+
+                <!-- СПИСОК ПРОПУЩЕННЫХ ТЕМ -->
+                <div class="skipped-list-container" id="skippedListContainer" style="display:none;">
+                    <div class="skipped-list-title">
+                        <span>⏭️ Пропущенные темы (<span id="skippedCount">0</span>)</span>
+                        <button onclick="restoreAllSkipped()" class="btn btn-outline btn-xs">↩️ Восстановить все</button>
+                    </div>
+                    <div class="skipped-list" id="skippedList"></div>
+                </div>
+            </div>
+        </div>
+        <div id="packageEmpty">
+            <p class="text-muted">Загрузите файл с вопросами через кнопку "📖 Загрузить вопросы" в шапке</p>
+            <p class="text-muted" style="margin-top:8px;">Формат: <code>{"topics": [{"topic": "...", "comment": "...", "questions": [{"value": 10, "text": "...", "answer": "...", "comment": "..."}]}]}</code></p>
+        </div>
+    </div>
+</div>
+
+    <!-- ПАНЕЛЬ 6: Протокол -->
     <div class="panel wide" id="panel-quiz">
         <div class="panel-header" draggable="true" 
             ondragstart="panelDragStart(event)" 
@@ -1219,7 +1824,7 @@
         </div>
     </div>
 
-    <!-- ПАНЕЛЬ 6: Блокировка -->
+    <!-- ПАНЕЛЬ 7: Блокировка -->
     <div class="panel" id="panel-block">
         <div class="panel-header" draggable="true" 
             ondragstart="panelDragStart(event)" 
@@ -1241,7 +1846,7 @@
         </div>
     </div>
 
-    <!-- ПАНЕЛЬ 7: Веса -->
+    <!-- ПАНЕЛЬ 8: Веса -->
     <div class="panel" id="panel-weights">
         <div class="panel-header" draggable="true" 
             ondragstart="panelDragStart(event)" 
@@ -1263,7 +1868,7 @@
         </div>
     </div>
 
-    <!-- ПАНЕЛЬ 8: Турнирная сетка (широкая) -->
+    <!-- ПАНЕЛЬ 9: Турнирная сетка -->
     <div class="panel wide" id="panel-tournament-brackets">
         <div class="panel-header" draggable="true" 
             ondragstart="panelDragStart(event)" 
@@ -1297,6 +1902,27 @@
     </div>
 </div>
 
+<!-- МОДАЛЬНОЕ ОКНО: Список тем -->
+<div id="themes-list-overlay" class="modal-overlay" style="display:none;">
+    <div class="modal-container">
+        <div class="modal-header">
+            <span class="modal-title">📋 Список тем пакета</span>
+            <button class="modal-close" onclick="closeThemesList()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="themes-list-toolbar">
+                <input type="text" id="themesSearchInput" placeholder="🔍 Поиск по названию..." oninput="filterThemesList()">
+                <label class="checkbox-group">
+                    <input type="checkbox" id="hideSkippedCheckbox" onchange="filterThemesList()">
+                    Скрыть пропущенные
+                </label>
+                <span class="text-muted" id="themesListStats"></span>
+            </div>
+            <div class="themes-list" id="themesListBody"></div>
+        </div>
+    </div>
+</div>
+
 <script>
 // ============================================================
 // 1. ПАНЕЛИ: Drag & Drop
@@ -1308,6 +1934,7 @@ const DEFAULT_PANELS_ORDER = [
     'panel-match',
     'panel-controls',
     'panel-question-card',
+    'panel-package',
     'panel-quiz',
     'panel-block',
     'panel-weights',
@@ -1482,7 +2109,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     document.querySelector('.modal-close').addEventListener('click', closeModalAndRestore);
     document.getElementById('modal-overlay').addEventListener('click', (e) => {
-        if (e.target === document.getElementById('modal-overlay')) closeModalAndRestore;
+        if (e.target === document.getElementById('modal-overlay')) closeModalAndRestore();
     });
 });
 
@@ -1496,18 +2123,21 @@ const gameData = {
 for (let i = 1; i < 7; i++) {
     gameData.questionBlocks.push({
         theme: "",
+        comment: "",
         questions: [
-            { value: 10, text: "Вопрос 1", answer: "" },
-            { value: 20, text: "Вопрос 2", answer: "" },
-            { value: 30, text: "Вопрос 3", answer: "" },
-            { value: 40, text: "Вопрос 4", answer: "" },
-            { value: 50, text: "Вопрос 5", answer: "" }
+            { value: 10, text: "Вопрос 1", answer: "", comment: "" },
+            { value: 20, text: "Вопрос 2", answer: "", comment: "" },
+            { value: 30, text: "Вопрос 3", answer: "", comment: "" },
+            { value: 40, text: "Вопрос 4", answer: "", comment: "" },
+            { value: 50, text: "Вопрос 5", answer: "", comment: "" }
         ]
     });
 }
 
 let loadedQuestions = {
     topics: [],
+    usedThemesCount: 0,
+    sourceFileName: '',
     currentMatchQuestions: []
 };
 
@@ -1562,8 +2192,15 @@ class MatchStorage {
 const matchStorage = new MatchStorage();
 
 // ============================================================
-// 4. ЗАГРУЗКА ВОПРОСОВ ИЗ JSON
+// 4. ЗАГРУЗКА ПАКЕТА ВОПРОСОВ И УПРАВЛЕНИЕ ТЕМАМИ
 // ============================================================
+
+// Массив пропущенных тем (индексы в пакете, 0-based)
+let skippedThemes = new Set();
+
+// Настройки текущего боя
+let currentGameStartIndex = 0; // индекс темы в пакете, с которой начинается текущий бой (учитывая пропуски)
+
 function loadQuestionsFromFile(file) {
     if (!file) return;
     const reader = new FileReader();
@@ -1572,11 +2209,18 @@ function loadQuestionsFromFile(file) {
             const data = JSON.parse(e.target.result);
             if (data.topics && Array.isArray(data.topics)) {
                 loadedQuestions.topics = data.topics;
-                syncQuestionsToBlocks();
-                refreshTable();
-                updateQuestionInfo();
-                updateQuestionCard();
-                alert(`✅ Загружено ${data.topics.length} тем и ${data.topics.reduce((acc, t) => acc + (t.questions?.length || 0), 0)} вопросов`);
+                loadedQuestions.usedThemesCount = 0;
+                loadedQuestions.sourceFileName = file.name;
+                skippedThemes = new Set();
+                currentGameStartIndex = 0;
+                
+                updatePackageInfo();
+                syncQuestionsToBlocksFromPackage(0);
+                
+                const totalQ = data.topics.reduce((acc, t) => acc + (t.questions?.length || 0), 0);
+                const themesPerGame = parseInt(document.getElementById('themesPerGameInput')?.value) || 6;
+                const gamesCount = Math.ceil(data.topics.length / themesPerGame);
+                alert(`✅ Загружено ${data.topics.length} тем и ${totalQ} вопросов\n📁 Файл: ${file.name}\n🎮 Можно провести ~${gamesCount} боёв (по ${themesPerGame} тем)`);
             } else {
                 alert('❌ Неверный формат файла: ожидается поле "topics"');
             }
@@ -1587,68 +2231,542 @@ function loadQuestionsFromFile(file) {
     reader.readAsText(file);
 }
 
-function syncQuestionsToBlocks() {
-    const topics = loadedQuestions.topics;
-    const newBlocks = [];
+// Получить массив индексов "активных" (не пропущенных) тем
+function getActiveTopicIndices() {
+    const topics = loadedQuestions.topics || [];
+    const result = [];
+    for (let i = 0; i < topics.length; i++) {
+        if (!skippedThemes.has(i)) result.push(i);
+    }
+    return result;
+}
+
+// Получить индексы тем для боя, начиная с позиции startIndex среди активных
+function getGameTopicIndices(startActiveIndex, themesPerGame) {
+    const activeIndices = getActiveTopicIndices();
+    return activeIndices.slice(startActiveIndex, startActiveIndex + themesPerGame);
+}
+
+// Синхронизировать вопросы в игру, начиная с указанной активной позиции
+function syncQuestionsToBlocksFromPackage(startActiveIndex) {
+    const topics = loadedQuestions.topics || [];
+    if (topics.length === 0) return;
     
-    if (!topics || topics.length === 0) {
-        gameData.questionBlocks = [];
-        gameState.answers = [];
+    const themesPerGame = parseInt(document.getElementById('themesPerGameInput')?.value) || 6;
+    const topicIndices = getGameTopicIndices(startActiveIndex, themesPerGame);
+    
+    if (topicIndices.length === 0) {
+        alert('Нет доступных тем для загрузки');
         return;
     }
     
-    for (let i = 0; i < topics.length; i++) {
-        const topic = topics[i];
+    const newBlocks = [];
+    for (let k = 0; k < topicIndices.length; k++) {
+        const realIdx = topicIndices[k];
+        const topic = topics[realIdx];
         const questions = topic.questions || [];
-        const block = {
-            theme: topic.topic || `Тема ${i+1}`,
-            questions: questions.map(q => ({
+        newBlocks.push({
+            theme: topic.topic || `Тема ${realIdx + 1}`,
+            comment: topic.comment || '',
+            sourceIndex: realIdx, // сохраняем оригинальный номер темы из пакета
+            questions: questions.map((q, qi) => ({
                 value: q.value || 0,
-                text: q.text || `Вопрос ${i+1}`,
+                text: q.text || `Вопрос ${qi+1}`,
                 answer: q.answer || '',
                 form: q.form || '',
                 additional: q.additional || '',
                 comment: q.comment || '',
                 source: q.source || ''
             }))
-        };
-        newBlocks.push(block);
+        });
     }
     
     gameData.questionBlocks = newBlocks;
     
-    const totalQuestions = gameData.questionBlocks.reduce((acc, b) => acc + b.questions.length, 0);
-    const newAnswers = [];
-    const oldAnswers = gameState.answers || [];
+    // Обновляем селектор "Количество тем"
+    const themeSelect = document.getElementById('themeCountSelect');
+    if (themeSelect) {
+        const existingOption = Array.from(themeSelect.options).find(opt => parseInt(opt.value) === newBlocks.length);
+        if (!existingOption) {
+            const opt = document.createElement('option');
+            opt.value = newBlocks.length;
+            opt.textContent = newBlocks.length + ' тем';
+            themeSelect.appendChild(opt);
+        }
+        themeSelect.value = newBlocks.length;
+    }
     
+    const totalQuestions = newBlocks.reduce((acc, b) => acc + b.questions.length, 0);
+    gameState.answers = [];
     for (let i = 0; i < totalQuestions; i++) {
-        if (i < oldAnswers.length && oldAnswers[i]) {
-            newAnswers.push([...oldAnswers[i]]);
-        } else {
-            newAnswers.push(Array(gameData.players.length).fill(null));
-        }
-    }
-    gameState.answers = newAnswers;
-    
-    const total = totalQuestions;
-    let absPos = 0;
-    for (let i = 0; i < gameState.currentBlock; i++) {
-        if (i < gameData.questionBlocks.length) {
-            absPos += gameData.questionBlocks[i].questions.length;
-        }
-    }
-    absPos += gameState.currentQuestion;
-    if (absPos >= total && total > 0) {
-        gameState.currentBlock = 0;
-        gameState.currentQuestion = 0;
+        gameState.answers.push(Array(gameData.players.length).fill(null));
     }
     
-    recalculateScores();
-    saveGame();
-    updateQuestionCard();
+    gameState.currentBlock = 0;
+    gameState.currentQuestion = 0;
+    gameState.gameFinished = false;
+    gameState.editMode = false;
+    gameState.scores = Array(gameData.players.length).fill(0);
+    
+    currentGameStartIndex = startActiveIndex;
+    loadedQuestions.usedThemesCount = startActiveIndex + topicIndices.length;
+    
+    updatePackageInfo();
+    renderScoreCards();
     refreshTable();
     updateQuestionInfo();
+    updateQuestionCard();
     updateScoresDisplay();
+    
+    document.getElementById('gameOverMessage').style.display = 'none';
+    document.getElementById('saveResultsBtn').style.display = 'none';
+    document.getElementById('answerControls').style.display = 'block';
+    document.getElementById('nextQuestionBtn').style.display = 'inline-flex';
+    document.getElementById('prevQuestionBtn').style.display = 'inline-flex';
+    
+    saveGame();
+}
+
+// Обновление информации о пакете
+function updatePackageInfo() {
+    const info = document.getElementById('packageInfo');
+    const empty = document.getElementById('packageEmpty');
+    const topics = loadedQuestions.topics || [];
+    
+    if (topics.length === 0) {
+        if (info) info.style.display = 'none';
+        if (empty) empty.style.display = 'block';
+        return;
+    }
+    
+    if (info) info.style.display = 'block';
+    if (empty) empty.style.display = 'none';
+    
+    const totalQuestions = topics.reduce((acc, t) => acc + (t.questions?.length || 0), 0);
+    const activeIndices = getActiveTopicIndices();
+    const skipped = skippedThemes.size;
+    
+    const el1 = document.getElementById('pkgTotalThemes');
+    const el2 = document.getElementById('pkgTotalQuestions');
+    const el3 = document.getElementById('pkgSkippedThemes');
+    const el4 = document.getElementById('pkgRemainingThemes');
+    const el5 = document.getElementById('pkgFileName');
+    const el6 = document.getElementById('pkgSplit');
+    
+    if (el1) el1.textContent = topics.length;
+    if (el2) el2.textContent = totalQuestions;
+    if (el3) el3.textContent = skipped;
+    if (el4) el4.textContent = activeIndices.length;
+    if (el5) el5.textContent = loadedQuestions.sourceFileName || '—';
+    
+    const themesPerGame = parseInt(document.getElementById('themesPerGameInput')?.value) || 6;
+    const gamesCount = Math.max(1, Math.ceil(activeIndices.length / themesPerGame));
+    if (el6) {
+        const parts = [];
+        for (let i = 0; i < gamesCount; i++) {
+            const start = i * themesPerGame;
+            const end = Math.min(start + themesPerGame, activeIndices.length);
+            if (end > start) parts.push(end - start);
+        }
+        el6.textContent = `🎮 Боёв: ${gamesCount} → ${parts.join(' + ')} тем (активных: ${activeIndices.length})`;
+    }
+    
+    // Обновляем счётчик текущего боя
+    const currentGameNum = Math.floor(currentGameStartIndex / themesPerGame) + 1;
+    const elGameNum = document.getElementById('pkgCurrentGameNumber');
+    const elTotalGames = document.getElementById('pkgTotalGames');
+    if (elGameNum) elGameNum.textContent = Math.min(currentGameNum, gamesCount);
+    if (elTotalGames) elTotalGames.textContent = gamesCount;
+    
+    // Обновляем поле start theme (1-based номер в пакете)
+    const elStartInput = document.getElementById('startThemeInput');
+    if (elStartInput) {
+        const activeIndicesList = getActiveTopicIndices();
+        const activeStartIdx = Math.min(currentGameStartIndex, activeIndicesList.length);
+        const realThemeNum = activeIndicesList[activeStartIdx] !== undefined 
+            ? activeIndicesList[activeStartIdx] + 1 
+            : (topics.length > 0 ? topics.length : 1);
+        // Не перезаписываем, если пользователь вручную редактирует
+        if (document.activeElement !== elStartInput) {
+            elStartInput.value = realThemeNum;
+        }
+    }
+    
+    renderThemePreview();
+    renderSkippedList();
+}
+
+// Предпросмотр тем текущего боя
+function renderThemePreview() {
+    const container = document.getElementById('themePreview');
+    if (!container) return;
+    
+    const topics = loadedQuestions.topics || [];
+    if (topics.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+    
+    const themesPerGame = parseInt(document.getElementById('themesPerGameInput')?.value) || 6;
+    const topicIndices = getGameTopicIndices(currentGameStartIndex, themesPerGame);
+    
+    container.innerHTML = '';
+    if (topicIndices.length === 0) {
+        container.innerHTML = '<div class="text-muted" style="padding:8px;">Нет тем для отображения</div>';
+        return;
+    }
+    
+    topicIndices.forEach((realIdx, k) => {
+        const topic = topics[realIdx];
+        const item = document.createElement('div');
+        item.className = 'theme-preview-item';
+        item.innerHTML = `
+            <span class="tp-num">#${realIdx + 1}</span>
+            <span class="tp-name" title="${escapeHtmlAttr(topic.topic || '')}">${escapeHtmlAttr(topic.topic || `Тема ${realIdx + 1}`)}</span>
+            ${topic.comment ? `<span class="tp-comment" title="${escapeHtmlAttr(topic.comment)}">⚠️</span>` : ''}
+            <span class="tp-actions">
+                <button title="Перейти к этой теме в пакете" onclick="jumpToThemeInPackage(${realIdx})">🎯</button>
+                <button title="Пропустить тему" onclick="skipTheme(${realIdx})">⏭️</button>
+            </span>
+        `;
+        container.appendChild(item);
+    });
+}
+
+// Список пропущенных тем
+function renderSkippedList() {
+    const container = document.getElementById('skippedListContainer');
+    const list = document.getElementById('skippedList');
+    const countEl = document.getElementById('skippedCount');
+    if (!container || !list) return;
+    
+    const topics = loadedQuestions.topics || [];
+    
+    if (skippedThemes.size === 0) {
+        container.style.display = 'none';
+        return;
+    }
+    
+    container.style.display = 'block';
+    if (countEl) countEl.textContent = skippedThemes.size;
+    
+    list.innerHTML = '';
+    Array.from(skippedThemes).sort((a, b) => a - b).forEach(idx => {
+        const topic = topics[idx];
+        if (!topic) return;
+        const tag = document.createElement('span');
+        tag.className = 'skipped-tag';
+        tag.innerHTML = `#${idx + 1} ${escapeHtmlAttr(topic.topic || '')} <span class="remove-btn" onclick="restoreTheme(${idx})">↩️</span>`;
+        list.appendChild(tag);
+    });
+}
+
+// Пропустить тему
+function skipTheme(index) {
+    const topics = loadedQuestions.topics || [];
+    if (index < 0 || index >= topics.length) return;
+    
+    skippedThemes.add(index);
+    
+    // Если текущий бой содержит эту тему - нужно пересобрать
+    const themesPerGame = parseInt(document.getElementById('themesPerGameInput')?.value) || 6;
+    const currentIndices = getGameTopicIndices(currentGameStartIndex, themesPerGame);
+    
+    if (currentIndices.includes(index)) {
+        // Пересобираем текущий бой
+        syncQuestionsToBlocksFromPackage(currentGameStartIndex);
+    } else {
+        updatePackageInfo();
+        saveGame();
+    }
+    
+    refreshThemesListIfOpen();
+}
+
+// Восстановить тему
+function restoreTheme(index) {
+    skippedThemes.delete(index);
+    
+    const themesPerGame = parseInt(document.getElementById('themesPerGameInput')?.value) || 6;
+    const currentIndices = getGameTopicIndices(currentGameStartIndex, themesPerGame);
+    
+    if (currentIndices.includes(index)) {
+        syncQuestionsToBlocksFromPackage(currentGameStartIndex);
+    } else {
+        updatePackageInfo();
+        saveGame();
+    }
+    
+    refreshThemesListIfOpen();
+}
+
+function restoreAllSkipped() {
+    if (skippedThemes.size === 0) return;
+    if (!confirm('Восстановить все пропущенные темы?')) return;
+    skippedThemes.clear();
+    syncQuestionsToBlocksFromPackage(currentGameStartIndex);
+    refreshThemesListIfOpen();
+}
+
+// Перейти к указанной теме в пакете (сделать её стартовой для текущего боя)
+function jumpToThemeInPackage(realIndex) {
+    const activeIndices = getActiveTopicIndices();
+    const posInActive = activeIndices.indexOf(realIndex);
+    if (posInActive === -1) {
+        alert('Эта тема пропущена. Сначала восстановите её.');
+        return;
+    }
+    
+    if (!confirm(`Начать текущий бой с темы #${realIndex + 1} "\\${loadedQuestions.topics[realIndex]?.topic || ''}"?\\n\\nПрогресс текущего боя будет потерян.`)) return;
+    
+    syncQuestionsToBlocksFromPackage(posInActive);
+}
+
+// Загрузить следующий блок
+function loadNextGameFromPackage() {
+    const topics = loadedQuestions.topics || [];
+    if (topics.length === 0) {
+        alert('Сначала загрузите пакет вопросов');
+        return;
+    }
+    
+    const themesPerGame = parseInt(document.getElementById('themesPerGameInput')?.value) || 6;
+    const nextStart = currentGameStartIndex + themesPerGame;
+    const activeIndices = getActiveTopicIndices();
+    
+    if (nextStart >= activeIndices.length) {
+        alert('Все активные темы уже использованы. Можно вернуться назад или сбросить счётчик.');
+        return;
+    }
+    
+    if (!confirm('Загрузить следующий блок тем? Прогресс текущего боя будет сохранён.')) return;
+    
+    saveGame();
+    syncQuestionsToBlocksFromPackage(nextStart);
+    
+    const loaded = Math.min(themesPerGame, activeIndices.length - nextStart);
+    alert(`✅ Загружено ${loaded} тем (бой ${Math.floor(nextStart / themesPerGame) + 1})`);
+}
+
+// Навигация по боям
+function pkgNavPrev() {
+    const themesPerGame = parseInt(document.getElementById('themesPerGameInput')?.value) || 6;
+    const newStart = Math.max(0, currentGameStartIndex - themesPerGame);
+    if (newStart === currentGameStartIndex) return;
+    if (!confirm('Перейти к предыдущему бою? Прогресс текущего боя будет сохранён.')) return;
+    saveGame();
+    syncQuestionsToBlocksFromPackage(newStart);
+}
+
+function pkgNavNext() {
+    const themesPerGame = parseInt(document.getElementById('themesPerGameInput')?.value) || 6;
+    const activeIndices = getActiveTopicIndices();
+    const newStart = currentGameStartIndex + themesPerGame;
+    if (newStart >= activeIndices.length) {
+        alert('Это последний бой');
+        return;
+    }
+    if (!confirm('Перейти к следующему бою? Прогресс текущего боя будет сохранён.')) return;
+    saveGame();
+    syncQuestionsToBlocksFromPackage(newStart);
+}
+
+// Обработчик изменения "С какой темы начать"
+function onStartThemeChange() {
+    const input = document.getElementById('startThemeInput');
+    if (!input) return;
+    const realThemeNum = parseInt(input.value) - 1; // 0-based
+    const topics = loadedQuestions.topics || [];
+    
+    if (isNaN(realThemeNum) || realThemeNum < 0 || realThemeNum >= topics.length) {
+        alert('Неверный номер темы');
+        updatePackageInfo();
+        return;
+    }
+    
+    if (skippedThemes.has(realThemeNum)) {
+        alert(`Тема #${realThemeNum + 1} пропущена. Восстановите её или выберите другую.`);
+        updatePackageInfo();
+        return;
+    }
+    
+    const activeIndices = getActiveTopicIndices();
+    const posInActive = activeIndices.indexOf(realThemeNum);
+    if (posInActive === -1) {
+        alert('Тема не найдена среди активных');
+        updatePackageInfo();
+        return;
+    }
+    
+    if (!confirm(`Начать текущий бой с темы #${realThemeNum + 1}?\\n\\nПрогресс текущего боя будет потерян.`)) {
+        updatePackageInfo();
+        return;
+    }
+    
+    syncQuestionsToBlocksFromPackage(posInActive);
+}
+
+// Обработчик изменения "Тем в бое"
+function onThemesPerGameChange() {
+    // Просто обновляем информацию, применение по кнопке
+    updatePackageInfo();
+}
+
+// Применить настройки боя
+function applyThemeSetup() {
+    const themesPerGame = parseInt(document.getElementById('themesPerGameInput')?.value) || 6;
+    const activeIndices = getActiveTopicIndices();
+    
+    if (currentGameStartIndex >= activeIndices.length) {
+        // Если старт за пределами - начинаем с начала
+        currentGameStartIndex = 0;
+    }
+    
+    if (!confirm('Применить настройки? Прогресс текущего боя будет потерян.')) return;
+    syncQuestionsToBlocksFromPackage(currentGameStartIndex);
+}
+
+function resetPackageUsage() {
+    if (!confirm('Сбросить счётчик использования тем? Следующий блок начнётся с начала пакета.')) return;
+    currentGameStartIndex = 0;
+    updatePackageInfo();
+}
+
+function clearPackage() {
+    if (!confirm('Отключить пакет вопросов? Текущие вопросы останутся в игре.')) return;
+    loadedQuestions.topics = [];
+    loadedQuestions.usedThemesCount = 0;
+    loadedQuestions.sourceFileName = '';
+    skippedThemes = new Set();
+    currentGameStartIndex = 0;
+    updatePackageInfo();
+}
+
+// ============================================================
+// МОДАЛЬНОЕ ОКНО: СПИСОК ВСЕХ ТЕМ
+// ============================================================
+function openThemesList() {
+    const overlay = document.getElementById('themes-list-overlay');
+    if (!overlay) return;
+    renderThemesList();
+    overlay.style.display = 'flex';
+}
+
+function closeThemesList() {
+    const overlay = document.getElementById('themes-list-overlay');
+    if (overlay) overlay.style.display = 'none';
+}
+
+function renderThemesList() {
+    const container = document.getElementById('themesListBody');
+    if (!container) return;
+    
+    const topics = loadedQuestions.topics || [];
+    const hideSkipped = document.getElementById('hideSkippedCheckbox')?.checked || false;
+    const search = (document.getElementById('themesSearchInput')?.value || '').toLowerCase().trim();
+    
+    const activeIndices = getActiveTopicIndices();
+    const themesPerGame = parseInt(document.getElementById('themesPerGameInput')?.value) || 6;
+    const currentIndices = getGameTopicIndices(currentGameStartIndex, themesPerGame);
+    
+    container.innerHTML = '';
+    
+    let visibleCount = 0;
+    let skippedCount = 0;
+    
+    topics.forEach((topic, idx) => {
+        const isSkipped = skippedThemes.has(idx);
+        const isUsed = idx < (loadedQuestions.usedThemesCount || 0) && !isSkipped;
+        const isCurrent = currentIndices.includes(idx);
+        const posInActive = activeIndices.indexOf(idx);
+        
+        // Фильтрация
+        if (hideSkipped && isSkipped) return;
+        const name = (topic.topic || '').toLowerCase();
+        if (search && !name.includes(search)) return;
+        
+        visibleCount++;
+        if (isSkipped) skippedCount++;
+        
+        const item = document.createElement('div');
+        item.className = 'theme-list-item';
+        if (isSkipped) item.classList.add('skipped');
+        if (isUsed) item.classList.add('used');
+        
+        const questionsCount = (topic.questions || []).length;
+        const statusParts = [];
+        if (isSkipped) statusParts.push('⏭️ пропущена');
+        if (isUsed) statusParts.push('✅ использована');
+        if (isCurrent) statusParts.push('🎯 текущий бой');
+        if (posInActive >= 0) statusParts.push(`позиция в активных: ${posInActive + 1}`);
+        
+        item.innerHTML = `
+            <span class="tli-num">#${idx + 1}</span>
+            <div class="tli-info">
+                <div class="tli-name">${escapeHtmlAttr(topic.topic || `Тема ${idx + 1}`)}</div>
+                ${topic.comment ? `<div class="tli-comment">⚠️ ${escapeHtmlAttr(topic.comment)}</div>` : ''}
+                <div class="tli-meta">${questionsCount} вопр. · ${statusParts.join(' · ')}</div>
+            </div>
+            <div class="tli-actions">
+                ${isSkipped 
+                    ? `<button class="btn-restore" onclick="themeListRestore(${idx})" title="Восстановить">↩️ Восстановить</button>`
+                    : `<button class="btn-skip" onclick="themeListSkip(${idx})" title="Пропустить">⏭️ Пропустить</button>`
+                }
+                ${!isSkipped 
+                    ? `<button class="btn-jump" onclick="themeListJump(${idx})" title="Начать текущий бой с этой темы">🎯 Начать с</button>`
+                    : ''
+                }
+            </div>
+        `;
+        container.appendChild(item);
+    });
+    
+    if (visibleCount === 0) {
+        container.innerHTML = '<div class="text-muted" style="padding:20px;text-align:center;">Ничего не найдено</div>';
+    }
+    
+    const stats = document.getElementById('themesListStats');
+    if (stats) {
+        stats.textContent = `Показано: ${visibleCount} из ${topics.length} · Пропущено: ${skippedThemes.size}`;
+    }
+}
+
+// Функции для работы со списком тем
+function themeListSkip(idx) {
+    skipTheme(idx);
+    renderThemesList();
+}
+
+function themeListRestore(idx) {
+    restoreTheme(idx);
+    renderThemesList();
+}
+
+function themeListJump(idx) {
+    closeThemesList();
+    jumpToThemeInPackage(idx);
+}
+
+function filterThemesList() {
+    renderThemesList();
+}
+
+function refreshThemesListIfOpen() {
+    const overlay = document.getElementById('themes-list-overlay');
+    if (overlay && overlay.style.display === 'flex') {
+        renderThemesList();
+    }
+}
+
+// Экранирование атрибутов HTML (для title, onclick и т.д.)
+function escapeHtmlAttr(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 // ============================================================
@@ -1691,6 +2809,7 @@ function getCurrentQuestion() {
     }
     return {
         theme: block.theme || 'Без названия',
+        block: block,
         questions: block.questions,
         current: block.questions[gameState.currentQuestion] || { value: 0, text: 'Нет вопроса', answer: '' }
     };
@@ -1807,6 +2926,10 @@ function renderVerticalTable() {
                 const td = document.createElement('td');
                 td.colSpan = gameData.players.length + 1;
                 td.textContent = `📌 Тема ${blockIdx + 1}: ${block.theme || 'Без названия'}`;
+                if (block.comment) {
+                    td.textContent += ' ⚠️';
+                    td.title = block.comment;
+                }
                 sep.appendChild(td);
                 tableBody.appendChild(sep);
             }
@@ -1866,6 +2989,10 @@ function renderHorizontalTable() {
         th.className = 'theme-block';
         th.colSpan = block.questions.length;
         th.textContent = block.theme || 'Тема';
+        if (block.comment) {
+            th.textContent += ' ⚠️';
+            th.title = block.comment;
+        }
         themeRow.appendChild(th);
     });
     tableBody.appendChild(themeRow);
@@ -1965,12 +3092,25 @@ function updateQuestionInfo() {
 }
 
 // ============================================================
-// 7. КАРТОЧКА ВОПРОСА
+// 7. КАРТОЧКА ВОПРОСА (с комментариями)
 // ============================================================
 function updateQuestionCard() {
     const q = getCurrentQuestion();
     const currentQ = q.current || {};
+    const block = q.block || gameData.questionBlocks[gameState.currentBlock] || {};
     
+    // === Комментарий к ТЕМЕ (всегда показываем) ===
+    const themeComment = block.comment || '';
+    const themeCommentEl = document.getElementById('qThemeComment');
+    const themeCommentTextEl = document.getElementById('qThemeCommentText');
+    if (themeComment) {
+        themeCommentTextEl.textContent = themeComment;
+        themeCommentEl.style.display = 'flex';
+    } else {
+        themeCommentEl.style.display = 'none';
+    }
+    
+    // === Основная информация о вопросе ===
     document.getElementById('qTheme').textContent = q.theme || 'Без названия';
     document.getElementById('qValue').textContent = currentQ.value || 0;
     document.getElementById('qText').textContent = currentQ.text || 'Нет текста вопроса';
@@ -1979,17 +3119,37 @@ function updateQuestionCard() {
     document.getElementById('qAdditional').textContent = currentQ.additional || '—';
     document.getElementById('qSource').textContent = currentQ.source || '—';
     
-    const commentEl = document.getElementById('qComment');
-    if (currentQ.comment) {
-        commentEl.textContent = '💬 ' + currentQ.comment;
-        commentEl.style.display = 'block';
-    } else {
-        commentEl.style.display = 'none';
+    // === Комментарий к ВОПРОСУ (со спойлером для длинных) ===
+    const commentContainer = document.getElementById('qCommentContainer');
+    const comment = currentQ.comment || '';
+    commentContainer.innerHTML = '';
+    
+    if (comment) {
+        const COMMENT_THRESHOLD = 150; // Порог для спойлера
+        if (comment.length > COMMENT_THRESHOLD) {
+            // Длинный комментарий - в спойлер
+            const details = document.createElement('details');
+            details.className = 'q-spoiler';
+            const summary = document.createElement('summary');
+            summary.textContent = '💬 Показать комментарий к вопросу';
+            details.appendChild(summary);
+            const content = document.createElement('div');
+            content.className = 'q-spoiler-content';
+            content.textContent = comment;
+            details.appendChild(content);
+            commentContainer.appendChild(details);
+        } else {
+            // Короткий комментарий - показываем сразу
+            const commentDiv = document.createElement('div');
+            commentDiv.className = 'q-comment';
+            commentDiv.textContent = '💬 ' + comment;
+            commentContainer.appendChild(commentDiv);
+        }
     }
 }
 
 // ============================================================
-// 8. КНОПКИ ОТВЕТОВ И НАВИГАЦИЯ ПО ВОПРОСАМ
+// 8. КНОПКИ ОТВЕТОВ И НАВИГАЦИЯ
 // ============================================================
 function initControlButtons() {
     const container = document.getElementById('controlButtons');
@@ -2172,7 +3332,6 @@ function handleAnswer(playerIdx, isCorrect) {
     if (gameState.gameFinished || gameState.editMode) return;
     const qNum = getAbsoluteQuestionNumber();
     
-    // Проверяем, есть ли уже правильный ответ на этот вопрос
     const questionAnswers = gameState.answers[qNum];
     const hasCorrect = questionAnswers.some(ans => ans === true);
     
@@ -2182,7 +3341,6 @@ function handleAnswer(playerIdx, isCorrect) {
     }
     
     if (questionAnswers[playerIdx] !== null) {
-        // Игрок уже ответил на этот вопрос
         if (questionAnswers[playerIdx] === true) {
             alert('Этот игрок уже дал правильный ответ на данный вопрос.');
         } else {
@@ -2199,12 +3357,9 @@ function handleAnswer(playerIdx, isCorrect) {
     refreshTable();
     saveGame();
     
-    // Проверяем, все ли игроки ответили на вопрос (все получили минус)
-    // и есть ли хотя бы один правильный ответ
     const allAnswered = gameState.answers[qNum].every(ans => ans !== null);
     const hasCorrectAnswer = gameState.answers[qNum].some(ans => ans === true);
     
-    // Если все ответили, но нет правильных ответов - переходим к следующему вопросу
     if (allAnswered && !hasCorrectAnswer) {
         setTimeout(() => {
             alert('Никто не дал правильный ответ. Переходим к следующему вопросу.');
@@ -2212,7 +3367,6 @@ function handleAnswer(playerIdx, isCorrect) {
         }, 300);
     }
     
-    // Если был дан правильный ответ, переходим к следующему вопросу (как раньше)
     if (isCorrect) {
         setTimeout(nextQuestion, 400);
     }
@@ -2347,11 +3501,19 @@ function loadGame(matchId) {
             document.getElementById('prevQuestionBtn').style.display = 'inline-flex';
         }
     } else {
+        // Нет сохранённого состояния - новая игра
         reset_players_names();
         updatePlayerInputs();
         
-        if (loadedQuestions.topics.length > 0) {
-            syncQuestionsToBlocks();
+        const topics = loadedQuestions.topics || [];
+        const startIndex = loadedQuestions.usedThemesCount || 0;
+        
+        if (topics.length > 0 && startIndex < topics.length) {
+            // Загружаем следующий блок из пакета для этой новой игры
+            syncQuestionsToBlocksFromPackage(startIndex);
+        } else if (gameData.questionBlocks.length > 0 && gameData.questionBlocks.some(b => b.questions.length > 0)) {
+            // Уже есть вопросы (возможно, от предыдущего resizeThemes) - просто сбрасываем ответы
+            initAnswers();
         } else {
             initAnswers();
         }
@@ -2421,6 +3583,9 @@ document.addEventListener('keydown', (e) => {
     if (!gameState.keyboardEnabled) return;
     if (gameState.gameFinished || gameState.editMode) return;
     
+    // Не перехватываем ввод в текстовых полях
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+    
     const map = {
         '1': { p: 0, c: true }, '2': { p: 1, c: true }, '3': { p: 2, c: true }, '4': { p: 3, c: true },
         'q': { p: 0, c: false }, 'Q': { p: 0, c: false }, 'й': { p: 0, c: false }, 'Й': { p: 0, c: false },
@@ -2438,7 +3603,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ============================================================
-// 12. ИЗМЕНЕНИЕ КОЛИЧЕСТВА ТЕМ
+// 12. ИЗМЕНЕНИЕ КОЛИЧЕСТВА ТЕМ (ручное)
 // ============================================================
 function resizeThemes(newCount) {
     const oldBlocks = gameData.questionBlocks;
@@ -2449,12 +3614,13 @@ function resizeThemes(newCount) {
         } else {
             newBlocks.push({
                 theme: "",
+                comment: "",
                 questions: [
-                    { value: 10, text: "Вопрос 1", answer: "" },
-                    { value: 20, text: "Вопрос 2", answer: "" },
-                    { value: 30, text: "Вопрос 3", answer: "" },
-                    { value: 40, text: "Вопрос 4", answer: "" },
-                    { value: 50, text: "Вопрос 5", answer: "" }
+                    { value: 10, text: "Вопрос 1", answer: "", comment: "" },
+                    { value: 20, text: "Вопрос 2", answer: "", comment: "" },
+                    { value: 30, text: "Вопрос 3", answer: "", comment: "" },
+                    { value: 40, text: "Вопрос 4", answer: "", comment: "" },
+                    { value: 50, text: "Вопрос 5", answer: "", comment: "" }
                 ]
             });
         }
@@ -3101,7 +4267,7 @@ function showMatchDetailsModal(data) {
 // ============================================================
 function exportState() {
     const data = {
-        version: 1,
+        version: 2,
         timestamp: new Date().toISOString(),
         roomId: gameState.roomId,
         active: active,
@@ -3110,7 +4276,13 @@ function exportState() {
         gameData: gameData,
         gameState: gameState,
         allMatches: matchStorage.allMatches,
-        loadedQuestions: loadedQuestions
+        loadedQuestions: {
+            topics: loadedQuestions.topics,
+            usedThemesCount: loadedQuestions.usedThemesCount,
+            sourceFileName: loadedQuestions.sourceFileName
+        },
+        skippedThemes: Array.from(skippedThemes),
+        currentGameStartIndex: currentGameStartIndex
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -3138,8 +4310,14 @@ async function importState(file) {
                 gameState.answers = imported.gameState.answers.map(q => [...q]);
             }
             if (imported.loadedQuestions) {
-                loadedQuestions = imported.loadedQuestions;
+                loadedQuestions.topics = imported.loadedQuestions.topics || [];
+                loadedQuestions.usedThemesCount = imported.loadedQuestions.usedThemesCount || 0;
+                loadedQuestions.sourceFileName = imported.loadedQuestions.sourceFileName || '';
             }
+            // Восстанавливаем пропущенные темы и стартовый индекс
+            skippedThemes = new Set(imported.skippedThemes || []);
+            currentGameStartIndex = imported.currentGameStartIndex || 0;
+            
             document.getElementById('halfMinusToggle').checked = gameState.halfMinus || false;
             document.getElementById('keyboardToggle').checked = gameState.keyboardEnabled !== false;
             matchStorage.allMatches = imported.allMatches || {};
@@ -3150,6 +4328,7 @@ async function importState(file) {
             update_players_names();
             refreshTable();
             updateScoresDisplay();
+            updatePackageInfo();
             document.getElementById('game').textContent = `🎯 Игра ${gameindex}`;
             loadGame(gameindex);
             GetGameHistory();
@@ -3163,7 +4342,6 @@ async function importState(file) {
     };
     reader.readAsText(file);
 }
-
 // ============================================================
 // 20. ЗАВЕРШЕНИЕ КОМНАТЫ
 // ============================================================
@@ -3225,6 +4403,7 @@ function init_page() {
     GetGameHistory();
     update_weight();
     initControlButtons();
+    updatePackageInfo();
     document.querySelectorAll('.player_input').forEach(el => {
         el.addEventListener('change', update_players_names);
         el.addEventListener('input', update_players_names);
@@ -3241,6 +4420,7 @@ function init_page() {
     });
     setTimeout(redrawBrackets, 500);
     updateQuestionCard();
+    
 }
 
 // Глобальные функции для HTML
@@ -3274,6 +4454,25 @@ window.renderBracket = renderBracket;
 window.toggleHalfMinus = toggleHalfMinus;
 window.toggleKeyboard = toggleKeyboard;
 window.loadQuestionsFromFile = loadQuestionsFromFile;
+window.loadNextGameFromPackage = loadNextGameFromPackage;
+window.resetPackageUsage = resetPackageUsage;
+window.clearPackage = clearPackage;
+window.updatePackageInfo = updatePackageInfo;
+window.skipTheme = skipTheme;
+window.restoreTheme = restoreTheme;
+window.restoreAllSkipped = restoreAllSkipped;
+window.jumpToThemeInPackage = jumpToThemeInPackage;
+window.openThemesList = openThemesList;
+window.closeThemesList = closeThemesList;
+window.filterThemesList = filterThemesList;
+window.themeListSkip = themeListSkip;
+window.themeListRestore = themeListRestore;
+window.themeListJump = themeListJump;
+window.onStartThemeChange = onStartThemeChange;
+window.onThemesPerGameChange = onThemesPerGameChange;
+window.applyThemeSetup = applyThemeSetup;
+window.pkgNavPrev = pkgNavPrev;
+window.pkgNavNext = pkgNavNext;
 
 document.addEventListener('DOMContentLoaded', init_page);
 </script>
