@@ -1098,7 +1098,106 @@ def global_player_stats(playerid):
                            current_filter=opponent_filter,
                            filter_opponent_name=filter_opponent_name)
 
+# ============================================================
+# Пакеты вопросов (привязка к комнате)
+# ============================================================
+def ensure_packages_table():
+    conn = get_db_connection()
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS packages (
+            packageid   INTEGER PRIMARY KEY AUTOINCREMENT,
+            roomid      INTEGER NOT NULL,
+            name        TEXT NOT NULL,
+            data        TEXT NOT NULL,
+            created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at  TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_packages_room ON packages(roomid)')
+    conn.commit()
+    conn.close()
 
+
+@app.route('/api/packages/<int:roomid>', subdomain="svoyak", methods=["GET"])
+def list_packages(roomid):
+    """Список пакетов комнаты (без содержимого)."""
+    ensure_packages_table()
+    conn = get_db_connection()
+    rows = conn.execute(
+        'SELECT packageid, name, created_at, updated_at FROM packages WHERE roomid = ? ORDER BY created_at DESC',
+        (roomid,)
+    ).fetchall()
+    return json.dumps([dict(r) for r in rows], ensure_ascii=False)
+
+
+@app.route('/api/packages/<int:roomid>/<int:packageid>', subdomain="svoyak", methods=["GET"])
+def get_package(roomid, packageid):
+    ensure_packages_table()
+    conn = get_db_connection()
+    row = conn.execute(
+        'SELECT * FROM packages WHERE packageid = ? AND roomid = ?',
+        (packageid, roomid)
+    ).fetchone()
+    if not row:
+        return json.dumps({"status": "error", "message": "Not found"})
+    result = dict(row)
+    try:
+        result['data'] = json.loads(result['data'])
+    except Exception:
+        result['data'] = {}
+    return json.dumps(result, ensure_ascii=False)
+
+
+@app.route('/api/packages/<int:roomid>/<int:packageid>', subdomain="svoyak", methods=["DELETE"])
+def delete_package(roomid, packageid):
+    ensure_packages_table()
+    conn = get_db_connection()
+    conn.execute('DELETE FROM packages WHERE packageid = ? AND roomid = ?', (packageid, roomid))
+    conn.commit()
+    return json.dumps({"status": "ok", "packageid": packageid})
+
+
+@app.route('/api/packages/<int:roomid>/sync', subdomain="svoyak", methods=["POST"])
+def sync_packages(roomid):
+    """
+    Принимает {packages: [{localId, serverId, name, data}]},
+    для каждого: update (если serverId существует) либо insert.
+    Возвращает mapping localId -> serverId.
+    """
+    ensure_packages_table()
+    payload = request.json or {}
+    packages = payload.get('packages', [])
+    conn = get_db_connection()
+
+    results = []
+    for pkg in packages:
+        local_id = pkg.get('localId')
+        server_id = pkg.get('serverId')
+        name = pkg.get('name') or 'Без названия'
+        data_json = json.dumps(pkg.get('data') or {}, ensure_ascii=False)
+
+        if server_id:
+            existing = conn.execute(
+                'SELECT packageid FROM packages WHERE packageid = ? AND roomid = ?',
+                (server_id, roomid)
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    'UPDATE packages SET name = ?, data = ?, updated_at = CURRENT_TIMESTAMP WHERE packageid = ?',
+                    (name, data_json, server_id)
+                )
+                results.append({"localId": local_id, "serverId": server_id, "status": "updated"})
+                continue
+
+        cur = conn.execute(
+            'INSERT INTO packages (roomid, name, data) VALUES (?, ?, ?)',
+            (roomid, name, data_json)
+        )
+        results.append({"localId": local_id, "serverId": cur.lastrowid, "status": "created"})
+
+    conn.commit()
+    conn.close()
+    return json.dumps({"status": "ok", "results": results}, ensure_ascii=False)
 
 
 

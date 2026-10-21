@@ -647,7 +647,6 @@
             color: var(--gray-700);
         }
 
-        /* КОММЕНТАРИЙ К ТЕМЕ (важное предупреждение) */
         .question-card .q-theme-comment {
             background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
             border-left: 4px solid var(--warning);
@@ -674,7 +673,6 @@
             line-height: 1.5;
         }
 
-        /* СПОЙЛЕР ДЛЯ ДЛИННЫХ КОММЕНТАРИЕВ К ВОПРОСУ */
         .q-spoiler {
             margin-top: 10px;
             border: 1px solid var(--gray-200);
@@ -727,7 +725,6 @@
             white-space: pre-wrap;
         }
 
-        /* ПАНЕЛЬ ПАКЕТА ВОПРОСОВ */
         .package-info {
             background: var(--primary-light);
             border: 1px solid var(--primary);
@@ -1113,8 +1110,6 @@
             transform: scale(0.98);
         }
 
-
-        /* ===== УПРАВЛЕНИЕ ТЕМАМИ ===== */
         .theme-manager {
             background: white;
             border: 1px solid var(--gray-200);
@@ -1264,7 +1259,6 @@
             border-top: 1px solid var(--gray-200);
         }
 
-        /* Список пропущенных */
         .skipped-list-container {
             margin-top: 12px;
             padding: 10px 12px;
@@ -1315,7 +1309,6 @@
             color: #dc2626;
         }
 
-        /* Модальное окно списка тем */
         .themes-list-toolbar {
             display: flex;
             gap: 12px;
@@ -1480,6 +1473,105 @@
             color: white;
         }
 
+        .package-selector-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            padding: 10px 12px;
+            background: var(--gray-50);
+            border: 1px solid var(--gray-200);
+            border-radius: 8px;
+            margin-bottom: 14px;
+        }
+        .package-selector-row label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--gray-700);
+        }
+        .package-selector-row select {
+            padding: 6px 10px;
+            border: 2px solid var(--gray-200);
+            border-radius: 6px;
+            font-size: 14px;
+            max-width: 320px;
+            background: white;
+            outline: none;
+        }
+        .package-selector-row select:focus { border-color: var(--primary); }
+
+        /* ===== СОСТАВ БОЯ (сегменты) ===== */
+        .theme-segments-block {
+            background: var(--primary-light);
+            border: 1px solid var(--primary);
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 12px;
+        }
+        .theme-segments-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 10px;
+        }
+        .theme-segment-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: white;
+            padding: 6px 10px;
+            border-radius: 6px;
+            border: 1px solid var(--gray-200);
+            font-size: 13px;
+        }
+        .theme-segment-row .ts-num {
+            font-weight: 700;
+            color: var(--primary);
+            min-width: 24px;
+        }
+        .theme-segment-row .ts-pkg {
+            font-weight: 600;
+            color: var(--gray-800);
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .theme-segment-row .ts-themes {
+            color: var(--gray-600);
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        .add-segment-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .add-segment-row label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: var(--gray-700);
+            font-weight: 500;
+        }
+        .add-segment-row select,
+        .add-segment-row input[type="number"] {
+            padding: 5px 8px;
+            border: 2px solid var(--gray-200);
+            border-radius: 6px;
+            font-size: 13px;
+            outline: none;
+            background: white;
+        }
+        .add-segment-row input[type="number"] { width: 60px; text-align: center; }
+        .add-segment-row select:focus,
+        .add-segment-row input:focus { border-color: var(--primary); }
+
         .flex { display: flex; }
         .flex-wrap { flex-wrap: wrap; }
         .gap-8 { gap: 8px; }
@@ -1499,7 +1591,6 @@
 </head>
 <body>
 
-<!-- ===== ЗАГОЛОВОК ===== -->
 <header class="page-header">
     <h1>
         🏆 Турнирный менеджер
@@ -1513,17 +1604,18 @@
         <button onclick="document.getElementById('importFileInput').click()" class="btn btn-outline btn-sm">📂 Восстановить</button>
         <input type="file" id="importFileInput" style="display:none" accept=".json" onchange="importState(this.files[0])">
         <button onclick="document.getElementById('questionsFileInput').click()" class="btn btn-outline btn-sm">📖 Загрузить вопросы</button>
-        <input type="file" id="questionsFileInput" style="display:none" accept=".json" onchange="loadQuestionsFromFile(this.files[0])">
+        <input type="file" id="questionsFileInput" style="display:none"
+               accept=".json"
+               onchange="loadQuestionsFromFile(this.files[0]); this.value='';">
     </div>
 </header>
 
-<!-- ===== КОНТЕЙНЕР ПАНЕЛЕЙ ===== -->
 <div id="panels-container" class="panels-container">
 
     <!-- ПАНЕЛЬ 1: Игроки -->
     <div class="panel" id="panel-players">
-        <div class="panel-header" draggable="true" 
-            ondragstart="panelDragStart(event)" 
+        <div class="panel-header" draggable="true"
+            ondragstart="panelDragStart(event)"
             ondragend="panelDragEnd(event)">
             <span class="panel-title"><span class="icon">👥</span> Игроки</span>
             <div class="panel-controls">
@@ -1540,8 +1632,8 @@
             <div id="activeplayers" class="players-grid"></div>
             <div id="active_players_list" style="display:none;"></div>
             <div class="flex gap-8 mt-12">
-                <input placeholder="Удалить игрока" id="remove_player" data-type="remove" 
-                       ondrop="drop_handler(event)" ondragover="dragsover(event)" 
+                <input placeholder="Удалить игрока" id="remove_player" data-type="remove"
+                       ondrop="drop_handler(event)" ondragover="dragsover(event)"
                        onchange="remove_pl(event)" style="flex:1; padding:6px 12px; border:2px solid var(--gray-200); border-radius:8px;">
                 <button onclick="remove_pl()" class="btn btn-danger btn-sm">✕</button>
             </div>
@@ -1552,8 +1644,8 @@
 
     <!-- ПАНЕЛЬ 2: Текущая игра -->
     <div class="panel" id="panel-match">
-        <div class="panel-header" draggable="true" 
-            ondragstart="panelDragStart(event)" 
+        <div class="panel-header" draggable="true"
+            ondragstart="panelDragStart(event)"
             ondragend="panelDragEnd(event)">
             <span class="panel-title"><span class="icon">🎯</span> Текущая игра</span>
             <div class="panel-controls">
@@ -1571,7 +1663,7 @@
                 <div id="player_table">
                     <div class="player-input-row">
                         <button onclick="clearPlayer(1)" class="btn btn-danger btn-xs">🗑</button>
-                        <input type="text" class="player_input" data-type="players" id="player1" 
+                        <input type="text" class="player_input" data-type="players" id="player1"
                                ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 1">
                         <input type="number" class="player_input_score" id="score1" placeholder="счет" step="1">
                         <div class="move-btns">
@@ -1582,7 +1674,7 @@
                     </div>
                     <div class="player-input-row">
                         <button onclick="clearPlayer(2)" class="btn btn-danger btn-xs">🗑</button>
-                        <input type="text" class="player_input" data-type="players" id="player2" 
+                        <input type="text" class="player_input" data-type="players" id="player2"
                                ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 2">
                         <input type="number" class="player_input_score" id="score2" placeholder="счет" step="1">
                         <div class="move-btns">
@@ -1593,7 +1685,7 @@
                     </div>
                     <div class="player-input-row">
                         <button onclick="clearPlayer(3)" class="btn btn-danger btn-xs">🗑</button>
-                        <input type="text" class="player_input" data-type="players" id="player3" 
+                        <input type="text" class="player_input" data-type="players" id="player3"
                                ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 3">
                         <input type="number" class="player_input_score" id="score3" placeholder="счет" step="1">
                         <div class="move-btns">
@@ -1604,7 +1696,7 @@
                     </div>
                     <div class="player-input-row">
                         <button onclick="clearPlayer(4)" class="btn btn-danger btn-xs">🗑</button>
-                        <input type="text" class="player_input" data-type="players" id="player4" 
+                        <input type="text" class="player_input" data-type="players" id="player4"
                                ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 4">
                         <input type="number" class="player_input_score" id="score4" placeholder="счет" step="1">
                         <div class="move-btns">
@@ -1631,8 +1723,8 @@
 
     <!-- ПАНЕЛЬ 3: Управление игрой -->
     <div class="panel" id="panel-controls">
-        <div class="panel-header" draggable="true" 
-            ondragstart="panelDragStart(event)" 
+        <div class="panel-header" draggable="true"
+            ondragstart="panelDragStart(event)"
             ondragend="panelDragEnd(event)">
             <span class="panel-title"><span class="icon">🎮</span> Управление игрой</span>
             <div class="panel-controls">
@@ -1667,8 +1759,8 @@
 
     <!-- ПАНЕЛЬ 4: Карточка вопроса -->
     <div class="panel" id="panel-question-card">
-        <div class="panel-header" draggable="true" 
-            ondragstart="panelDragStart(event)" 
+        <div class="panel-header" draggable="true"
+            ondragstart="panelDragStart(event)"
             ondragend="panelDragEnd(event)">
             <span class="panel-title"><span class="icon">❓</span> Текущий вопрос</span>
             <div class="panel-controls">
@@ -1679,7 +1771,6 @@
         <div class="panel-body">
             <div id="questionCardContainer">
                 <div class="question-card" id="questionCard">
-                    <!-- КОММЕНТАРИЙ К ТЕМЕ (всегда виден) -->
                     <div class="q-theme-comment" id="qThemeComment" style="display:none;">
                         <span class="icon">⚠️</span>
                         <span class="comment-text" id="qThemeCommentText"></span>
@@ -1695,92 +1786,115 @@
                         <span><span class="label">Доп.:</span> <span class="q-additional" id="qAdditional">—</span></span>
                         <span><span class="label">Источник:</span> <span id="qSource">—</span></span>
                     </div>
-                    <!-- КОММЕНТАРИЙ К ВОПРОСУ (со спойлером для длинных) -->
                     <div id="qCommentContainer"></div>
                 </div>
             </div>
         </div>
     </div>
 
-<!-- ПАНЕЛЬ 5: Пакет вопросов -->
-<div class="panel" id="panel-package">
-    <div class="panel-header" draggable="true" 
-        ondragstart="panelDragStart(event)" 
-        ondragend="panelDragEnd(event)">
-        <span class="panel-title"><span class="icon">📦</span> Пакет вопросов</span>
-        <div class="panel-controls">
-            <button class="panel-collapse" title="Свернуть">▼</button>
-            <button class="panel-expand" title="Развернуть">⛶</button>
-        </div>
-    </div>
-    <div class="panel-body">
-        <div id="packageInfo" style="display:none;">
-            <div class="package-info">
-                <div class="pkg-title">📖 Загруженный пакет</div>
-                <div class="pkg-stats">
-                    <span>📁 Файл: <strong id="pkgFileName">—</strong></span>
-                    <span>📚 Всего тем: <strong id="pkgTotalThemes">0</strong></span>
-                    <span>❓ Всего вопросов: <strong id="pkgTotalQuestions">0</strong></span>
-                    <span>⏭️ Пропущено: <strong id="pkgSkippedThemes">0</strong></span>
-                    <span>📋 Осталось: <strong id="pkgRemainingThemes">0</strong></span>
-                </div>
-                <div class="package-split" id="pkgSplit">Разбивка: —</div>
+    <!-- ПАНЕЛЬ 5: Пакет вопросов -->
+    <div class="panel" id="panel-package">
+        <div class="panel-header" draggable="true"
+            ondragstart="panelDragStart(event)"
+            ondragend="panelDragEnd(event)">
+            <span class="panel-title"><span class="icon">📦</span> Пакет вопросов</span>
+            <div class="panel-controls">
+                <button class="panel-collapse" title="Свернуть">▼</button>
+                <button class="panel-expand" title="Развернуть">⛶</button>
             </div>
-
-            <!-- УПРАВЛЕНИЕ ТЕМАМИ -->
-            <div class="theme-manager" style="margin-top:16px;">
-                <div class="theme-manager-title">🎛️ Управление темами</div>
-
-                <!-- Навигация по боям -->
-                <div class="theme-nav-row">
-                    <button onclick="pkgNavPrev()" class="btn btn-outline btn-sm">← Предыдущий бой</button>
-                    <span class="theme-nav-info">Бой <strong id="pkgCurrentGameNumber">1</strong> из <strong id="pkgTotalGames">1</strong></span>
-                    <button onclick="pkgNavNext()" class="btn btn-outline btn-sm">Следующий бой →</button>
-                </div>
-
-                <!-- Поля настройки текущего боя -->
-                <div class="theme-setup-row">
-                    <label>С какой темы начать (номер в пакете): 
-                        <input type="number" id="startThemeInput" min="1" value="1" onchange="onStartThemeChange()">
-                    </label>
-                    <label>Тем в бое: 
-                        <input type="number" id="themesPerGameInput" min="1" value="6" onchange="onThemesPerGameChange()" oninput="onThemesPerGameChange()">
-                    </label>
-                </div>
-
-                <div class="theme-preview" id="themePreview">
-                    <!-- Сюда рендерится предпросмотр тем боя -->
-                </div>
-
-                <div class="theme-manager-actions">
-                    <button onclick="openThemesList()" class="btn btn-primary btn-sm">📋 Список всех тем</button>
-                    <button onclick="applyThemeSetup()" class="btn btn-success btn-sm">✅ Применить</button>
-                    <button onclick="loadNextGameFromPackage()" class="btn btn-primary btn-sm">▶️ Следующий блок</button>
-                    <button onclick="resetPackageUsage()" class="btn btn-outline btn-sm">🔄 Сбросить</button>
-                    <button onclick="clearPackage()" class="btn btn-danger btn-sm">✕ Отключить</button>
-                </div>
-
-                <!-- СПИСОК ПРОПУЩЕННЫХ ТЕМ -->
-                <div class="skipped-list-container" id="skippedListContainer" style="display:none;">
-                    <div class="skipped-list-title">
-                        <span>⏭️ Пропущенные темы (<span id="skippedCount">0</span>)</span>
-                        <button onclick="restoreAllSkipped()" class="btn btn-outline btn-xs">↩️ Восстановить все</button>
+        </div>
+        <div class="panel-body">
+            <div class="package-selector-row">
+                <label>📦 Пакет:
+                    <select id="packageSelector" onchange="onPackageSelectChange(this.value)"></select>
+                </label>
+                <button onclick="document.getElementById('questionsFileInput').click()"
+                        class="btn btn-primary btn-sm">➕ Загрузить файл</button>
+                <button onclick="syncPackagesWithServer()"
+                        class="btn btn-outline btn-sm" title="Отправить локальные пакеты на сервер">☁️ На сервер</button>
+                <button onclick="downloadPackagesFromServer()"
+                        class="btn btn-outline btn-sm" title="Скачать пакеты с сервера">⬇️ С сервера</button>
+                <button onclick="deleteCurrentPackage()"
+                        class="btn btn-danger btn-sm">✕ Удалить</button>
+                <button onclick="fillTemplateQuestions()"
+                        class="btn btn-warning btn-sm" title="Заполнить текущий бой шаблонными темами">📝 Другие вопросы</button>
+            </div>
+            <div id="packageInfo" style="display:none;">
+                <div class="package-info">
+                    <div class="pkg-title">📖 Загруженный пакет</div>
+                    <div class="pkg-stats">
+                        <span>📁 Файл: <strong id="pkgFileName">—</strong></span>
+                        <span>📚 Всего тем: <strong id="pkgTotalThemes">0</strong></span>
+                        <span>❓ Всего вопросов: <strong id="pkgTotalQuestions">0</strong></span>
+                        <span>⏭️ Пропущено: <strong id="pkgSkippedThemes">0</strong></span>
+                        <span>📋 Осталось: <strong id="pkgRemainingThemes">0</strong></span>
                     </div>
-                    <div class="skipped-list" id="skippedList"></div>
+                    <div class="package-split" id="pkgSplit">Разбивка: —</div>
+                </div>
+
+                <div class="theme-manager" style="margin-top:16px;">
+                    <div class="theme-manager-title">🎛️ Управление темами</div>
+
+                    <!-- СОСТАВ БОЯ (сегменты) -->
+                    <div class="theme-segments-block">
+                        <div class="theme-manager-title" style="margin-bottom:8px;">🎯 Состав текущего боя</div>
+                        <div id="themeSegmentsList" class="theme-segments-list"></div>
+                        <div class="add-segment-row">
+                            <label>Из пакета:
+                                <select id="addSegmentPackage" onchange="updateAddSegmentPreview()"></select>
+                            </label>
+                            <label>С темы: <input type="number" id="addSegmentStart" min="1" value="1" oninput="updateAddSegmentPreview()"></label>
+                            <label>Тем: <input type="number" id="addSegmentCount" min="1" value="1" oninput="updateAddSegmentPreview()"></label>
+                            <button onclick="appendSegmentFromPicker()" class="btn btn-primary btn-sm">➕ Добавить в бой</button>
+                        </div>
+                        <div id="addSegmentPreview" class="text-muted" style="font-size:12px;margin-top:6px;"></div>
+                    </div>
+
+                    <div class="theme-nav-row">
+                        <button onclick="pkgNavPrev()" class="btn btn-outline btn-sm">← Предыдущий бой</button>
+                        <span class="theme-nav-info">Бой <strong id="pkgCurrentGameNumber">1</strong> из <strong id="pkgTotalGames">1</strong></span>
+                        <button onclick="pkgNavNext()" class="btn btn-outline btn-sm">Следующий бой →</button>
+                    </div>
+
+                    <div class="theme-setup-row">
+                        <label>С какой темы начать (номер в пакете):
+                            <input type="number" id="startThemeInput" min="1" value="1" onchange="onStartThemeChange()">
+                        </label>
+                        <label>Тем в бое:
+                            <input type="number" id="themesPerGameInput" min="1" value="6" onchange="onThemesPerGameChange()" oninput="onThemesPerGameChange()">
+                        </label>
+                    </div>
+
+                    <div class="theme-preview" id="themePreview"></div>
+
+                    <div class="theme-manager-actions">
+                        <button onclick="openThemesList()" class="btn btn-primary btn-sm">📋 Список всех тем</button>
+                        <button onclick="applyThemeSetup()" class="btn btn-success btn-sm">✅ Применить</button>
+                        <button onclick="loadNextGameFromPackage()" class="btn btn-primary btn-sm">▶️ Следующий блок</button>
+                        <button onclick="resetPackageUsage()" class="btn btn-outline btn-sm">🔄 Сбросить</button>
+                        <button onclick="clearPackage()" class="btn btn-danger btn-sm">✕ Отключить</button>
+                    </div>
+
+                    <div class="skipped-list-container" id="skippedListContainer" style="display:none;">
+                        <div class="skipped-list-title">
+                            <span>⏭️ Пропущенные темы (<span id="skippedCount">0</span>)</span>
+                            <button onclick="restoreAllSkipped()" class="btn btn-outline btn-xs">↩️ Восстановить все</button>
+                        </div>
+                        <div class="skipped-list" id="skippedList"></div>
+                    </div>
                 </div>
             </div>
-        </div>
-        <div id="packageEmpty">
-            <p class="text-muted">Загрузите файл с вопросами через кнопку "📖 Загрузить вопросы" в шапке</p>
-            <p class="text-muted" style="margin-top:8px;">Формат: <code>{"topics": [{"topic": "...", "comment": "...", "questions": [{"value": 10, "text": "...", "answer": "...", "comment": "..."}]}]}</code></p>
+            <div id="packageEmpty">
+                <p class="text-muted">Загрузите файл с вопросами через кнопку "📖 Загрузить вопросы" в шапке</p>
+                <p class="text-muted" style="margin-top:8px;">Формат: <code>{"topics": [{"topic": "...", "comment": "...", "questions": [{"value": 10, "text": "...", "answer": "...", "comment": "..."}]}]}</code></p>
+            </div>
         </div>
     </div>
-</div>
 
     <!-- ПАНЕЛЬ 6: Протокол -->
     <div class="panel wide" id="panel-quiz">
-        <div class="panel-header" draggable="true" 
-            ondragstart="panelDragStart(event)" 
+        <div class="panel-header" draggable="true"
+            ondragstart="panelDragStart(event)"
             ondragend="panelDragEnd(event)">
             <span class="panel-title"><span class="icon">📋</span> Протокол боя</span>
             <div class="panel-controls">
@@ -1794,7 +1908,7 @@
                 <button id="editModeBtn" class="btn btn-outline">✏️ Режим исправления</button>
             </div>
             <div class="theme-control">
-                <label>Количество тем: 
+                <label>Количество тем:
                     <select id="themeCountSelect">
                         <option value="3">3</option>
                         <option value="4">4</option>
@@ -1820,14 +1934,14 @@
                 </table>
             </div>
 
-            <button id="saveResultsBtn" class="btn btn-success" style="display:none;">💾 Внести результат</button>
-        </div>
+            <button id="saveResultsBtn" class="btn btn-success" style="display:none;"onclick="AddResult()">💾 Внести результат</button>
+            </div>
     </div>
 
     <!-- ПАНЕЛЬ 7: Блокировка -->
     <div class="panel" id="panel-block">
-        <div class="panel-header" draggable="true" 
-            ondragstart="panelDragStart(event)" 
+        <div class="panel-header" draggable="true"
+            ondragstart="panelDragStart(event)"
             ondragend="panelDragEnd(event)">
             <span class="panel-title"><span class="icon">🔒</span> Блокировка</span>
             <div class="panel-controls">
@@ -1837,9 +1951,9 @@
         </div>
         <div class="panel-body">
             <p class="text-muted">Перетащите игрока сюда, чтобы заблокировать на одну игру</p>
-            <div id="blocked_for_one_game" class="blocked-list" 
-                 data-type="one_game_block" 
-                 ondrop="drop_handler(event)" 
+            <div id="blocked_for_one_game" class="blocked-list"
+                 data-type="one_game_block"
+                 ondrop="drop_handler(event)"
                  ondragover="dragsover(event)">
                 <list id="one_game_block_list" data-type="one_game_block"></list>
             </div>
@@ -1848,8 +1962,8 @@
 
     <!-- ПАНЕЛЬ 8: Веса -->
     <div class="panel" id="panel-weights">
-        <div class="panel-header" draggable="true" 
-            ondragstart="panelDragStart(event)" 
+        <div class="panel-header" draggable="true"
+            ondragstart="panelDragStart(event)"
             ondragend="panelDragEnd(event)">
             <span class="panel-title"><span class="icon">⚖️</span> Веса игроков</span>
             <div class="panel-controls">
@@ -1870,8 +1984,8 @@
 
     <!-- ПАНЕЛЬ 9: Турнирная сетка -->
     <div class="panel wide" id="panel-tournament-brackets">
-        <div class="panel-header" draggable="true" 
-            ondragstart="panelDragStart(event)" 
+        <div class="panel-header" draggable="true"
+            ondragstart="panelDragStart(event)"
             ondragend="panelDragEnd(event)">
             <span class="panel-title"><span class="icon">🏅</span> Турнирная сетка</span>
             <div class="panel-controls">
@@ -1990,7 +2104,7 @@ function savePanelsOrder() {
 function restorePanelsOrder() {
     const savedOrder = localStorage.getItem('panels_order');
     const container = document.getElementById('panels-container');
-    
+
     let orderToUse = DEFAULT_PANELS_ORDER;
     if (savedOrder) {
         try {
@@ -2007,15 +2121,15 @@ function restorePanelsOrder() {
             localStorage.removeItem('panels_order');
         }
     }
-    
+
     const panelsMap = new Map();
     container.querySelectorAll('.panel').forEach(p => panelsMap.set(p.id, p));
-    
+
     orderToUse.forEach(id => {
         const panel = panelsMap.get(id);
         if (panel) container.appendChild(panel);
     });
-    
+
     container.querySelectorAll('.panel').forEach(panel => {
         if (!orderToUse.includes(panel.id)) container.appendChild(panel);
     });
@@ -2069,7 +2183,7 @@ function expandPanel(panelId) {
     const modalBody = document.querySelector('#modal-overlay .modal-body');
     modalBody.innerHTML = '';
     modalBody.appendChild(panel);
-    document.querySelector('#modal-overlay .modal-title').innerText = 
+    document.querySelector('#modal-overlay .modal-title').innerText =
         panel.querySelector('.panel-title')?.innerText || 'Блок';
     document.getElementById('modal-overlay').style.display = 'flex';
     window._modalPlaceholder = placeholder;
@@ -2134,6 +2248,14 @@ for (let i = 1; i < 7; i++) {
     });
 }
 
+let packages = [];
+let currentPackageLocalId = null;
+
+// Скипы по пакетам: { pkgId: Set<idx> }
+let skippedThemesByPackage = {};
+// "Вид" текущего пакета — это тот же Set, что в skippedThemesByPackage[currentPackageLocalId]
+let skippedThemes = new Set();
+
 let loadedQuestions = {
     topics: [],
     usedThemesCount: 0,
@@ -2151,7 +2273,8 @@ const gameState = {
     horizontalView: false,
     halfMinus: false,
     keyboardEnabled: true,
-    roomId: '{{roomid}}'
+    roomId: '{{roomid}}',
+    themeSources: []   // [{ packageLocalId, themeIndices: [idx,...] }]
 };
 
 let active = [];
@@ -2159,6 +2282,24 @@ let one_game_block_array = [];
 let player_name_drag = null;
 let gameindex = {{gameindex}};
 let editModeActive = false;
+
+let currentGameStartIndex = 0;
+
+// Хелперы для скипов по пакетам
+function getSkippedFor(pkgId) {
+    if (!pkgId) return skippedThemes;   // fallback — если пакета нет
+    if (!skippedThemesByPackage[pkgId]) {
+        skippedThemesByPackage[pkgId] = new Set();
+    }
+    return skippedThemesByPackage[pkgId];
+}
+
+function syncSkippedView() {
+    if (currentPackageLocalId) {
+        skippedThemes = getSkippedFor(currentPackageLocalId);
+    }
+    // если currentPackageLocalId == null, оставляем как есть (пустая floating Set)
+}
 
 // ============================================================
 // 3. ХРАНИЛИЩЕ МАТЧЕЙ
@@ -2173,10 +2314,10 @@ class MatchStorage {
         if (!this.allMatches[roomId]) this.allMatches[roomId] = {};
         this.allMatches[roomId][matchId] = {
             gameState: JSON.parse(JSON.stringify(gameState)),
-            gameData: { 
-                ...gameData, 
-                players: [...gameData.players], 
-                questionBlocks: JSON.parse(JSON.stringify(gameData.questionBlocks)) 
+            gameData: {
+                ...gameData,
+                players: [...gameData.players],
+                questionBlocks: JSON.parse(JSON.stringify(gameData.questionBlocks))
             },
             timestamp: new Date().toISOString()
         };
@@ -2192,46 +2333,317 @@ class MatchStorage {
 const matchStorage = new MatchStorage();
 
 // ============================================================
-// 4. ЗАГРУЗКА ПАКЕТА ВОПРОСОВ И УПРАВЛЕНИЕ ТЕМАМИ
+// УПРАВЛЕНИЕ ПАКЕТАМИ
 // ============================================================
+function getPackagesStorageKey() { return `packages_${gameState.roomId}`; }
+function getCurrentPkgKey()      { return `current_package_${gameState.roomId}`; }
+function getPackageStateKey(localId) { return `pkgstate_${gameState.roomId}_${localId}`; }
 
-// Массив пропущенных тем (индексы в пакете, 0-based)
-let skippedThemes = new Set();
+function generateLocalId() {
+    return 'pkg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 11);
+}
 
-// Настройки текущего боя
-let currentGameStartIndex = 0; // индекс темы в пакете, с которой начинается текущий бой (учитывая пропуски)
+function loadPackagesFromLocalStorage() {
+    try {
+        const raw = localStorage.getItem(getPackagesStorageKey());
+        packages = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(packages)) packages = [];
+    } catch (e) { packages = []; }
+}
 
+function savePackagesToLocalStorage() {
+    localStorage.setItem(getPackagesStorageKey(), JSON.stringify(packages));
+}
+
+function saveCurrentPackageState() {
+    if (!currentPackageLocalId) return;
+    const state = {
+        usedThemesCount: loadedQuestions.usedThemesCount,
+        skippedThemes: Array.from(getSkippedFor(currentPackageLocalId)),
+        currentGameStartIndex: currentGameStartIndex
+    };
+    localStorage.setItem(getPackageStateKey(currentPackageLocalId), JSON.stringify(state));
+    localStorage.setItem(getCurrentPkgKey(), currentPackageLocalId);
+}
+
+function loadPackageState(localId) {
+    const raw = localStorage.getItem(getPackageStateKey(localId));
+    if (raw) {
+        try {
+            const s = JSON.parse(raw);
+            loadedQuestions.usedThemesCount = s.usedThemesCount || 0;
+            skippedThemesByPackage[localId] = new Set(s.skippedThemes || []);
+            skippedThemes = skippedThemesByPackage[localId];
+            currentGameStartIndex = s.currentGameStartIndex || 0;
+            return;
+        } catch (e) {}
+    }
+    loadedQuestions.usedThemesCount = 0;
+    skippedThemesByPackage[localId] = new Set();
+    skippedThemes = skippedThemesByPackage[localId];
+    currentGameStartIndex = 0;
+}
+
+function renderPackageSelector() {
+    const sel = document.getElementById('packageSelector');
+    if (!sel) return;
+    sel.innerHTML = '';
+    if (packages.length === 0) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = '— нет пакетов —';
+        sel.appendChild(opt);
+        return;
+    }
+    packages.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.localId;
+        opt.textContent = `${p.serverId ? '☁️' : '💾'} ${p.name} (${(p.topics || []).length} тем)`;
+        sel.appendChild(opt);
+    });
+    if (currentPackageLocalId) sel.value = currentPackageLocalId;
+}
+
+function switchPackage(localId) {
+    if (localId === currentPackageLocalId) return;
+    saveCurrentPackageState();
+
+    if (!localId) {
+        currentPackageLocalId = null;
+        loadedQuestions.topics = [];
+        loadedQuestions.sourceFileName = '';
+        loadedQuestions.usedThemesCount = 0;
+        skippedThemes = new Set();
+        currentGameStartIndex = 0;
+        updatePackageInfo();
+        return;
+    }
+
+    const pkg = packages.find(p => p.localId === localId);
+    if (!pkg) return;
+
+    currentPackageLocalId = localId;
+    loadedQuestions.topics = pkg.topics || [];
+    loadedQuestions.sourceFileName = pkg.name;
+    loadPackageState(localId);
+
+    updatePackageInfo();
+    saveCurrentPackageState();
+}
+
+function onPackageSelectChange(localId) {
+    const cur = currentPackageLocalId;
+    if (cur && cur !== localId) {
+        saveCurrentPackageState();
+    }
+    switchPackage(localId);
+}
+
+// ============================================================
+// СИНХРОНИЗАЦИЯ С СЕРВЕРОМ
+// ============================================================
+async function syncPackagesWithServer() {
+    if (packages.length === 0) {
+        alert('Нет пакетов для синхронизации');
+        return;
+    }
+    try {
+        const payload = {
+            packages: packages.map(p => ({
+                localId: p.localId,
+                serverId: p.serverId || null,
+                name: p.name,
+                data: { topics: p.topics, sourceFileName: p.sourceFileName }
+            }))
+        };
+        const resp = await fetch(`/api/packages/${gameState.roomId}/sync`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const res = await resp.json();
+        if (res.status === 'ok') {
+            res.results.forEach(r => {
+                const pkg = packages.find(p => p.localId === r.localId);
+                if (pkg) pkg.serverId = r.serverId;
+            });
+            savePackagesToLocalStorage();
+            renderPackageSelector();
+            alert(`✅ Синхронизировано: ${res.results.length} пакет(ов)`);
+        } else {
+            alert('❌ Ошибка синхронизации');
+        }
+    } catch (e) {
+        alert('❌ Ошибка сети: ' + e.message);
+    }
+}
+
+async function downloadPackagesFromServer() {
+    try {
+        const resp = await fetch(`/api/packages/${gameState.roomId}`);
+        const list = await resp.json();
+        if (!Array.isArray(list)) return;
+
+        let added = 0;
+        for (const item of list) {
+            const existing = packages.find(p => p.serverId === item.packageid);
+            if (existing) continue;
+
+            const dResp = await fetch(`/api/packages/${gameState.roomId}/${item.packageid}`);
+            const full = await dResp.json();
+            if (!full || !full.data || !Array.isArray(full.data.topics)) continue;
+
+            packages.push({
+                localId: generateLocalId(),
+                serverId: full.packageid,
+                name: full.name,
+                topics: full.data.topics,
+                sourceFileName: full.data.sourceFileName || full.name
+            });
+            added++;
+        }
+        savePackagesToLocalStorage();
+        renderPackageSelector();
+        updatePackageInfo();   // обновить сегменты (появятся новые пакеты в выборе)
+        alert(added > 0
+            ? `✅ Загружено новых пакетов с сервера: ${added}`
+            : 'На сервере нет новых пакетов');
+    } catch (e) {
+        alert('❌ Ошибка загрузки: ' + e.message);
+    }
+}
+
+async function deleteCurrentPackage() {
+    if (!currentPackageLocalId) {
+        alert('Пакет не выбран');
+        return;
+    }
+    const pkg = packages.find(p => p.localId === currentPackageLocalId);
+    if (!pkg) return;
+
+    const segmentsUsingIt = gameState.themeSources.filter(s => s.packageLocalId === pkg.localId);
+    let msg = `Удалить пакет "${pkg.name}"?`;
+    if (segmentsUsingIt.length > 0) {
+        msg += `\n\n⚠️ Пакет используется в текущем бое (${segmentsUsingIt.length} сегм.).\nЭти сегменты будут удалены, прогресс боя сбросится.`;
+    }
+    if (!confirm(msg)) return;
+
+    if (pkg.serverId) {
+        try {
+            await fetch(`/api/packages/${gameState.roomId}/${pkg.serverId}`, { method: 'DELETE' });
+        } catch (e) { console.error(e); }
+    }
+
+    packages = packages.filter(p => p.localId !== pkg.localId);
+    localStorage.removeItem(getPackageStateKey(pkg.localId));
+    delete skippedThemesByPackage[pkg.localId];
+
+    if (segmentsUsingIt.length > 0) {
+        gameState.themeSources = gameState.themeSources.filter(s => s.packageLocalId !== pkg.localId);
+        rebuildGameFromSources();
+    }
+
+    currentPackageLocalId = null;
+    loadedQuestions.topics = [];
+    loadedQuestions.usedThemesCount = 0;
+    skippedThemes = new Set();
+    currentGameStartIndex = 0;
+
+    savePackagesToLocalStorage();
+    renderPackageSelector();
+    updatePackageInfo();
+}
+
+// ============================================================
+// ЗАГРУЗКА ФАЙЛА
+// ============================================================
 function loadQuestionsFromFile(file) {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = function(e) {
         try {
             const data = JSON.parse(e.target.result);
-            if (data.topics && Array.isArray(data.topics)) {
-                loadedQuestions.topics = data.topics;
-                loadedQuestions.usedThemesCount = 0;
-                loadedQuestions.sourceFileName = file.name;
-                skippedThemes = new Set();
-                currentGameStartIndex = 0;
-                
-                updatePackageInfo();
-                syncQuestionsToBlocksFromPackage(0);
-                
-                const totalQ = data.topics.reduce((acc, t) => acc + (t.questions?.length || 0), 0);
-                const themesPerGame = parseInt(document.getElementById('themesPerGameInput')?.value) || 6;
-                const gamesCount = Math.ceil(data.topics.length / themesPerGame);
-                alert(`✅ Загружено ${data.topics.length} тем и ${totalQ} вопросов\n📁 Файл: ${file.name}\n🎮 Можно провести ~${gamesCount} боёв (по ${themesPerGame} тем)`);
-            } else {
+            if (!data.topics || !Array.isArray(data.topics)) {
                 alert('❌ Неверный формат файла: ожидается поле "topics"');
+                return;
             }
+            const newPkg = {
+                localId: generateLocalId(),
+                serverId: null,
+                name: file.name.replace(/\.json$/i, ''),
+                topics: data.topics,
+                sourceFileName: file.name
+            };
+            packages.push(newPkg);
+            savePackagesToLocalStorage();
+
+            switchPackage(newPkg.localId);
+            syncQuestionsToBlocksFromPackage(0, /*silent=*/true);
+            renderPackageSelector();
+
+            const totalQ = data.topics.reduce((acc, t) => acc + (t.questions?.length || 0), 0);
+            alert(`✅ Пакет добавлен: ${newPkg.name}\n📚 Тем: ${data.topics.length}, ❓ Вопросов: ${totalQ}`);
         } catch (err) {
-            alert('❌ Ошибка при чтении файла: ' + err.message);
+            alert('❌ Ошибка чтения файла: ' + err.message);
         }
     };
     reader.readAsText(file);
 }
 
-// Получить массив индексов "активных" (не пропущенных) тем
+// ============================================================
+// "ДРУГИЕ ВОПРОСЫ" — шаблон в текущий бой
+// ============================================================
+function fillTemplateQuestions() {
+    const themesPerGame = parseInt(document.getElementById('themesPerGameInput')?.value) || 6;
+    if (!confirm(`Заполнить текущий бой шаблонными вопросами?\n\n`
+        + `Тем: ${themesPerGame}, вопросов: ${themesPerGame * 5}\n`
+        + `Ответы и счёт текущего боя будут сброшены.`)) return;
+
+    const newBlocks = [];
+    for (let i = 0; i < themesPerGame; i++) {
+        const questions = [];
+        for (let j = 1; j <= 5; j++) {
+            questions.push({
+                value: j * 10,
+                text: `Вопрос ${j} (Тема ${i+1})`,
+                answer: '',
+                form: '',
+                additional: '',
+                comment: '',
+                source: ''
+            });
+        }
+        newBlocks.push({
+            theme: `Тема ${i+1}`,
+            comment: '',
+            sourceIndex: null,
+            questions: questions
+        });
+    }
+
+    gameData.questionBlocks = newBlocks;
+    gameState.themeSources = [];   // шаблон не привязан к пакету
+    initAnswers();
+
+    gameState.currentBlock = 0;
+    gameState.currentQuestion = 0;
+    gameState.gameFinished = false;
+    gameState.editMode = false;
+    gameState.scores = Array(gameData.players.length).fill(0);
+
+    syncThemeCountSelect();
+    showResetGameOver();
+    refreshTable();
+    updateScoresDisplay();
+    updateQuestionInfo();
+    updateQuestionCard();
+    updatePackageInfo();
+    saveGame();
+}
+
+// ============================================================
+// 4. ЗАГРУЗКА ПАКЕТА И УПРАВЛЕНИЕ ТЕМАМИ
+// ============================================================
 function getActiveTopicIndices() {
     const topics = loadedQuestions.topics || [];
     const result = [];
@@ -2241,124 +2653,310 @@ function getActiveTopicIndices() {
     return result;
 }
 
-// Получить индексы тем для боя, начиная с позиции startIndex среди активных
 function getGameTopicIndices(startActiveIndex, themesPerGame) {
     const activeIndices = getActiveTopicIndices();
     return activeIndices.slice(startActiveIndex, startActiveIndex + themesPerGame);
 }
 
-// Синхронизировать вопросы в игру, начиная с указанной активной позиции
-function syncQuestionsToBlocksFromPackage(startActiveIndex) {
+function buildBlockFromTopic(topic, realIdx, packageLocalId) {
+    const questions = topic.questions || [];
+    return {
+        theme: topic.topic || `Тема ${realIdx + 1}`,
+        comment: topic.comment || '',
+        sourcePackageLocalId: packageLocalId,
+        sourceThemeIndex: realIdx,
+        questions: questions.map((q, qi) => ({
+            value: q.value || 0,
+            text: q.text || `Вопрос ${qi+1}`,
+            answer: q.answer || '',
+            form: q.form || '',
+            additional: q.additional || '',
+            comment: q.comment || '',
+            source: q.source || ''
+        }))
+    };
+}
+
+function syncQuestionsToBlocksFromPackage(startActiveIndex, silent) {
     const topics = loadedQuestions.topics || [];
     if (topics.length === 0) return;
-    
+
     const themesPerGame = parseInt(document.getElementById('themesPerGameInput')?.value) || 6;
     const topicIndices = getGameTopicIndices(startActiveIndex, themesPerGame);
-    
+
     if (topicIndices.length === 0) {
-        alert('Нет доступных тем для загрузки');
+        if (!silent) alert('Нет доступных тем для загрузки');
         return;
     }
-    
-    const newBlocks = [];
-    for (let k = 0; k < topicIndices.length; k++) {
-        const realIdx = topicIndices[k];
-        const topic = topics[realIdx];
-        const questions = topic.questions || [];
-        newBlocks.push({
-            theme: topic.topic || `Тема ${realIdx + 1}`,
-            comment: topic.comment || '',
-            sourceIndex: realIdx, // сохраняем оригинальный номер темы из пакета
-            questions: questions.map((q, qi) => ({
-                value: q.value || 0,
-                text: q.text || `Вопрос ${qi+1}`,
-                answer: q.answer || '',
-                form: q.form || '',
-                additional: q.additional || '',
-                comment: q.comment || '',
-                source: q.source || ''
-            }))
-        });
-    }
-    
+
+    const newBlocks = topicIndices.map(realIdx =>
+        buildBlockFromTopic(topics[realIdx], realIdx, currentPackageLocalId)
+    );
     gameData.questionBlocks = newBlocks;
-    
-    // Обновляем селектор "Количество тем"
-    const themeSelect = document.getElementById('themeCountSelect');
-    if (themeSelect) {
-        const existingOption = Array.from(themeSelect.options).find(opt => parseInt(opt.value) === newBlocks.length);
-        if (!existingOption) {
-            const opt = document.createElement('option');
-            opt.value = newBlocks.length;
-            opt.textContent = newBlocks.length + ' тем';
-            themeSelect.appendChild(opt);
-        }
-        themeSelect.value = newBlocks.length;
-    }
-    
+    gameState.themeSources = [{
+        packageLocalId: currentPackageLocalId,
+        themeIndices: topicIndices.slice()
+    }];
+
     const totalQuestions = newBlocks.reduce((acc, b) => acc + b.questions.length, 0);
     gameState.answers = [];
     for (let i = 0; i < totalQuestions; i++) {
         gameState.answers.push(Array(gameData.players.length).fill(null));
     }
-    
+
     gameState.currentBlock = 0;
     gameState.currentQuestion = 0;
     gameState.gameFinished = false;
     gameState.editMode = false;
     gameState.scores = Array(gameData.players.length).fill(0);
-    
+
     currentGameStartIndex = startActiveIndex;
     loadedQuestions.usedThemesCount = startActiveIndex + topicIndices.length;
-    
+
+    syncThemeCountSelect();
     updatePackageInfo();
     renderScoreCards();
     refreshTable();
     updateQuestionInfo();
     updateQuestionCard();
     updateScoresDisplay();
-    
+
     document.getElementById('gameOverMessage').style.display = 'none';
     document.getElementById('saveResultsBtn').style.display = 'none';
     document.getElementById('answerControls').style.display = 'block';
     document.getElementById('nextQuestionBtn').style.display = 'inline-flex';
     document.getElementById('prevQuestionBtn').style.display = 'inline-flex';
-    
+
     saveGame();
 }
 
-// Обновление информации о пакете
+// ============================================================
+// КРОСС-ПАКЕТНЫЕ СЕГМЕНТЫ
+// ============================================================
+function appendThemesFromPackage(packageLocalId, startTheme, count) {
+    const pkg = packages.find(p => p.localId === packageLocalId);
+    if (!pkg) { alert('Пакет не найден'); return; }
+    const pkgTopics = pkg.topics || [];
+    if (pkgTopics.length === 0) { alert('В пакете нет тем'); return; }
+
+    const startIdx = startTheme - 1;
+    const endIdx = Math.min(startIdx + count, pkgTopics.length);
+    if (startIdx < 0 || startIdx >= pkgTopics.length) {
+        alert('Неверный номер темы');
+        return;
+    }
+
+    const skipped = getSkippedFor(packageLocalId);
+    const indices = [];
+    const skippedInRange = [];
+    for (let i = startIdx; i < endIdx; i++) {
+        if (skipped.has(i)) skippedInRange.push(i + 1);
+        else indices.push(i);
+    }
+    if (indices.length === 0) {
+        alert('Все выбранные темы пропущены в этом пакете');
+        return;
+    }
+    if (skippedInRange.length > 0) {
+        if (!confirm(`В диапазоне пропущены темы: ${skippedInRange.join(', ')}.\nДобавить только активные (${indices.length} шт.)?`)) return;
+    }
+
+    const newBlocks = indices.map(realIdx =>
+        buildBlockFromTopic(pkgTopics[realIdx], realIdx, packageLocalId)
+    );
+    gameData.questionBlocks.push(...newBlocks);
+    gameState.themeSources.push({ packageLocalId, themeIndices: indices });
+
+    const numPlayers = gameData.players.length;
+    const needed = gameData.questionBlocks.reduce((a, b) => a + b.questions.length, 0);
+    while (gameState.answers.length < needed) {
+        gameState.answers.push(Array(numPlayers).fill(null));
+    }
+
+    syncThemeCountSelect();
+    updatePackageInfo();
+    refreshTable();
+    updateQuestionInfo();
+    updateQuestionCard();
+    saveGame();
+}
+
+function rebuildGameFromSources() {
+    const newBlocks = [];
+    gameState.themeSources.forEach(src => {
+        const pkg = packages.find(p => p.localId === src.packageLocalId);
+        if (!pkg) return;
+        const pkgTopics = pkg.topics || [];
+        src.themeIndices.forEach(realIdx => {
+            if (pkgTopics[realIdx]) {
+                newBlocks.push(buildBlockFromTopic(pkgTopics[realIdx], realIdx, src.packageLocalId));
+            }
+        });
+    });
+    gameData.questionBlocks = newBlocks;
+    initAnswers();
+    gameState.currentBlock = 0;
+    gameState.currentQuestion = 0;
+    gameState.gameFinished = false;
+    gameState.scores = Array(gameData.players.length).fill(0);
+
+    syncThemeCountSelect();
+    updatePackageInfo();
+    renderScoreCards();
+    refreshTable();
+    updateQuestionInfo();
+    updateQuestionCard();
+    updateScoresDisplay();
+    showResetGameOver();
+    saveGame();
+}
+
+function syncThemeCountSelect() {
+    const sel = document.getElementById('themeCountSelect');
+    if (!sel) return;
+    const n = gameData.questionBlocks.length;
+    if (!Array.from(sel.options).find(o => parseInt(o.value) === n)) {
+        const opt = document.createElement('option');
+        opt.value = n;
+        opt.textContent = n + ' тем';
+        sel.appendChild(opt);
+    }
+    sel.value = n;
+}
+
+function removeSegmentAt(segIdx) {
+    if (!confirm('Удалить этот сегмент? Ответы и счёт текущего боя будут сброшены.')) return;
+    gameState.themeSources.splice(segIdx, 1);
+    rebuildGameFromSources();
+}
+
+function renderThemeSegmentsList() {
+    const container = document.getElementById('themeSegmentsList');
+    if (!container) return;
+
+    if (gameState.themeSources.length === 0) {
+        container.innerHTML = '<div class="text-muted" style="font-size:12px;padding:4px;">Бой пуст. Соберите его ниже или загрузите из пакета.</div>';
+        return;
+    }
+
+    container.innerHTML = '';
+    gameState.themeSources.forEach((src, si) => {
+        const pkg = packages.find(p => p.localId === src.packageLocalId);
+        const pkgName = pkg ? pkg.name : `⚠️ удалён (${src.packageLocalId})`;
+        const themesStr = src.themeIndices.map(i => i + 1).join(', ');
+
+        const row = document.createElement('div');
+        row.className = 'theme-segment-row';
+        row.innerHTML = `
+            <span class="ts-num">${si + 1}.</span>
+            <span class="ts-pkg" title="${escapeHtmlAttr(pkgName)}">${escapeHtmlAttr(pkgName)}</span>
+            <span class="ts-themes">Темы: ${themesStr}</span>
+            <button class="btn btn-danger btn-xs" onclick="removeSegmentAt(${si})" title="Удалить сегмент">✕</button>
+        `;
+        container.appendChild(row);
+    });
+}
+
+function renderAddSegmentPackageOptions() {
+    const sel = document.getElementById('addSegmentPackage');
+    if (!sel) return;
+    const prev = sel.value;
+    sel.innerHTML = '';
+    if (packages.length === 0) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = '— нет пакетов —';
+        sel.appendChild(opt);
+    } else {
+        packages.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p.localId;
+            opt.textContent = `${p.serverId ? '☁️' : '💾'} ${p.name} (${(p.topics || []).length} тем)`;
+            sel.appendChild(opt);
+        });
+        if (prev && packages.find(p => p.localId === prev)) sel.value = prev;
+    }
+    updateAddSegmentPreview();
+}
+
+function updateAddSegmentPreview() {
+    const pkgId = document.getElementById('addSegmentPackage')?.value;
+    const start = parseInt(document.getElementById('addSegmentStart')?.value) || 1;
+    const count = parseInt(document.getElementById('addSegmentCount')?.value) || 1;
+    const el = document.getElementById('addSegmentPreview');
+    if (!el) return;
+
+    const pkg = packages.find(p => p.localId === pkgId);
+    if (!pkg) { el.textContent = ''; return; }
+
+    const skipped = getSkippedFor(pkgId);
+    const startIdx = start - 1;
+    const endIdx = Math.min(startIdx + count, (pkg.topics || []).length);
+
+    const names = [];
+    let skippedCount = 0;
+    for (let i = startIdx; i < endIdx; i++) {
+        const t = (pkg.topics || [])[i];
+        if (!t) continue;
+        if (skipped.has(i)) { skippedCount++; continue; }
+        names.push(`#${i+1} ${t.topic || ''}`);
+    }
+
+    let msg = `Будет добавлено: ${names.length} тем`;
+    if (skippedCount > 0) msg += ` (пропущено: ${skippedCount})`;
+    if (names.length > 0) msg += ` → ${names.join(' · ')}`;
+    if (startIdx + count > (pkg.topics || []).length) msg += ` ⚠️ диапазон выходит за пределы пакета`;
+    el.textContent = msg;
+}
+
+function appendSegmentFromPicker() {
+    const pkgId = document.getElementById('addSegmentPackage')?.value;
+    const start = parseInt(document.getElementById('addSegmentStart')?.value) || 1;
+    const count = parseInt(document.getElementById('addSegmentCount')?.value) || 1;
+    if (!pkgId) { alert('Выберите пакет'); return; }
+    appendThemesFromPackage(pkgId, start, count);
+}
+
+// ============================================================
+// ОБНОВЛЕНИЕ ИНФОРМАЦИИ О ПАКЕТЕ
+// ============================================================
 function updatePackageInfo() {
+    // Сегменты и состав боя рендерим всегда (даже без выбранного пакета)
+    renderThemeSegmentsList();
+    renderAddSegmentPackageOptions();
+    renderThemePreview();
+
     const info = document.getElementById('packageInfo');
     const empty = document.getElementById('packageEmpty');
     const topics = loadedQuestions.topics || [];
-    
+
     if (topics.length === 0) {
         if (info) info.style.display = 'none';
         if (empty) empty.style.display = 'block';
+        saveCurrentPackageState();
         return;
     }
-    
+
     if (info) info.style.display = 'block';
     if (empty) empty.style.display = 'none';
-    
+
     const totalQuestions = topics.reduce((acc, t) => acc + (t.questions?.length || 0), 0);
     const activeIndices = getActiveTopicIndices();
     const skipped = skippedThemes.size;
-    
+
     const el1 = document.getElementById('pkgTotalThemes');
     const el2 = document.getElementById('pkgTotalQuestions');
     const el3 = document.getElementById('pkgSkippedThemes');
     const el4 = document.getElementById('pkgRemainingThemes');
     const el5 = document.getElementById('pkgFileName');
     const el6 = document.getElementById('pkgSplit');
-    
+
     if (el1) el1.textContent = topics.length;
     if (el2) el2.textContent = totalQuestions;
     if (el3) el3.textContent = skipped;
     if (el4) el4.textContent = activeIndices.length;
     if (el5) el5.textContent = loadedQuestions.sourceFileName || '—';
-    
+
     const themesPerGame = parseInt(document.getElementById('themesPerGameInput')?.value) || 6;
     const gamesCount = Math.max(1, Math.ceil(activeIndices.length / themesPerGame));
     if (el6) {
@@ -2370,86 +2968,91 @@ function updatePackageInfo() {
         }
         el6.textContent = `🎮 Боёв: ${gamesCount} → ${parts.join(' + ')} тем (активных: ${activeIndices.length})`;
     }
-    
-    // Обновляем счётчик текущего боя
+
     const currentGameNum = Math.floor(currentGameStartIndex / themesPerGame) + 1;
     const elGameNum = document.getElementById('pkgCurrentGameNumber');
     const elTotalGames = document.getElementById('pkgTotalGames');
     if (elGameNum) elGameNum.textContent = Math.min(currentGameNum, gamesCount);
     if (elTotalGames) elTotalGames.textContent = gamesCount;
-    
-    // Обновляем поле start theme (1-based номер в пакете)
+
     const elStartInput = document.getElementById('startThemeInput');
     if (elStartInput) {
         const activeIndicesList = getActiveTopicIndices();
         const activeStartIdx = Math.min(currentGameStartIndex, activeIndicesList.length);
-        const realThemeNum = activeIndicesList[activeStartIdx] !== undefined 
-            ? activeIndicesList[activeStartIdx] + 1 
+        const realThemeNum = activeIndicesList[activeStartIdx] !== undefined
+            ? activeIndicesList[activeStartIdx] + 1
             : (topics.length > 0 ? topics.length : 1);
-        // Не перезаписываем, если пользователь вручную редактирует
         if (document.activeElement !== elStartInput) {
             elStartInput.value = realThemeNum;
         }
     }
-    
-    renderThemePreview();
+
     renderSkippedList();
+    saveCurrentPackageState();
 }
 
-// Предпросмотр тем текущего боя
+// Предпросмотр состава боя (все сегменты)
 function renderThemePreview() {
     const container = document.getElementById('themePreview');
     if (!container) return;
-    
-    const topics = loadedQuestions.topics || [];
-    if (topics.length === 0) {
-        container.innerHTML = '';
-        return;
-    }
-    
-    const themesPerGame = parseInt(document.getElementById('themesPerGameInput')?.value) || 6;
-    const topicIndices = getGameTopicIndices(currentGameStartIndex, themesPerGame);
-    
     container.innerHTML = '';
-    if (topicIndices.length === 0) {
-        container.innerHTML = '<div class="text-muted" style="padding:8px;">Нет тем для отображения</div>';
+
+    if (gameState.themeSources.length === 0) {
+        if (gameData.questionBlocks.length > 0 && gameData.questionBlocks.some(b => b.questions.length > 0)) {
+            container.innerHTML = '<div class="text-muted" style="padding:8px;font-size:12px;">Текущий бой без сегментов (собран вручную).</div>';
+        }
         return;
     }
-    
-    topicIndices.forEach((realIdx, k) => {
-        const topic = topics[realIdx];
-        const item = document.createElement('div');
-        item.className = 'theme-preview-item';
-        item.innerHTML = `
-            <span class="tp-num">#${realIdx + 1}</span>
-            <span class="tp-name" title="${escapeHtmlAttr(topic.topic || '')}">${escapeHtmlAttr(topic.topic || `Тема ${realIdx + 1}`)}</span>
-            ${topic.comment ? `<span class="tp-comment" title="${escapeHtmlAttr(topic.comment)}">⚠️</span>` : ''}
-            <span class="tp-actions">
-                <button title="Перейти к этой теме в пакете" onclick="jumpToThemeInPackage(${realIdx})">🎯</button>
-                <button title="Пропустить тему" onclick="skipTheme(${realIdx})">⏭️</button>
-            </span>
-        `;
-        container.appendChild(item);
+
+    gameState.themeSources.forEach((src, si) => {
+        const pkg = packages.find(p => p.localId === src.packageLocalId);
+        if (!pkg) {
+            const err = document.createElement('div');
+            err.className = 'text-muted';
+            err.style.cssText = 'padding:4px 8px;font-size:12px;color:var(--danger);';
+            err.textContent = `⚠️ Сегмент ${si+1}: пакет удалён (${src.packageLocalId})`;
+            container.appendChild(err);
+            return;
+        }
+
+        if (gameState.themeSources.length > 1) {
+            const hdr = document.createElement('div');
+            hdr.style.cssText = 'font-size:11px;color:var(--gray-500);padding:6px 0 2px;font-weight:600;';
+            hdr.textContent = `Сегмент ${si+1}: ${pkg.name}`;
+            container.appendChild(hdr);
+        }
+
+        src.themeIndices.forEach(realIdx => {
+            const topic = (pkg.topics || [])[realIdx];
+            if (!topic) return;
+            const item = document.createElement('div');
+            item.className = 'theme-preview-item';
+            item.innerHTML = `
+                <span class="tp-num">#${realIdx + 1}</span>
+                <span class="tp-name" title="${escapeHtmlAttr(topic.topic || '')}">${escapeHtmlAttr(topic.topic || `Тема ${realIdx + 1}`)}</span>
+                ${topic.comment ? `<span class="tp-comment" title="${escapeHtmlAttr(topic.comment)}">⚠️</span>` : ''}
+            `;
+            container.appendChild(item);
+        });
     });
 }
 
-// Список пропущенных тем
 function renderSkippedList() {
     const container = document.getElementById('skippedListContainer');
     const list = document.getElementById('skippedList');
     const countEl = document.getElementById('skippedCount');
     if (!container || !list) return;
-    
+
     const topics = loadedQuestions.topics || [];
-    
+
     if (skippedThemes.size === 0) {
         container.style.display = 'none';
         return;
     }
-    
+
     container.style.display = 'block';
     if (countEl) countEl.textContent = skippedThemes.size;
-    
+
     list.innerHTML = '';
     Array.from(skippedThemes).sort((a, b) => a - b).forEach(idx => {
         const topic = topics[idx];
@@ -2461,42 +3064,38 @@ function renderSkippedList() {
     });
 }
 
-// Пропустить тему
 function skipTheme(index) {
     const topics = loadedQuestions.topics || [];
     if (index < 0 || index >= topics.length) return;
-    
+
     skippedThemes.add(index);
-    
-    // Если текущий бой содержит эту тему - нужно пересобрать
+
     const themesPerGame = parseInt(document.getElementById('themesPerGameInput')?.value) || 6;
     const currentIndices = getGameTopicIndices(currentGameStartIndex, themesPerGame);
-    
+
     if (currentIndices.includes(index)) {
-        // Пересобираем текущий бой
         syncQuestionsToBlocksFromPackage(currentGameStartIndex);
     } else {
         updatePackageInfo();
         saveGame();
     }
-    
+
     refreshThemesListIfOpen();
 }
 
-// Восстановить тему
 function restoreTheme(index) {
     skippedThemes.delete(index);
-    
+
     const themesPerGame = parseInt(document.getElementById('themesPerGameInput')?.value) || 6;
     const currentIndices = getGameTopicIndices(currentGameStartIndex, themesPerGame);
-    
+
     if (currentIndices.includes(index)) {
         syncQuestionsToBlocksFromPackage(currentGameStartIndex);
     } else {
         updatePackageInfo();
         saveGame();
     }
-    
+
     refreshThemesListIfOpen();
 }
 
@@ -2508,7 +3107,6 @@ function restoreAllSkipped() {
     refreshThemesListIfOpen();
 }
 
-// Перейти к указанной теме в пакете (сделать её стартовой для текущего боя)
 function jumpToThemeInPackage(realIndex) {
     const activeIndices = getActiveTopicIndices();
     const posInActive = activeIndices.indexOf(realIndex);
@@ -2516,39 +3114,33 @@ function jumpToThemeInPackage(realIndex) {
         alert('Эта тема пропущена. Сначала восстановите её.');
         return;
     }
-    
-    if (!confirm(`Начать текущий бой с темы #${realIndex + 1} "\\${loadedQuestions.topics[realIndex]?.topic || ''}"?\\n\\nПрогресс текущего боя будет потерян.`)) return;
-    
+    if (!confirm(`Начать текущий бой с темы #${realIndex + 1} "${loadedQuestions.topics[realIndex]?.topic || ''}"?\n\nПрогресс текущего боя будет потерян.`)) return;
     syncQuestionsToBlocksFromPackage(posInActive);
 }
 
-// Загрузить следующий блок
 function loadNextGameFromPackage() {
     const topics = loadedQuestions.topics || [];
     if (topics.length === 0) {
         alert('Сначала загрузите пакет вопросов');
         return;
     }
-    
     const themesPerGame = parseInt(document.getElementById('themesPerGameInput')?.value) || 6;
     const nextStart = currentGameStartIndex + themesPerGame;
     const activeIndices = getActiveTopicIndices();
-    
+
     if (nextStart >= activeIndices.length) {
         alert('Все активные темы уже использованы. Можно вернуться назад или сбросить счётчик.');
         return;
     }
-    
     if (!confirm('Загрузить следующий блок тем? Прогресс текущего боя будет сохранён.')) return;
-    
+
     saveGame();
     syncQuestionsToBlocksFromPackage(nextStart);
-    
+
     const loaded = Math.min(themesPerGame, activeIndices.length - nextStart);
     alert(`✅ Загружено ${loaded} тем (бой ${Math.floor(nextStart / themesPerGame) + 1})`);
 }
 
-// Навигация по боям
 function pkgNavPrev() {
     const themesPerGame = parseInt(document.getElementById('themesPerGameInput')?.value) || 6;
     const newStart = Math.max(0, currentGameStartIndex - themesPerGame);
@@ -2571,25 +3163,22 @@ function pkgNavNext() {
     syncQuestionsToBlocksFromPackage(newStart);
 }
 
-// Обработчик изменения "С какой темы начать"
 function onStartThemeChange() {
     const input = document.getElementById('startThemeInput');
     if (!input) return;
-    const realThemeNum = parseInt(input.value) - 1; // 0-based
+    const realThemeNum = parseInt(input.value) - 1;
     const topics = loadedQuestions.topics || [];
-    
+
     if (isNaN(realThemeNum) || realThemeNum < 0 || realThemeNum >= topics.length) {
         alert('Неверный номер темы');
         updatePackageInfo();
         return;
     }
-    
     if (skippedThemes.has(realThemeNum)) {
         alert(`Тема #${realThemeNum + 1} пропущена. Восстановите её или выберите другую.`);
         updatePackageInfo();
         return;
     }
-    
     const activeIndices = getActiveTopicIndices();
     const posInActive = activeIndices.indexOf(realThemeNum);
     if (posInActive === -1) {
@@ -2597,31 +3186,22 @@ function onStartThemeChange() {
         updatePackageInfo();
         return;
     }
-    
-    if (!confirm(`Начать текущий бой с темы #${realThemeNum + 1}?\\n\\nПрогресс текущего боя будет потерян.`)) {
+    if (!confirm(`Начать текущий бой с темы #${realThemeNum + 1}?\n\nПрогресс текущего боя будет потерян.`)) {
         updatePackageInfo();
         return;
     }
-    
     syncQuestionsToBlocksFromPackage(posInActive);
 }
 
-// Обработчик изменения "Тем в бое"
 function onThemesPerGameChange() {
-    // Просто обновляем информацию, применение по кнопке
     updatePackageInfo();
 }
 
-// Применить настройки боя
 function applyThemeSetup() {
-    const themesPerGame = parseInt(document.getElementById('themesPerGameInput')?.value) || 6;
     const activeIndices = getActiveTopicIndices();
-    
     if (currentGameStartIndex >= activeIndices.length) {
-        // Если старт за пределами - начинаем с начала
         currentGameStartIndex = 0;
     }
-    
     if (!confirm('Применить настройки? Прогресс текущего боя будет потерян.')) return;
     syncQuestionsToBlocksFromPackage(currentGameStartIndex);
 }
@@ -2660,46 +3240,44 @@ function closeThemesList() {
 function renderThemesList() {
     const container = document.getElementById('themesListBody');
     if (!container) return;
-    
+
     const topics = loadedQuestions.topics || [];
     const hideSkipped = document.getElementById('hideSkippedCheckbox')?.checked || false;
     const search = (document.getElementById('themesSearchInput')?.value || '').toLowerCase().trim();
-    
+
     const activeIndices = getActiveTopicIndices();
     const themesPerGame = parseInt(document.getElementById('themesPerGameInput')?.value) || 6;
     const currentIndices = getGameTopicIndices(currentGameStartIndex, themesPerGame);
-    
+
     container.innerHTML = '';
-    
     let visibleCount = 0;
     let skippedCount = 0;
-    
+
     topics.forEach((topic, idx) => {
         const isSkipped = skippedThemes.has(idx);
         const isUsed = idx < (loadedQuestions.usedThemesCount || 0) && !isSkipped;
         const isCurrent = currentIndices.includes(idx);
         const posInActive = activeIndices.indexOf(idx);
-        
-        // Фильтрация
+
         if (hideSkipped && isSkipped) return;
         const name = (topic.topic || '').toLowerCase();
         if (search && !name.includes(search)) return;
-        
+
         visibleCount++;
         if (isSkipped) skippedCount++;
-        
+
         const item = document.createElement('div');
         item.className = 'theme-list-item';
         if (isSkipped) item.classList.add('skipped');
         if (isUsed) item.classList.add('used');
-        
+
         const questionsCount = (topic.questions || []).length;
         const statusParts = [];
         if (isSkipped) statusParts.push('⏭️ пропущена');
         if (isUsed) statusParts.push('✅ использована');
         if (isCurrent) statusParts.push('🎯 текущий бой');
         if (posInActive >= 0) statusParts.push(`позиция в активных: ${posInActive + 1}`);
-        
+
         item.innerHTML = `
             <span class="tli-num">#${idx + 1}</span>
             <div class="tli-info">
@@ -2708,11 +3286,11 @@ function renderThemesList() {
                 <div class="tli-meta">${questionsCount} вопр. · ${statusParts.join(' · ')}</div>
             </div>
             <div class="tli-actions">
-                ${isSkipped 
+                ${isSkipped
                     ? `<button class="btn-restore" onclick="themeListRestore(${idx})" title="Восстановить">↩️ Восстановить</button>`
                     : `<button class="btn-skip" onclick="themeListSkip(${idx})" title="Пропустить">⏭️ Пропустить</button>`
                 }
-                ${!isSkipped 
+                ${!isSkipped
                     ? `<button class="btn-jump" onclick="themeListJump(${idx})" title="Начать текущий бой с этой темы">🎯 Начать с</button>`
                     : ''
                 }
@@ -2720,36 +3298,21 @@ function renderThemesList() {
         `;
         container.appendChild(item);
     });
-    
+
     if (visibleCount === 0) {
         container.innerHTML = '<div class="text-muted" style="padding:20px;text-align:center;">Ничего не найдено</div>';
     }
-    
+
     const stats = document.getElementById('themesListStats');
     if (stats) {
         stats.textContent = `Показано: ${visibleCount} из ${topics.length} · Пропущено: ${skippedThemes.size}`;
     }
 }
 
-// Функции для работы со списком тем
-function themeListSkip(idx) {
-    skipTheme(idx);
-    renderThemesList();
-}
-
-function themeListRestore(idx) {
-    restoreTheme(idx);
-    renderThemesList();
-}
-
-function themeListJump(idx) {
-    closeThemesList();
-    jumpToThemeInPackage(idx);
-}
-
-function filterThemesList() {
-    renderThemesList();
-}
+function themeListSkip(idx) { skipTheme(idx); renderThemesList(); }
+function themeListRestore(idx) { restoreTheme(idx); renderThemesList(); }
+function themeListJump(idx) { closeThemesList(); jumpToThemeInPackage(idx); }
+function filterThemesList() { renderThemesList(); }
 
 function refreshThemesListIfOpen() {
     const overlay = document.getElementById('themes-list-overlay');
@@ -2758,7 +3321,6 @@ function refreshThemesListIfOpen() {
     }
 }
 
-// Экранирование атрибутов HTML (для title, onclick и т.д.)
 function escapeHtmlAttr(str) {
     if (!str) return '';
     return String(str)
@@ -2960,14 +3522,12 @@ function renderVerticalTable() {
             questionIndex++;
         });
     });
-    
+
     if (gameState.editMode) {
         const cells = document.querySelectorAll('#tableBody td[id^="answer"]');
         cells.forEach(cell => {
             cell.style.cursor = 'pointer';
-            cell.onclick = function(e) {
-                handleCellClick(e);
-            };
+            cell.onclick = function(e) { handleCellClick(e); };
         });
     }
 }
@@ -3011,7 +3571,6 @@ function renderHorizontalTable() {
     });
     tableBody.appendChild(valueRow);
 
-    let questionIndex = 0;
     gameData.players.forEach((player, pIdx) => {
         const row = document.createElement('tr');
         const playerCell = document.createElement('th');
@@ -3040,16 +3599,13 @@ function renderHorizontalTable() {
             });
         });
         tableBody.appendChild(row);
-        questionIndex++;
     });
-    
+
     if (gameState.editMode) {
         const cells = document.querySelectorAll('#tableBody td[id^="answer"]');
         cells.forEach(cell => {
             cell.style.cursor = 'pointer';
-            cell.onclick = function(e) {
-                handleCellClick(e);
-            };
+            cell.onclick = function(e) { handleCellClick(e); };
         });
     }
 }
@@ -3092,14 +3648,13 @@ function updateQuestionInfo() {
 }
 
 // ============================================================
-// 7. КАРТОЧКА ВОПРОСА (с комментариями)
+// 7. КАРТОЧКА ВОПРОСА
 // ============================================================
 function updateQuestionCard() {
     const q = getCurrentQuestion();
     const currentQ = q.current || {};
     const block = q.block || gameData.questionBlocks[gameState.currentBlock] || {};
-    
-    // === Комментарий к ТЕМЕ (всегда показываем) ===
+
     const themeComment = block.comment || '';
     const themeCommentEl = document.getElementById('qThemeComment');
     const themeCommentTextEl = document.getElementById('qThemeCommentText');
@@ -3109,8 +3664,7 @@ function updateQuestionCard() {
     } else {
         themeCommentEl.style.display = 'none';
     }
-    
-    // === Основная информация о вопросе ===
+
     document.getElementById('qTheme').textContent = q.theme || 'Без названия';
     document.getElementById('qValue').textContent = currentQ.value || 0;
     document.getElementById('qText').textContent = currentQ.text || 'Нет текста вопроса';
@@ -3118,16 +3672,14 @@ function updateQuestionCard() {
     document.getElementById('qForm').textContent = currentQ.form || '—';
     document.getElementById('qAdditional').textContent = currentQ.additional || '—';
     document.getElementById('qSource').textContent = currentQ.source || '—';
-    
-    // === Комментарий к ВОПРОСУ (со спойлером для длинных) ===
+
     const commentContainer = document.getElementById('qCommentContainer');
     const comment = currentQ.comment || '';
     commentContainer.innerHTML = '';
-    
+
     if (comment) {
-        const COMMENT_THRESHOLD = 150; // Порог для спойлера
+        const COMMENT_THRESHOLD = 150;
         if (comment.length > COMMENT_THRESHOLD) {
-            // Длинный комментарий - в спойлер
             const details = document.createElement('details');
             details.className = 'q-spoiler';
             const summary = document.createElement('summary');
@@ -3139,7 +3691,6 @@ function updateQuestionCard() {
             details.appendChild(content);
             commentContainer.appendChild(details);
         } else {
-            // Короткий комментарий - показываем сразу
             const commentDiv = document.createElement('div');
             commentDiv.className = 'q-comment';
             commentDiv.textContent = '💬 ' + comment;
@@ -3156,33 +3707,33 @@ function initControlButtons() {
     container.innerHTML = '';
     const correctKeys = ['1', '2', '3', '4'];
     const incorrectKeys = ['Q', 'W', 'E', 'R'];
-    
+
     gameData.players.forEach((player, idx) => {
         if (!player) return;
-        
+
         const group = document.createElement('div');
         group.className = 'player-answer-group';
-        
+
         const label = document.createElement('div');
         label.className = 'player-label';
         label.textContent = player;
         group.appendChild(label);
-        
+
         const correctBtn = document.createElement('button');
         correctBtn.className = 'answer-btn correct';
         correctBtn.innerHTML = `✅ Правильно <span class="hotkey">${correctKeys[idx]}</span>`;
         correctBtn.onclick = () => handleAnswer(idx, true);
         group.appendChild(correctBtn);
-        
+
         const incorrectBtn = document.createElement('button');
         incorrectBtn.className = 'answer-btn incorrect';
         incorrectBtn.innerHTML = `❌ Неправильно <span class="hotkey">${incorrectKeys[idx]}</span>`;
         incorrectBtn.onclick = () => handleAnswer(idx, false);
         group.appendChild(incorrectBtn);
-        
+
         container.appendChild(group);
     });
-    
+
     document.getElementById('nextQuestionBtn').onclick = nextQuestion;
     document.getElementById('prevQuestionBtn').onclick = prevQuestion;
     document.getElementById('editModeBtn').onclick = toggleEditMode;
@@ -3192,10 +3743,9 @@ function initControlButtons() {
 function prevQuestion() {
     if (gameState.editMode) return;
     if (gameState.gameFinished) return;
-    
     const total = getTotalQuestions();
     if (total === 0) return;
-    
+
     const absPos = getAbsoluteQuestionNumber();
     if (absPos > 0) {
         if (gameState.currentQuestion > 0) {
@@ -3214,13 +3764,13 @@ function prevQuestion() {
 function nextQuestion() {
     if (gameState.editMode) return;
     if (gameState.gameFinished) return;
-    
+
     const block = gameData.questionBlocks[gameState.currentBlock];
     if (!block) return;
-    
+
     const total = getTotalQuestions();
     const absPos = getAbsoluteQuestionNumber();
-    
+
     if (absPos < total - 1) {
         if (gameState.currentQuestion < block.questions.length - 1) {
             gameState.currentQuestion++;
@@ -3243,7 +3793,7 @@ function nextQuestion() {
 
 function toggleTableView() {
     gameState.horizontalView = !gameState.horizontalView;
-    document.getElementById('toggleViewBtn').textContent = 
+    document.getElementById('toggleViewBtn').textContent =
         gameState.horizontalView ? 'Вертикальное' : 'Горизонтальное';
     refreshTable();
     updateQuestionHighlight();
@@ -3258,20 +3808,18 @@ function toggleEditMode() {
     const btn = document.getElementById('editModeBtn');
     btn.textContent = gameState.editMode ? '✅ Завершить исправление' : '✏️ Режим исправления';
     btn.className = gameState.editMode ? 'btn btn-warning' : 'btn btn-outline';
-    
+
     const cells = document.querySelectorAll('#tableBody td[id^="answer"]');
     cells.forEach(cell => {
         if (gameState.editMode) {
             cell.style.cursor = 'pointer';
-            cell.onclick = function(e) {
-                handleCellClick(e);
-            };
+            cell.onclick = function(e) { handleCellClick(e); };
         } else {
             cell.style.cursor = '';
             cell.onclick = null;
         }
     });
-    
+
     if (!gameState.editMode) {
         document.getElementById('warningMessage').style.display = 'none';
     }
@@ -3298,31 +3846,31 @@ function handleCellClick(e) {
     if (!gameState.editMode) return;
     const cell = e.target;
     if (!cell.id || !cell.id.startsWith('answer')) return;
-    
+
     const parts = cell.id.split('_');
     const qIdx = parseInt(parts[0].replace('answer', ''));
     const pIdx = parseInt(parts[1]);
-    
+
     if (isNaN(qIdx) || isNaN(pIdx)) return;
     if (qIdx >= gameState.answers.length || pIdx >= gameState.answers[qIdx].length) return;
-    
+
     const current = gameState.answers[qIdx][pIdx];
     let newVal;
     if (current === null) newVal = true;
     else if (current === true) newVal = false;
     else newVal = null;
-    
+
     const oldVal = current;
     gameState.answers[qIdx][pIdx] = newVal;
     const q = getQuestionByIndex(qIdx);
     if (!q) return;
-    
+
     const penalty = getPenaltyValue(q.value);
     if (oldVal === true) gameState.scores[pIdx] -= q.value;
     else if (oldVal === false) gameState.scores[pIdx] += penalty;
     if (newVal === true) gameState.scores[pIdx] += q.value;
     else if (newVal === false) gameState.scores[pIdx] -= penalty;
-    
+
     updateScoresDisplay();
     refreshTable();
     saveGame();
@@ -3331,15 +3879,15 @@ function handleCellClick(e) {
 function handleAnswer(playerIdx, isCorrect) {
     if (gameState.gameFinished || gameState.editMode) return;
     const qNum = getAbsoluteQuestionNumber();
-    
+
     const questionAnswers = gameState.answers[qNum];
     const hasCorrect = questionAnswers.some(ans => ans === true);
-    
+
     if (isCorrect && hasCorrect) {
         alert('На вопрос уже дан правильный ответ. Если он указан ошибочно, воспользуйтесь режимом исправления.');
         return;
     }
-    
+
     if (questionAnswers[playerIdx] !== null) {
         if (questionAnswers[playerIdx] === true) {
             alert('Этот игрок уже дал правильный ответ на данный вопрос.');
@@ -3348,7 +3896,7 @@ function handleAnswer(playerIdx, isCorrect) {
         }
         return;
     }
-    
+
     const q = getCurrentQuestion().current;
     const penalty = getPenaltyValue(q.value);
     gameState.answers[qNum][playerIdx] = isCorrect;
@@ -3356,17 +3904,17 @@ function handleAnswer(playerIdx, isCorrect) {
     updateScoresDisplay();
     refreshTable();
     saveGame();
-    
+
     const allAnswered = gameState.answers[qNum].every(ans => ans !== null);
     const hasCorrectAnswer = gameState.answers[qNum].some(ans => ans === true);
-    
+
     if (allAnswered && !hasCorrectAnswer) {
         setTimeout(() => {
             alert('Никто не дал правильный ответ. Переходим к следующему вопросу.');
             nextQuestion();
         }, 300);
     }
-    
+
     if (isCorrect) {
         setTimeout(nextQuestion, 400);
     }
@@ -3453,71 +4001,75 @@ function recalculateScores() {
 function loadGame(matchId) {
     const target = matchId || getCurrentMatchId();
     const saved = matchStorage.getMatchState(gameState.roomId, target);
-    
+
     if (saved) {
+        // Сброс themeSources, чтобы избежать «перетекания» из другого матча
+        gameState.themeSources = [];
         Object.assign(gameState, saved.gameState);
-        
+        if (!Array.isArray(gameState.themeSources)) {
+            gameState.themeSources = [];
+        }
+
         if (saved.gameData?.players) {
             gameData.players = saved.gameData.players;
             updatePlayerInputs();
         }
-        
+
         if (saved.gameData?.questionBlocks) {
             gameData.questionBlocks = saved.gameData.questionBlocks;
         }
-        
+
         if (saved.gameState?.answers) {
             gameState.answers = saved.gameState.answers.map(q => [...q]);
         } else {
             initAnswers();
         }
-        
+
         document.getElementById('halfMinusToggle').checked = gameState.halfMinus || false;
         document.getElementById('keyboardToggle').checked = gameState.keyboardEnabled !== false;
-        
+
         updateScoresDisplay();
-        
+
         if (gameState.gameFinished) {
             showGameOver();
         } else {
             showResetGameOver();
         }
-        
+
         refreshTable();
         updateQuestionInfo();
         updateQuestionCard();
-        
+
         if (gameState.horizontalView) {
             document.getElementById('toggleViewBtn').textContent = 'Вертикальное';
         } else {
             document.getElementById('toggleViewBtn').textContent = 'Горизонтальное';
         }
-        
+
         initControlButtons();
-        
+
         if (!gameState.gameFinished) {
             document.getElementById('answerControls').style.display = 'block';
             document.getElementById('nextQuestionBtn').style.display = 'inline-flex';
             document.getElementById('prevQuestionBtn').style.display = 'inline-flex';
         }
     } else {
-        // Нет сохранённого состояния - новая игра
+        // Новая игра
         reset_players_names();
         updatePlayerInputs();
-        
+
         const topics = loadedQuestions.topics || [];
         const startIndex = loadedQuestions.usedThemesCount || 0;
-        
+
         if (topics.length > 0 && startIndex < topics.length) {
-            // Загружаем следующий блок из пакета для этой новой игры
-            syncQuestionsToBlocksFromPackage(startIndex);
+            syncQuestionsToBlocksFromPackage(startIndex, true);
         } else if (gameData.questionBlocks.length > 0 && gameData.questionBlocks.some(b => b.questions.length > 0)) {
-            // Уже есть вопросы (возможно, от предыдущего resizeThemes) - просто сбрасываем ответы
             initAnswers();
         } else {
+            gameState.themeSources = [];
             initAnswers();
         }
-        
+
         gameState.gameFinished = false;
         gameState.currentBlock = 0;
         gameState.currentQuestion = 0;
@@ -3525,22 +4077,22 @@ function loadGame(matchId) {
         gameState.halfMinus = false;
         gameState.keyboardEnabled = true;
         gameState.editMode = false;
-        
+
         document.getElementById('halfMinusToggle').checked = false;
         document.getElementById('keyboardToggle').checked = true;
-        
+
         refreshTable();
         updateQuestionInfo();
         updateQuestionCard();
         initControlButtons();
-        
+
         document.getElementById('answerControls').style.display = 'block';
         document.getElementById('nextQuestionBtn').style.display = 'inline-flex';
         document.getElementById('prevQuestionBtn').style.display = 'inline-flex';
         document.getElementById('gameOverMessage').style.display = 'none';
         document.getElementById('saveResultsBtn').style.display = 'none';
     }
-    
+
     renderScoreCards();
     document.getElementById('game').textContent = `🎯 Игра ${target}`;
     refreshTable();
@@ -3559,15 +4111,14 @@ function saveGame() {
 
 function switchMatch(newMatchId) {
     saveGame();
-    const oldIndex = gameindex;
     gameindex = newMatchId;
     document.getElementById('game').textContent = `🎯 Игра ${gameindex}`;
-    
+
     ClearPlayers();
     gameState.scores = Array(gameData.players.length).fill(0);
-    
+
     loadGame(newMatchId);
-    
+
     GetGameHistory();
     update_weight();
     redrawBrackets();
@@ -3582,10 +4133,8 @@ function switchMatch(newMatchId) {
 document.addEventListener('keydown', (e) => {
     if (!gameState.keyboardEnabled) return;
     if (gameState.gameFinished || gameState.editMode) return;
-    
-    // Не перехватываем ввод в текстовых полях
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
-    
+
     const map = {
         '1': { p: 0, c: true }, '2': { p: 1, c: true }, '3': { p: 2, c: true }, '4': { p: 3, c: true },
         'q': { p: 0, c: false }, 'Q': { p: 0, c: false }, 'й': { p: 0, c: false }, 'Й': { p: 0, c: false },
@@ -3626,7 +4175,8 @@ function resizeThemes(newCount) {
         }
     }
     gameData.questionBlocks = newBlocks;
-    const totalQ = newCount * 5;
+    gameState.themeSources = [];
+    const totalQ = gameData.questionBlocks.reduce((a, b) => a + b.questions.length, 0);
     const newAnswers = [];
     for (let i = 0; i < totalQ; i++) {
         newAnswers.push(i < gameState.answers.length ? [...gameState.answers[i]] : Array(gameData.players.length).fill(null));
@@ -3637,6 +4187,7 @@ function resizeThemes(newCount) {
     refreshTable();
     updateQuestionInfo();
     updateQuestionCard();
+    updatePackageInfo();
     saveGame();
 }
 
@@ -3648,7 +4199,6 @@ document.getElementById('applyThemeCountBtn').addEventListener('click', () => {
     }
 });
 
-document.getElementById('saveResultsBtn').addEventListener('click', AddResult);
 
 // ============================================================
 // 13. РАБОТА С ИГРОКАМИ
@@ -3816,30 +4366,71 @@ window.removeFromBlock = removeFromBlock;
 // 15. РЕЗУЛЬТАТЫ И ИСТОРИЯ
 // ============================================================
 function AddResult() {
+    console.log('[AddResult] start. gameFinished=', gameState.gameFinished,
+                'gameindex=', gameindex,
+                'players=', gameData.players);
+
+    // Собираем счета из инпутов; если поле пустое, но игрок задан —
+    // подстраховываемся внутренним состоянием (не «-0», а фактический счёт)
     const scores = [];
     for (let i = 1; i <= 4; i++) {
-        const name = document.getElementById(`player${i}`).value.trim();
-        const score = document.getElementById(`score${i}`).value.trim();
+        const name = (document.getElementById(`player${i}`)?.value || '').trim();
+        let score = (document.getElementById(`score${i}`)?.value || '').trim();
+
+        if (name && score === '') {
+            score = String(gameState.scores[i - 1] || 0);
+        }
         if (name && !score) {
             alert(`У игрока ${name} не внесён счёт!`);
             return;
         }
         scores.push({ name, score: score || '0' });
     }
+
+    if (scores.every(s => !s.name)) {
+        alert('Нет игроков для сохранения результата. Заполните хотя бы одного.');
+        return;
+    }
+
     fetch("/gameresult/{{roomid}}", {
         headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
         method: "POST",
-        body: JSON.stringify({ roomid: {{roomid}}, gameindex: gameindex, scores, detailed: getGameResults() })
-    }).then(r => r.json()).then(data => {
-        if (data.length > 0) {
+        body: JSON.stringify({
+            roomid: {{roomid}},
+            gameindex: gameindex,
+            scores,
+            detailed: getGameResults()
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        console.log('[AddResult] response:', data);
+
+        // Успешный кейс — сервер вернул массив с результатами
+        if (Array.isArray(data) && data.length > 0) {
             UpdateGameHistory(gameindex, data);
             gameState.gameFinished = true;
             saveGame();
             switchMatch(Number(gameindex) + 1);
             redrawBrackets();
             showResetGameOver();
+            return;
         }
-    }).catch(console.error);
+
+        // Пустой объект — сервер уже имел результаты за этот gameindex,
+        // либо в scores не было ни одного непустого имени (мы это отсекли выше).
+        // Всё равно продвигаемся дальше — иначе пользователь «застрянет» на кнопке.
+        console.warn('[AddResult] Empty server response. Game likely already saved.');
+        alert('Результат этой игры уже был сохранён ранее. Переходим к следующей игре.');
+        gameState.gameFinished = true;
+        saveGame();
+        switchMatch(Number(gameindex) + 1);
+        showResetGameOver();
+    })
+    .catch(err => {
+        console.error('[AddResult] fetch error:', err);
+        alert('Ошибка при сохранении результата: ' + err.message);
+    });
 }
 
 function UpdateGameHistory(gameIdx, data) {
@@ -4061,7 +4652,8 @@ function renderBracket(schema, completedMatches, container, options = {}) {
                     map.get(src.matchId).push({
                         targetMatchId: m.id,
                         targetSlot: src.slot,
-                        place: src.place                    });
+                        place: src.place
+                    });
                 }
             });
         });
@@ -4267,7 +4859,7 @@ function showMatchDetailsModal(data) {
 // ============================================================
 function exportState() {
     const data = {
-        version: 2,
+        version: 3,
         timestamp: new Date().toISOString(),
         roomId: gameState.roomId,
         active: active,
@@ -4282,7 +4874,23 @@ function exportState() {
             sourceFileName: loadedQuestions.sourceFileName
         },
         skippedThemes: Array.from(skippedThemes),
-        currentGameStartIndex: currentGameStartIndex
+        skippedThemesByPackage: Object.fromEntries(
+            Object.entries(skippedThemesByPackage).map(([k, v]) => [k, Array.from(v)])
+        ),
+        currentGameStartIndex: currentGameStartIndex,
+        packages: packages.map(p => ({
+            localId: p.localId,
+            serverId: p.serverId,
+            name: p.name,
+            topics: p.topics,
+            sourceFileName: p.sourceFileName
+        })),
+        currentPackageLocalId: currentPackageLocalId,
+        packageStates: packages.reduce((acc, p) => {
+            const raw = localStorage.getItem(getPackageStateKey(p.localId));
+            if (raw) acc[p.localId] = JSON.parse(raw);
+            return acc;
+        }, {})
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -4300,28 +4908,64 @@ async function importState(file) {
         try {
             const imported = JSON.parse(e.target.result);
             if (!confirm('Восстановление заменит все текущие данные. Продолжить?')) return;
+
             active = imported.active || [];
             one_game_block_array = imported.oneGameBlockArray || [];
             gameindex = imported.gameIndex || 1;
             Object.assign(gameData, imported.gameData);
             if (imported.gameData.players) gameData.players = imported.gameData.players;
+
+            const originalRoomId = gameState.roomId;
             Object.assign(gameState, imported.gameState);
+            gameState.roomId = originalRoomId;
+            if (!Array.isArray(gameState.themeSources)) {
+                gameState.themeSources = [];
+            }
+
             if (imported.gameState.answers) {
                 gameState.answers = imported.gameState.answers.map(q => [...q]);
             }
+
             if (imported.loadedQuestions) {
                 loadedQuestions.topics = imported.loadedQuestions.topics || [];
                 loadedQuestions.usedThemesCount = imported.loadedQuestions.usedThemesCount || 0;
                 loadedQuestions.sourceFileName = imported.loadedQuestions.sourceFileName || '';
             }
-            // Восстанавливаем пропущенные темы и стартовый индекс
+            if (Array.isArray(imported.packages)) {
+                packages = imported.packages;
+                savePackagesToLocalStorage();
+            }
+            if (imported.packageStates) {
+                Object.entries(imported.packageStates).forEach(([lid, st]) => {
+                    localStorage.setItem(getPackageStateKey(lid), JSON.stringify(st));
+                });
+            }
+            // Восстанавливаем skippedThemesByPackage, если есть
+            if (imported.skippedThemesByPackage) {
+                skippedThemesByPackage = {};
+                Object.entries(imported.skippedThemesByPackage).forEach(([lid, arr]) => {
+                    skippedThemesByPackage[lid] = new Set(arr || []);
+                });
+            }
             skippedThemes = new Set(imported.skippedThemes || []);
             currentGameStartIndex = imported.currentGameStartIndex || 0;
-            
+
             document.getElementById('halfMinusToggle').checked = gameState.halfMinus || false;
             document.getElementById('keyboardToggle').checked = gameState.keyboardEnabled !== false;
             matchStorage.allMatches = imported.allMatches || {};
             matchStorage.saveAllMatches();
+
+            // Восстанавливаем текущий пакет
+            const prevCurrent = currentPackageLocalId;
+            currentPackageLocalId = null;
+            if (imported.currentPackageLocalId && packages.find(p => p.localId === imported.currentPackageLocalId)) {
+                switchPackage(imported.currentPackageLocalId);
+            } else {
+                skippedThemes = new Set(imported.skippedThemes || []);
+                updatePackageInfo();
+            }
+            renderPackageSelector();
+
             UpdateActivePlayer(active);
             refreshOneGameBlock();
             updatePlayerInputs();
@@ -4342,6 +4986,7 @@ async function importState(file) {
     };
     reader.readAsText(file);
 }
+
 // ============================================================
 // 20. ЗАВЕРШЕНИЕ КОМНАТЫ
 // ============================================================
@@ -4387,6 +5032,8 @@ function Info() {
     console.log('active:', active);
     console.log('one_game_block_array:', one_game_block_array);
     console.log('loadedQuestions:', loadedQuestions);
+    console.log('packages:', packages);
+    console.log('skippedThemesByPackage:', skippedThemesByPackage);
 }
 
 // ============================================================
@@ -4395,6 +5042,16 @@ function Info() {
 function init_page() {
     gameindex = {{gameindex}};
     document.getElementById('game').textContent = `🎯 Игра ${gameindex}`;
+
+    loadPackagesFromLocalStorage();
+    const lastPkgId = localStorage.getItem(getCurrentPkgKey());
+    if (lastPkgId && packages.find(p => p.localId === lastPkgId)) {
+        switchPackage(lastPkgId);
+    } else if (packages.length > 0) {
+        switchPackage(packages[0].localId);
+    }
+    renderPackageSelector();
+
     loadGame(gameindex);
     fetch("/activeplayers/{{roomid}}").then(r => r.json()).then(data => {
         active = data;
@@ -4420,7 +5077,6 @@ function init_page() {
     });
     setTimeout(redrawBrackets, 500);
     updateQuestionCard();
-    
 }
 
 // Глобальные функции для HTML
@@ -4473,6 +5129,16 @@ window.onThemesPerGameChange = onThemesPerGameChange;
 window.applyThemeSetup = applyThemeSetup;
 window.pkgNavPrev = pkgNavPrev;
 window.pkgNavNext = pkgNavNext;
+window.onPackageSelectChange = onPackageSelectChange;
+window.syncPackagesWithServer = syncPackagesWithServer;
+window.downloadPackagesFromServer = downloadPackagesFromServer;
+window.deleteCurrentPackage = deleteCurrentPackage;
+window.fillTemplateQuestions = fillTemplateQuestions;
+window.switchPackage = switchPackage;
+window.appendSegmentFromPicker = appendSegmentFromPicker;
+window.updateAddSegmentPreview = updateAddSegmentPreview;
+window.removeSegmentAt = removeSegmentAt;
+window.appendThemesFromPackage = appendThemesFromPackage;
 
 document.addEventListener('DOMContentLoaded', init_page);
 </script>
