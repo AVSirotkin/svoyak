@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from flask import Flask, render_template, request, redirect, abort
 import datetime
@@ -12,21 +13,70 @@ from collections import defaultdict
 
 app = Flask(__name__)
 
+# Путь к базе можно переопределить переменной окружения (удобно для тестов
+# на копии базы, не трогая рабочую).
+DB_PATH = os.environ.get("SVOYAK_DB", "./svoyak.db")
+
 game_states = {}
 
 def get_db_connection():
-    conn = sqlite3.connect('./svoyak.db')
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
 
-def log_game_events(room, event, data):
+
+def get_tx_connection():
+    """Соединение с ручным управлением транзакциями (BEGIN IMMEDIATE)."""
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn.row_factory = sqlite3.Row
+    conn.isolation_level = None
+    return conn
+
+
+def log_game_events(room, event, data, conn=None):
+    """Пишет событие в лог. Если передан conn — в его транзакции, без commit."""
+    payload = json.dumps(data, ensure_ascii=False)
     cur_time = time.ctime()
-    print(f"{cur_time}: log {event} at room {room} with data {data}")
-    print(json.dumps(data, ensure_ascii=False).encode('utf8'))
+    own_conn = conn is None
+    if own_conn:
+        conn = get_db_connection()
+    try:
+        conn.execute(
+            "INSERT INTO log (date, roomid, event, data) VALUES (?, ?, ?, ?)",
+            (cur_time, room, event, payload),
+        )
+        if own_conn:
+            conn.commit()
+    finally:
+        if own_conn:
+            conn.close()
+    print(f"{cur_time}: log {event} room={room}")
+
+
+def ensure_schema():
+    """Создаёт индексы. Не падает, если в данных ещё есть дубли."""
     conn = get_db_connection()
-    print(f"INSERT OR IGNORE INTO log VALUES ('{cur_time}', {room}, '{event}', '{json.dumps(data,ensure_ascii=False)}' )")
-    conn.execute(f"INSERT OR IGNORE INTO log VALUES ('{cur_time}', {room}, '{event}', '{json.dumps(data,ensure_ascii=False)}')")
-    conn.commit()
+    try:
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_results_room_game ON results(roomid, gameindex)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_log_room ON log(roomid)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_activeplayers_room ON activeplayers(roomid)")
+        conn.commit()
+        for name, sql in (
+            ("ux_results_game_player",
+             "CREATE UNIQUE INDEX IF NOT EXISTS ux_results_game_player "
+             "ON results(roomid, gameindex, playerid)"),
+            ("ux_players_id",
+             "CREATE UNIQUE INDEX IF NOT EXISTS ux_players_id ON players(playerid)"),
+        ):
+            try:
+                conn.execute(sql)
+                conn.commit()
+            except sqlite3.IntegrityError:
+                print(f"WARNING: {name} not created: duplicate rows still in data")
+            except sqlite3.OperationalError as exc:
+                print(f"WARNING: {name} not created: {exc}")
+    finally:
+        conn.close()
 
 
 @app.route('/', subdomain = "svoyak")
@@ -86,27 +136,9 @@ def SvoyakNewMainPage(roomid):
 
 @app.route('/fullroom2/<int:roomid>', subdomain = "svoyak")
 def SvoyakNewMainPage2(roomid):
-    conn = get_db_connection()
-    roomstate = conn.execute(f"SELECT * FROM activerooms WHERE roomid={roomid}").fetchone()
-    print(roomstate)
-    if roomstate is None:
-        return redirect(f"/init/{roomid}", code=302)
-    if roomstate["finished"]:
-        return redirect(f"/view/{roomid}", code=302)
-
-    all_players = conn.execute('SELECT playerid, name FROM players ORDER BY name').fetchall()
-    gi = conn.execute('SELECT max(gameindex) FROM results WHERE roomid == '+str(roomid)).fetchone()
-    if gi["max(gameindex)"] is None:
-        gameindex = 1
-    else:
-        gameindex = gi["max(gameindex)"] + 1
-    ActivePalayers = []
-
-    rules = get_room_rules(roomid)
-    # with open("12-2-azart.json", "rt", encoding="UTF8") as fo:
-    #     rules["brackets"] = json.load(fo)    
-
-    return render_template("FullRoom2.html", roomid = roomid, Players = all_players, gameindex = gameindex, rules = rules)
+    # Отдельного шаблона FullRoom2.html нет — ведём в обычную комнату,
+    # иначе маршрут падал с TemplateNotFound.
+    return redirect(f"/room/{roomid}", code=302)
 
 
 @app.route('/view/<int:roomid>', subdomain = "svoyak")
@@ -162,18 +194,43 @@ def ActivePalayers(roomid):
     return json.dumps( [dict(ix) for ix in all_players])
 
 
-def get_id(name, force_new = True):
-    conn = get_db_connection()
-    ids = conn.execute(f'SELECT playerid FROM players where name == "{name}"').fetchall()
-    if len(ids) == 0:
-        if force_new:
-            m = conn.execute('SELECT max(playerid) FROM players').fetchone()["max(playerid)"]
-            conn.execute(f'INSERT INTO players (playerid, name, fullname) VALUES ({m+1}, "{name}", "{name}")')
-            conn.commit()
-            return (m+1)
+def get_id(name, force_new=True, conn=None):
+    """Возвращает playerid по имени, при необходимости создавая игрока.
+
+    Вставка идёт в транзакции BEGIN IMMEDIATE, поэтому два одновременных
+    добавления не могут получить один и тот же playerid.
+    """
+    name = (name or "").strip()
+    if not name:
+        return None
+
+    own_conn = conn is None
+    if own_conn:
+        conn = get_tx_connection()
+        conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = conn.execute("SELECT playerid FROM players WHERE name = ?", (name,)).fetchone()
+        if row is not None:
+            playerid = row["playerid"]
+        elif not force_new:
+            playerid = None
         else:
-            return None
-    return(ids[0]["playerid"])
+            max_id = conn.execute("SELECT COALESCE(MAX(playerid), 0) AS m FROM players").fetchone()["m"]
+            playerid = max_id + 1
+            conn.execute(
+                "INSERT INTO players (playerid, name, fullname) VALUES (?, ?, ?)",
+                (playerid, name, name),
+            )
+        if own_conn:
+            conn.execute("COMMIT")
+        return playerid
+    except Exception:
+        if own_conn:
+            conn.execute("ROLLBACK")
+        raise
+    finally:
+        if own_conn:
+            conn.close()
 
 def get_name(playerid):
     conn = get_db_connection()
@@ -183,54 +240,111 @@ def get_name(playerid):
     return ""
 
 
+def _active_players(roomid):
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT playerid, name FROM activeplayers WHERE roomid = ? ORDER BY name", (roomid,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
 @app.route('/activeplayers/<int:roomid>', subdomain = "svoyak", methods = ["POST"])
 def AddActivePalayers(roomid):
-    data = request.json
-    conn = get_db_connection()
+    data = request.get_json(silent=True) or {}
+    name = str(data.get("name") or "").strip()
+    raw_id = data.get("playerid")
+    if not name and raw_id in (None, ""):
+        return json.dumps(_active_players(roomid), ensure_ascii=False)
 
-    print(data)
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        playerid = None
+        if raw_id not in (None, ""):
+            try:
+                pid = int(raw_id)
+            except (TypeError, ValueError):
+                pid = None
+            if pid is not None:
+                known = conn.execute("SELECT name FROM players WHERE playerid = ?", (pid,)).fetchone()
+                if known is not None:
+                    playerid = pid
+                    name = known["name"]
+        if playerid is None:
+            if not name:
+                conn.execute("COMMIT")
+                return json.dumps(_active_players(roomid), ensure_ascii=False)
+            playerid = get_id(name, conn=conn)
 
-    if "playerid" in data or "name" in data:
-        if not "name" in data:
-            data["name"] = get_name(data['playerid'])
-        if not data["name"] == "":
-            if not "playerid" in data:
-                data["playerid"] = get_id(data['name'])
-            
-            if conn.execute(f"select * from activeplayers where roomid == {roomid} and playerid == {data['playerid']}").fetchone():
-                pass
-            else:
-                conn.execute(f"INSERT OR IGNORE INTO activeplayers VALUES ({roomid},{data['playerid']},\"{data['name']}\" )")
-                conn.commit()
-                log_game_events(roomid, "add active player", data)
-                if not roomid in game_states:
-                    game_states[roomid] = restore_states(roomid)
-                game_states[roomid].add_player(data['name'])
-    
-    all_players = conn.execute('SELECT playerid, name FROM activeplayers where roomid =='+str(roomid)).fetchall()
-    return json.dumps([dict(ix) for ix in all_players])
+        exists = conn.execute(
+            "SELECT 1 FROM activeplayers WHERE roomid = ? AND playerid = ?", (roomid, playerid)
+        ).fetchone()
+        if exists is None:
+            conn.execute(
+                "INSERT INTO activeplayers (roomid, playerid, name) VALUES (?, ?, ?)",
+                (roomid, playerid, name),
+            )
+            log_game_events(roomid, "add active player",
+                            {"name": name, "playerid": playerid}, conn=conn)
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+
+    game_states.pop(roomid, None)
+    return json.dumps(_active_players(roomid), ensure_ascii=False)
 
 
 @app.route('/removeactiveplayer/<int:roomid>', subdomain = "svoyak", methods = ["POST"])
 def RemoveActivePalayers(roomid):
-    data = request.json
-    conn = get_db_connection()
+    data = request.get_json(silent=True) or {}
+    name = str(data.get("name") or "").strip()
+    raw_id = data.get("playerid")
+    playerid = None
+    if raw_id not in (None, ""):
+        try:
+            playerid = int(raw_id)
+        except (TypeError, ValueError):
+            playerid = None
+    if playerid is None:
+        if not name:
+            return json.dumps(_active_players(roomid), ensure_ascii=False)
+        playerid = get_id(name, False)
+        if playerid is None:
+            return json.dumps(_active_players(roomid), ensure_ascii=False)
 
-    print(data)
-    if not "playerid" in data:
-        data["playerid"] = get_id(data["name"], False)
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        known = conn.execute("SELECT name FROM players WHERE playerid = ?", (playerid,)).fetchone()
+        if known is not None:
+            name = known["name"]
+        removed = conn.execute(
+            "DELETE FROM activeplayers WHERE roomid = ? AND playerid = ?", (roomid, playerid)
+        ).rowcount
+        if removed:
+            log_game_events(roomid, "remove active player",
+                            {"name": name, "playerid": playerid}, conn=conn)
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
 
-    if "playerid" in data and "name" in data:
-        if data["playerid"] is not None:
-            conn.execute(f"DELETE FROM activeplayers WHERE roomid = {roomid} AND playerid = {data['playerid']} AND name =\"{data['name']}\" ")
-            conn.commit()
-            log_game_events(roomid, "remove active player", data)
-            if not roomid in game_states:
-                game_states[roomid] = restore_states(roomid)
-            game_states[roomid].remove_player(data['name'])
-
-    all_players = conn.execute('SELECT playerid, name FROM activeplayers where roomid =='+str(roomid)).fetchall()
-    return json.dumps([dict(ix) for ix in all_players])
+    game_states.pop(roomid, None)
+    return json.dumps(_active_players(roomid), ensure_ascii=False)
 
 
 @app.route('/init/<int:roomid>', subdomain = "svoyak")
@@ -239,7 +353,8 @@ def InitRoom(roomid):
     venues = conn.execute(f"SELECT * FROM venues").fetchall()
     # print(venues)
     rules = conn.execute(f"SELECT * FROM basic_rules").fetchall()
-    return render_template("InitRoom.html", roomid = roomid, venues = venues, rules=rules)
+    return render_template("InitRoom.html", roomid = roomid, venues = venues,
+                           rules = rules, title = "Инициализация комнаты")
 
 
 @app.route('/admin/<int:roomid>', subdomain = "svoyak")
@@ -248,143 +363,364 @@ def AdminLogView(roomid):
     log_info = conn.execute(f"SELECT rowid as id, date, roomid as room, event as name, data as json FROM log WHERE roomid = {roomid}").fetchall()
     venues = conn.execute(f"SELECT * FROM venues").fetchall()
     # print(venues)
-    return render_template("RoomAdmin.html", roomid = roomid, gamelog = log_info, venues = venues)
+    return render_template("RoomAdmin.html", roomid = roomid, gamelog = log_info,
+                           venues = venues, title = f"Лог комнаты {roomid}")
 
 
 @app.route('/removegamelog/<int:roomid>', subdomain = "svoyak", methods = ["POST"])
 def RemoveFromLog(roomid):
-    data = request.json
-    print("DATA", data)
-    if not "rowid" in data:
-        return "{}"
-    conn = get_db_connection()
-    event_list = conn.execute(f"SELECT event, data FROM log WHERE roomid = {roomid} AND rowid = {data['rowid']}").fetchall()
-    if len(event_list) > 0:
-        if event_list[0]["event"] == "save game result":
-            gamedata = json.loads(event_list[0]["data"])
-            conn.execute(f"DELETE FROM results WHERE roomid = {roomid} AND gameindex = {gamedata['gameindex']}")
-    sql_del = conn.execute(f"DELETE FROM log WHERE roomid = {roomid} AND rowid = {data['rowid']}")
-    conn.commit()
-    if sql_del.rowcount == 0:
-        return "{}"
-    if roomid in game_states:
-        game_states[roomid] = restore_states(roomid)
-    return json.dumps(request.json)
+    data = request.get_json(silent=True) or {}
+    try:
+        rowid = int(data.get("rowid"))
+    except (TypeError, ValueError):
+        return json.dumps({"status": "error", "message": "Нужен rowid"}, ensure_ascii=False), 400
+
+    conn = get_tx_connection()
+    changed = False
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        event = conn.execute(
+            "SELECT event, data FROM log WHERE roomid = ? AND rowid = ?", (roomid, rowid)
+        ).fetchone()
+        if event is not None:
+            if event["event"] == "save game result":
+                try:
+                    gameindex = int(json.loads(event["data"]).get("gameindex"))
+                except (TypeError, ValueError):
+                    gameindex = None
+                if gameindex is not None:
+                    conn.execute(
+                        "DELETE FROM results WHERE roomid = ? AND gameindex = ?",
+                        (roomid, gameindex),
+                    )
+                    recompute_gamenumbers(conn, roomid)
+            conn.execute("DELETE FROM log WHERE roomid = ? AND rowid = ?", (roomid, rowid))
+            changed = True
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+
+    if changed:
+        game_states.pop(roomid, None)
+    return json.dumps({"status": "ok", "deleted": changed}, ensure_ascii=False)
+
+
+def _rename_in_log(conn, playerid, name):
+    """Обновляет имя игрока внутри JSON-событий лога.
+
+    Иначе после переименования restore_states продолжит поднимать старое имя,
+    а в админке останется прежний вариант.
+    """
+    rows = conn.execute(
+        "SELECT rowid, data FROM log WHERE data LIKE ?", (f'%"playerid": {playerid}%',)
+    ).fetchall()
+    for row in rows:
+        try:
+            payload = json.loads(row["data"])
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        changed = False
+        if payload.get("playerid") == playerid and "name" in payload:
+            payload["name"] = name
+            changed = True
+        for item in payload.get("scores") or []:
+            if isinstance(item, dict) and item.get("playerid") == playerid:
+                item["name"] = name
+                changed = True
+        if changed:
+            conn.execute(
+                "UPDATE log SET data = ? WHERE rowid = ?",
+                (json.dumps(payload, ensure_ascii=False), row["rowid"]),
+            )
 
 
 @app.route('/system/renameplayer', subdomain = "svoyak", methods = ["POST"])
 def RenamePlayer():
-    data = request.json
-    print("DATA", data)
-    if not "playerid" in data:
-        return "{}"
-    if not "name" in data:
-        return "{}"
-    if not "fullname" in data:
-        return "{}"
-    
+    data = request.get_json(silent=True) or {}
+    name = str(data.get("name") or "").strip()
+    fullname = str(data.get("fullname") or "").strip() or name
+    try:
+        playerid = int(data.get("playerid"))
+    except (TypeError, ValueError):
+        return json.dumps({"status": "error", "message": "Нужен playerid"},
+                          ensure_ascii=False), 400
+    if not name:
+        return json.dumps({"status": "error", "message": "Пустое имя"},
+                          ensure_ascii=False), 400
+
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        exists = conn.execute(
+            "SELECT 1 FROM players WHERE playerid = ?", (playerid,)
+        ).fetchone()
+        if exists is None:
+            conn.execute("COMMIT")
+            return json.dumps({"status": "error", "message": "Игрок не найден"},
+                              ensure_ascii=False), 404
+        conn.execute(
+            "UPDATE players SET name = ?, fullname = ? WHERE playerid = ?",
+            (name, fullname, playerid),
+        )
+        conn.execute("UPDATE results SET name = ? WHERE playerid = ?", (name, playerid))
+        conn.execute("UPDATE activeplayers SET name = ? WHERE playerid = ?", (name, playerid))
+        _rename_in_log(conn, playerid, name)
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+
+    for roomid in [r["roomid"] for r in _rooms_of_player(playerid)]:
+        game_states.pop(roomid, None)
+
+    return json.dumps({"status": "ok", "playerid": playerid, "name": name},
+                      ensure_ascii=False)
+
+
+def _rooms_of_player(playerid):
     conn = get_db_connection()
-    conn.execute(f"UPDATE players SET name = ? WHERE playerid = ?", (data["name"], data["playerid"]))
-    conn.execute(f"UPDATE players SET fullname = ? WHERE playerid = ?", (data["fullname"], data["playerid"]))
-    conn.execute(f"UPDATE results SET name = ? WHERE playerid = ?", (data["name"], data["playerid"]))
-    conn.execute(f"UPDATE activeplayers SET name = ? WHERE playerid = ?", (data["name"], data["playerid"]))
-    conn.commit()
-    return json.dumps(request.json)
+    try:
+        return conn.execute(
+            "SELECT DISTINCT roomid FROM results WHERE playerid = ? "
+            "UNION SELECT DISTINCT roomid FROM activeplayers WHERE playerid = ?",
+            (playerid, playerid),
+        ).fetchall()
+    finally:
+        conn.close()
 
 
 
 
 
-@app.route('/gameresult/<int:roomid>', subdomain = "svoyak", methods = ["POST"])
+def _parse_score(raw):
+    """'40', ' 40 ', '40.5', 40 -> число; мусор -> None."""
+    if raw is None:
+        return None
+    text = str(raw).strip().replace(",", ".")
+    if text == "":
+        return None
+    try:
+        value = float(text)
+    except ValueError:
+        return None
+    return int(value) if value.is_integer() else value
+
+
+def _average_positions(scores):
+    """Места как pandas rank(method='average'): ничьи делят место."""
+    result = []
+    for score in scores:
+        greater = sum(1 for x in scores if x > score)
+        greater_or_equal = sum(1 for x in scores if x >= score)
+        result.append((greater + 1 + greater_or_equal) / 2.0)
+    return result
+
+
+def recompute_gamenumbers(conn, roomid):
+    """Пересчитывает номер игры каждого игрока в комнате.
+
+    Номер — это порядковый номер игры игрока внутри комнаты, а не gameindex.
+    Раньше он считался один раз при вставке и ломался после удаления игры
+    или повторного сохранения.
+    """
+    conn.execute(
+        """
+        WITH ordered AS (
+            SELECT rowid AS rid,
+                   ROW_NUMBER() OVER (PARTITION BY playerid ORDER BY gameindex, rowid) AS gn
+            FROM results
+            WHERE roomid = ?
+        )
+        UPDATE results
+        SET gamenumber = (SELECT gn FROM ordered WHERE ordered.rid = results.rowid)
+        WHERE roomid = ?
+        """,
+        (roomid, roomid),
+    )
+
+
+@app.route('/gameresult/<int:roomid>', subdomain="svoyak", methods=["POST"])
 def SaveResult(roomid):
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return json.dumps({"status": "error", "message": "Ожидается JSON"}), 400
+    if "gameindex" not in data or "scores" not in data:
+        return json.dumps({"status": "error", "message": "Некорректный запрос"}), 400
+    try:
+        payload_room = int(data.get("roomid"))
+    except (TypeError, ValueError):
+        payload_room = None
+    if payload_room != roomid:
+        return json.dumps({"status": "error", "message": "Некорректный номер комнаты"}), 400
+    try:
+        gameindex = int(data["gameindex"])
+    except (TypeError, ValueError):
+        return json.dumps({"status": "error", "message": "Некорректный номер игры"}), 400
 
-    print("DATA", data)
+    scores = []
+    for item in data["scores"]:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        raw = item.get("score")
+        if not name or raw is None or str(raw).strip() == "":
+            continue
+        score = _parse_score(raw)
+        if score is None:
+            return json.dumps(
+                {"status": "error", "message": f"Некорректный счёт у игрока {name}"},
+                ensure_ascii=False,
+            ), 400
+        scores.append({"name": name, "score": score, "playerid": item.get("playerid")})
+    if not scores:
+        return json.dumps({"status": "error", "message": "Нет игроков для сохранения"},
+                          ensure_ascii=False), 400
+
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+
+        room = conn.execute(
+            "SELECT finished FROM activerooms WHERE roomid = ?", (roomid,)
+        ).fetchone()
+        if room is not None and room["finished"]:
+            conn.execute("COMMIT")
+            return json.dumps({"status": "error", "message": "Комната уже завершена"},
+                             ensure_ascii=False), 409
+
+        # Приводим имена к каноническим из players, чтобы results.name
+        # не расходился с players.name после переименований.
+        rows = {}
+        for item in scores:
+            playerid = item["playerid"]
+            playerid = int(playerid) if playerid not in (None, "") else get_id(item["name"], conn=conn)
+            known = conn.execute("SELECT name FROM players WHERE playerid = ?", (playerid,)).fetchone()
+            if known is None:
+                playerid = get_id(item["name"], conn=conn)
+                known = conn.execute("SELECT name FROM players WHERE playerid = ?", (playerid,)).fetchone()
+            rows[playerid] = {"playerid": playerid, "name": known["name"], "score": item["score"]}
+        rows = list(rows.values())
+        positions = _average_positions([r["score"] for r in rows])
+
+        # Повторное сохранение этой же игры заменяет её, а не игнорируется молча.
+        conn.execute("DELETE FROM results WHERE roomid = ? AND gameindex = ?", (roomid, gameindex))
+        for row, position in zip(rows, positions):
+            points = round(5 - position + row["score"] / 1000.0, 3)
+            conn.execute(
+                "INSERT INTO results (roomid, gameindex, playerid, name, score, position, points, gamenumber) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, NULL)",
+                (roomid, gameindex, row["playerid"], row["name"], row["score"], position, points),
+            )
+        recompute_gamenumbers(conn, roomid)
+        log_game_events(roomid, "save game result", data, conn=conn)
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+
+    # Состояние пересоберётся из базы при следующем запросе.
+    game_states.pop(roomid, None)
+
+    saved = conn_rows(roomid, gameindex)
+    return json.dumps(saved, ensure_ascii=False)
+
+
+def conn_rows(roomid, gameindex):
     conn = get_db_connection()
-    if not "roomid" in data:
-        return "{}"
-    if not "gameindex" in data:
-        return "{}"
-    if not "scores" in data:
-        return "{}"
-    if data["roomid"] != roomid:
-        return "{}"
-    player_in_game = []
-    if conn.execute(f"SELECT count(playerid) FROM results WHERE roomid == {roomid} AND gameindex == {data['gameindex']}").fetchone()["count(playerid)"] == 0:
+    try:
+        rows = conn.execute(
+            "SELECT playerid, name, score, position, points FROM results "
+            "WHERE roomid = ? AND gameindex = ? ORDER BY position, name",
+            (roomid, gameindex),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
 
-        non_empty = []
-        
-        for v in data["scores"]:
-            if v["name"] == "":
-                continue
-            if v["score"] == "":
-                continue
-            player_in_game.append(v["name"])
-            if not "playerid" in v:
-                v["playerid"] = get_id(v['name'])
-            
-            non_empty.append(v)
 
-        if len(non_empty) == 0:
-            return {}
-        
-        local_res = pd.DataFrame(non_empty)
-
-        print(local_res)
-
-        game_num = [len(conn.execute(f"SELECT name FROM results WHERE roomid = {roomid} AND name = '{x}' AND gameindex < {data['gameindex']}").fetchall()) + 1 for x in local_res["name"]]
-        print(game_num)
-        for x in local_res["name"]:
-            print(f"SELECT name FROM results WHERE roomid = {roomid} AND name = '{x}' AND gameindex < {data['gameindex']}")
-
-        local_res["score"] = pd.to_numeric(local_res["score"])
-        local_res["position"] = local_res["score"].rank(ascending = False)
-        local_res["points"] = 5 - local_res["position"] + local_res["score"]/1000
-        local_res["points"] = local_res["points"].round(3)
-        local_res["roomid"] = roomid
-        local_res["gameindex"] = data['gameindex']
-        local_res["gamenumber"] = game_num
-
-        
-        local_res.to_sql('results', conn, if_exists='append', index=False)
-        conn.commit()
-
-        log_game_events(roomid, "save game result", data)
-        
-        if not roomid in game_states:
-            game_states[roomid] = restore_states(roomid)
-        
-        if len(player_in_game) >0:
-            game_states[roomid].process_one_match(player_in_game)
-
-    all_players = conn.execute('SELECT playerid, name, score FROM results where roomid =='+str(roomid)+" and gameindex == "+str(data['gameindex']) ).fetchall()
-    return json.dumps([dict(ix) for ix in all_players])
+@app.route('/gameresult/<int:roomid>/<int:gameindex>', subdomain="svoyak", methods=["DELETE"])
+def DeleteResult(roomid, gameindex):
+    """Удаляет сохранённый бой (кнопка «Очистить бой»)."""
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        room = conn.execute(
+            "SELECT finished FROM activerooms WHERE roomid = ?", (roomid,)
+        ).fetchone()
+        if room is not None and room["finished"]:
+            conn.execute("COMMIT")
+            return json.dumps({"status": "error", "message": "Комната уже завершена"},
+                             ensure_ascii=False), 409
+        deleted = conn.execute(
+            "DELETE FROM results WHERE roomid = ? AND gameindex = ?", (roomid, gameindex)
+        ).rowcount
+        if deleted:
+            recompute_gamenumbers(conn, roomid)
+            log_game_events(
+                roomid, "delete game result",
+                {"roomid": roomid, "gameindex": gameindex}, conn=conn,
+            )
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+    game_states.pop(roomid, None)
+    return json.dumps({"status": "ok", "deleted": deleted}, ensure_ascii=False)
 
 
 @app.route('/gameresult/<int:roomid>', subdomain = "svoyak", methods = ["GET"])
 def GetResult(roomid):
-    print("GetResultReques")
-    try:
-        data = request.json
-    except:
-        data = None
-
-    print("DATA", data)
+    data = request.get_json(silent=True)
+    gameindex = None
+    if isinstance(data, dict):
+        gameindex = data.get("gameindex", data.get("game_index"))
+        try:
+            gameindex = int(gameindex) if gameindex is not None else None
+        except (TypeError, ValueError):
+            gameindex = None
 
     conn = get_db_connection()
-
-    if data is None:
-        req = conn.execute(f"SELECT gameindex, playerid, name, score, position, points FROM results WHERE roomid == {roomid} ORDER BY gameindex")
-    elif "game_index" in data:
-        req = conn.execute(f"SELECT gameindex, playerid, name, score, position, points FROM results WHERE roomid == {roomid} AND gameindex == {data['gameindex']}")
-    else:
-        req = conn.execute(f"SELECT gameindex, playerid, name, score, position, points FROM results WHERE roomid == {roomid} ORDER BY gameindex")
+    try:
+        if gameindex is None:
+            req = conn.execute(
+                "SELECT gameindex, playerid, name, score, position, points FROM results "
+                "WHERE roomid = ? ORDER BY gameindex", (roomid,))
+        else:
+            req = conn.execute(
+                "SELECT gameindex, playerid, name, score, position, points FROM results "
+                "WHERE roomid = ? AND gameindex = ?", (roomid, gameindex))
+        rows = req.fetchall()
+    finally:
+        conn.close()
 
     res = []
     prev_index = -1
-    for r in req.fetchall():
+    for r in rows:
         if r["gameindex"] != prev_index:
-            res.append({"gameindex":r["gameindex"], "scores":[]})
+            res.append({"gameindex": r["gameindex"], "scores": []})
             prev_index = r["gameindex"]
         res[-1]["scores"].append(dict(r))
 
@@ -393,46 +729,81 @@ def GetResult(roomid):
 
 @app.route('/lastgames/<int:lastcount>', subdomain = "svoyak", methods = ["GET"])
 def GetLastResult(lastcount):
-    print("GetLastResultReques")
-    try:
-        data = request.json
-    except:
-        data = None
+    """Последние бои для главной страницы.
 
-    print("DATA", data)
-
+    Берём последние события лога, но каждый бой показываем один раз:
+    повторное сохранение больше не удваивает его в списке.
+    """
     conn = get_db_connection()
-
-    events_list = conn.execute(f'SELECT data FROM log WHERE event=="save game result" ORDER BY rowid DESC').fetchmany(lastcount)
-
-    res = []
-    if len(events_list) > 0:
-        print(events_list)
-        for j in events_list:
-            v = json.loads(j["data"])
-            req = conn.execute(f"SELECT gameindex, playerid, name, score, position, points FROM results WHERE roomid == {v['roomid']} AND gameindex == {v['gameindex']}")
-            res.append({"gameindex":v["gameindex"], "roomid":v["roomid"], "scores":[]})
-
-            for r in req.fetchall():
-                res[-1]["scores"].append(dict(r))
-
-    return json.dumps(res, ensure_ascii=False)
+    try:
+        events = conn.execute(
+            "SELECT data FROM log WHERE event = 'save game result' ORDER BY rowid DESC"
+        ).fetchall()
+        res = []
+        seen = set()
+        for event in events:
+            try:
+                payload = json.loads(event["data"])
+                roomid = int(payload.get("roomid"))
+                gameindex = int(payload.get("gameindex"))
+            except (TypeError, ValueError):
+                continue
+            key = (roomid, gameindex)
+            if key in seen:
+                continue
+            seen.add(key)
+            scores = conn.execute(
+                "SELECT gameindex, playerid, name, score, position, points FROM results "
+                "WHERE roomid = ? AND gameindex = ? ORDER BY position, name",
+                (roomid, gameindex),
+            ).fetchall()
+            if not scores:
+                continue
+            res.append({
+                "gameindex": gameindex,
+                "roomid": roomid,
+                "scores": [dict(r) for r in scores],
+            })
+            if len(res) >= lastcount:
+                break
+        return json.dumps(res, ensure_ascii=False)
+    finally:
+        conn.close()
 
 
 @app.route('/tournaments/active', subdomain = "svoyak", methods = ["GET"])
 def GetActiveTournaments():
     conn = get_db_connection()
-    GameHistory = conn.execute("SELECT * FROM activerooms LEFT JOIN venues ON activerooms.venueid==venues.venueid WHERE finished == 0 ORDER BY date DESC;").fetchmany(3)
+    try:
+        # Показываем только комнаты, где уже есть игроки или игры:
+        # пустые комнаты, созданные «на пробу», больше не висят на главной.
+        rows = conn.execute(
+            """
+            SELECT a.roomid, a.date, v.venuename,
+                   (SELECT COUNT(*) FROM activeplayers ap WHERE ap.roomid = a.roomid) AS players,
+                   (SELECT COUNT(DISTINCT r.gameindex) FROM results r WHERE r.roomid = a.roomid) AS games
+            FROM activerooms a
+            LEFT JOIN venues v ON v.venueid = a.venueid
+            WHERE a.finished = 0
+              AND a.date >= date('now', '-30 day')
+              AND (EXISTS (SELECT 1 FROM results r WHERE r.roomid = a.roomid)
+                   OR (SELECT COUNT(*) FROM activeplayers ap WHERE ap.roomid = a.roomid) >= 4)
+            ORDER BY a.date DESC
+            LIMIT 3
+            """
+        ).fetchall()
+    finally:
+        conn.close()
 
     res = []
-    # {"id": 1,
-    #        "name": 'Весенний чемпионат',
-    #        "timeLeft": '3 дня осталось',
-    #         "participants": 12
-    #     }]
-    for t in GameHistory:
-        res += [{"id":t["roomid"], "name": (t["venuename"] if not t["venuename"] is None else "Безымянный") +" "+t["date"]}]
-
+    for t in rows:
+        venue = t["venuename"] or "Свояк"
+        res.append({
+            "id": t["roomid"],
+            "name": f"{venue} {t['date']}",
+            "participants": t["players"],
+            "games": t["games"],
+        })
     return json.dumps(res, ensure_ascii=False)
 
 @app.route('/tournaments/completed', subdomain = "svoyak", methods = ["GET"])
@@ -458,15 +829,12 @@ def GetLastTournaments():
 
 @app.route('/weigth/<int:roomid>', subdomain = "svoyak", methods = ["POST"])
 def EstimateWeigth(roomid):
-    data = request.json
-    print("weigth", data)
+    data = request.get_json(silent=True) or []
     choused = []
     for pl in data:
-        if pl["name"] != "":
+        if isinstance(pl, dict) and pl.get("name"):
             choused.append(pl["name"])
     all_players = rate_all(roomid, choused = choused)
-
-    print(game_states)
 
     return json.dumps( [{"name":ix[0], "weight":ix[1], "skiped":ix[2], "played":ix[3]} for ix in all_players])
 
@@ -474,8 +842,7 @@ def EstimateWeigth(roomid):
 
 @app.route('/fillpositions/<int:roomid>', subdomain = "svoyak", methods = ["POST"])
 def ReturnPositions(roomid):
-    data = request.json
-    print(data)
+    data = request.get_json(silent=True) or {}
     if not roomid in game_states:
         game_states[roomid] = restore_states(roomid)
     
@@ -525,8 +892,7 @@ def ReturnPositions(roomid):
 
 @app.route('/predictgames/<int:roomid>/<int:games_num>', subdomain = "svoyak", methods = ["POST"])
 def ReturnFuturePositions(roomid, games_num):
-    data = request.json
-    print(data)
+    data = request.get_json(silent=True) or {}
     if not roomid in game_states:
         game_states[roomid] = restore_states(roomid)
     
@@ -567,16 +933,19 @@ def ReturnFuturePositions(roomid, games_num):
 
 @app.route('/api/addroom', subdomain = "svoyak", methods = ["POST"])
 def CreateRoomApi():
-    data = request.json
-    print(data)
+    data = request.get_json(silent=True) or {}
     roomdate = datetime.datetime.today().strftime('%Y-%m-%d')
     if "date" in data:
-        roomdate = data["date"]
+        try:
+            roomdate = datetime.datetime.strptime(str(data["date"]).strip(), "%Y-%m-%d").strftime("%Y-%m-%d")
+        except (TypeError, ValueError):
+            roomdate = datetime.datetime.today().strftime('%Y-%m-%d')
 
-    venueid = 0
-    if "venueid" in data:
-        venueid = data["venueid"]
-    
+    try:
+        venueid = int(data.get("venueid", 0))
+    except (TypeError, ValueError):
+        venueid = 0
+
     rules_name = None
     rules_param = None
     rules_brackets = None
@@ -587,8 +956,15 @@ def CreateRoomApi():
     conn = get_db_connection()
 
     if "rulesid" in data:
-        if int(data["rulesid"]) > 0:
-            r = conn.execute(f"SELECT name, parameters, brackets FROM basic_rules WHERE rulesid={data['rulesid']}").fetchone()
+        try:
+            rulesid = int(data["rulesid"])
+        except (TypeError, ValueError):
+            rulesid = 0
+        if rulesid > 0:
+            r = conn.execute(
+                "SELECT name, parameters, brackets FROM basic_rules WHERE rulesid = ?",
+                (rulesid,),
+            ).fetchone()
             if not r is None:
                 rules_name = r["name"]
                 rules_param = r["parameters"]
@@ -633,54 +1009,98 @@ def CreateRoomApi():
         
         new_room_id = max_room_id + 1
 
-    print(f'INSERT INTO roomhistory(roomid, date, venueid, winerplayerid) VALUES({new_room_id}, "{roomdate}", {venueid}, Null)')
-    conn.executescript(f'INSERT INTO roomhistory(roomid, date, venueid, winerplayerid) VALUES({new_room_id}, "{roomdate}", {venueid}, Null)')
-    conn.executescript(f'INSERT INTO activerooms(roomid, date, venueid, finished) VALUES({new_room_id}, "{roomdate}", {venueid}, 0)')
-    
-    check_room_id = conn.execute('SELECT roomid FROM rules WHERE roomid == '+str(new_room_id)).fetchall()
-    if len(check_room_id) > 0:
-        conn.executescript('DELETE FROM rules WHERE roomid == '+str(new_room_id))
+    conn.execute(
+        "INSERT INTO roomhistory (roomid, date, venueid, winerplayerid) VALUES (?, ?, ?, NULL)",
+        (new_room_id, roomdate, venueid),
+    )
+    conn.execute(
+        "INSERT INTO activerooms (roomid, date, venueid, finished) VALUES (?, ?, ?, 0)",
+        (new_room_id, roomdate, venueid),
+    )
 
+    conn.execute("DELETE FROM rules WHERE roomid = ?", (new_room_id,))
     if not rules_name is None:
         conn.execute("INSERT INTO rules(roomid, name, parameters, brackets) VALUES(?,?,?,?)",(new_room_id, rules_name, rules_param, rules_brackets))
-        conn.commit()
+    conn.commit()
     return json.dumps({"Status": "Ok", "RoomId": new_room_id})
 
-@app.route('/api/finalizeroom/<int:roomid>', subdomain = "svoyak")
-def FinalizeRoomApi(roomid):
-    # data = request.json
-    conn = get_db_connection()
-    room_info = conn.execute('SELECT * FROM activerooms WHERE roomid == '+str(roomid)).fetchall()
-    rules = get_room_rules(roomid)
-    if len(room_info) == 1:
-        if not room_info[0]["finished"]:
-    
-            if "final_players" in rules["parameters"]:
-                final_id = conn.execute('SELECT MAX(gameindex) as last FROM results WHERE roomid == '+str(roomid)).fetchone()
-                if final_id is None:
-                    return json.dumps({"status":"No winer detected"})
-                winer = conn.execute('SELECT playerid, name FROM results WHERE roomid == '+str(roomid)+' AND gameindex == '+ str(final_id["last"]) +' AND position == 1').fetchone()
-                if winer is None:
-                    return json.dumps({"status":"No winer detected"})
-                playerid = winer["playerid"]
-                winer_name = winer["name"]
-                conn.executescript(f'UPDATE roomhistory SET winerplayerid={playerid} WHERE roomid == {roomid}')
-                conn.executescript('UPDATE activerooms SET finished=1 WHERE roomid == '+str(roomid))
-                return json.dumps({"status":"Ok", "winer":winer_name}, ensure_ascii=False)
-                
+def _winner_from_bracket(conn, roomid, rules):
+    """Победитель турнирной сетки — первый в финальном матче.
 
-            else:
-                players_stat = conn.execute('SELECT playerid, name, COUNT(position) as games, sum(position) as position, sum(score) as score, sum(points) as points FROM results WHERE roomid == '+str(roomid)+' AND gamenumber <= '+ str(rules["parameters"]["basic_game_number"]) +' GROUP BY name ORDER BY points DESC').fetchall()
-                    
-                if len(players_stat)>0:
-                    playerid = players_stat[0]["playerid"]
-                    winer_name = players_stat[0]["name"]
-                    conn.executescript(f'UPDATE roomhistory SET winerplayerid={playerid} WHERE roomid == {roomid}')
-                    conn.executescript('UPDATE activerooms SET finished=1 WHERE roomid == '+str(roomid))
-                    return json.dumps({"status":"Ok", "winer":winer_name}, ensure_ascii=False)
-                return json.dumps({"status":"No winer detected"})
-        return json.dumps({"status":"Room arleady finished"})
-    return json.dumps({"status":"No such room"})
+    Раньше для bracket-комнат parameters = NULL и код считал победителя
+    по сумме очков за первые basic_game_number игр, игнорируя финал.
+    """
+    brackets = rules.get("brackets")
+    if not brackets:
+        return None
+    try:
+        schema = json.loads(brackets)
+        final_id = schema.get("final_id")
+    except (TypeError, ValueError):
+        return None
+    if final_id in (None, ""):
+        return None
+    try:
+        final_game = int(final_id)
+    except (TypeError, ValueError):
+        return None
+    return conn.execute(
+        "SELECT playerid, name FROM results "
+        "WHERE roomid = ? AND gameindex = ? AND position = 1",
+        (roomid, final_game),
+    ).fetchone()
+
+
+@app.route('/api/finalizeroom/<int:roomid>', subdomain = "svoyak", methods = ["GET", "POST"])
+def FinalizeRoomApi(roomid):
+    conn = get_db_connection()
+    try:
+        room = conn.execute(
+            "SELECT roomid, finished FROM activerooms WHERE roomid = ?", (roomid,)
+        ).fetchone()
+        if room is None:
+            return json.dumps({"status": "Комната не найдена"}, ensure_ascii=False)
+        if room["finished"]:
+            return json.dumps({"status": "Комната уже завершена"}, ensure_ascii=False)
+
+        rules = get_room_rules(roomid)
+        params = rules.get("parameters") or {}
+
+        if rules.get("brackets"):
+            winner = _winner_from_bracket(conn, roomid, rules)
+            if winner is None:
+                return json.dumps({"status": "Финал ещё не сыгран"}, ensure_ascii=False)
+        elif "final_players" in params:
+            last_game = conn.execute(
+                "SELECT MAX(gameindex) AS last FROM results WHERE roomid = ?", (roomid,)
+            ).fetchone()["last"]
+            if last_game is None:
+                return json.dumps({"status": "Победитель не определён"}, ensure_ascii=False)
+            winner = conn.execute(
+                "SELECT playerid, name FROM results "
+                "WHERE roomid = ? AND gameindex = ? AND position = 1",
+                (roomid, last_game),
+            ).fetchone()
+        else:
+            winner = conn.execute(
+                "SELECT playerid, name, SUM(points) AS points FROM results "
+                "WHERE roomid = ? AND gamenumber <= ? "
+                "GROUP BY playerid, name ORDER BY points DESC, playerid LIMIT 1",
+                (roomid, int(params.get("basic_game_number", 3))),
+            ).fetchone()
+
+        if winner is None:
+            return json.dumps({"status": "Победитель не определён"}, ensure_ascii=False)
+
+        conn.execute(
+            "UPDATE roomhistory SET winerplayerid = ? WHERE roomid = ?",
+            (winner["playerid"], roomid),
+        )
+        conn.execute("UPDATE activerooms SET finished = 1 WHERE roomid = ?", (roomid,))
+        conn.commit()
+        return json.dumps({"status": "Ok", "winer": winner["name"]}, ensure_ascii=False)
+    finally:
+        conn.close()
     
 
 def rate_all(roomid, choused = []):
@@ -700,7 +1120,12 @@ def rate_all(roomid, choused = []):
 
 def get_room_rules(roomid):
     conn = get_db_connection()
-    rules_base = conn.execute(f'SELECT * FROM rules WHERE roomid={roomid}').fetchone()
+    try:
+        rules_base = conn.execute(
+            "SELECT * FROM rules WHERE roomid = ?", (roomid,)
+        ).fetchone()
+    finally:
+        conn.close()
     if rules_base is None:
         rules = {"name": "Spontan", "parameters":{"basic_game_number":3}}
     else:
@@ -716,33 +1141,67 @@ def get_room_rules(roomid):
 
 
 def restore_states(room):
-    print("restore state ", room)
-    
+    """Собирает состояние комнаты для подбора составов.
+
+    Раньше лог проигрывался целиком, поэтому задвоенная запись «save game result»
+    считалась дважды, а удалённая игра продолжала влиять на веса. Теперь:
+      * события читаются в порядке вставки (rowid);
+      * игры берутся из results, а не из текста события;
+      * для повторов одного gameindex применяется только последнее событие.
+    """
     loc_states = player_state()
-    print(loc_states.active_players, loc_states.played_games)
     conn = get_db_connection()
-    history = conn.execute(f"SELECT date, roomid, event, data FROM log WHERE roomid == {room}").fetchall()
-    print("len history ", len(history))
+    try:
+        history = conn.execute(
+            "SELECT rowid, event, data FROM log WHERE roomid = ? ORDER BY rowid", (room,)
+        ).fetchall()
+        results_rows = conn.execute(
+            "SELECT gameindex, name FROM results WHERE roomid = ? ORDER BY gameindex, rowid", (room,)
+        ).fetchall()
+    finally:
+        conn.close()
+
+    games = defaultdict(list)
+    seen_pairs = set()
+    for row in results_rows:
+        gameindex = int(row["gameindex"])
+        name = row["name"]
+        if (gameindex, name) in seen_pairs:
+            continue
+        seen_pairs.add((gameindex, name))
+        games[gameindex].append(name)
+
+    latest_save = {}
     for event in history:
-        loc_data = json.loads(event["data"])
+        if event["event"] != "save game result":
+            continue
+        try:
+            payload = json.loads(event["data"])
+            gameindex = int(payload.get("gameindex"))
+        except (TypeError, ValueError):
+            continue
+        latest_save[gameindex] = event["rowid"]
+
+    for event in history:
+        try:
+            payload = json.loads(event["data"])
+        except (TypeError, ValueError):
+            continue
+        name = str(payload.get("name") or "").strip()
         if event["event"] == "add active player":
-            loc_states.add_player(loc_data['name'])
+            if name:
+                loc_states.add_player(name)
         elif event["event"] == "remove active player":
-            loc_states.remove_player(loc_data['name'])
+            if name:
+                loc_states.remove_player(name)
         elif event["event"] == "save game result":
-            player_in_game = []
-            for v in loc_data["scores"]:
-                if v["name"] == "":
-                    continue
-                if v["score"] == "":
-                    continue
-                player_in_game.append(v["name"])
-                if not "playerid" in v:
-                    v["playerid"] = get_id(v['name'])
-            if len(player_in_game) >0:
-                print("from game log: ", player_in_game)
-                loc_states.process_one_match(player_in_game)
-    print(loc_states.played_games)
+            try:
+                gameindex = int(payload.get("gameindex"))
+            except (TypeError, ValueError):
+                continue
+            if latest_save.get(gameindex) == event["rowid"] and gameindex in games:
+                loc_states.process_one_match(games[gameindex])
+
     return loc_states.get_copy()
 
 @app.route('/spontan', subdomain = "svoyak")
@@ -1165,7 +1624,7 @@ def sync_packages(roomid):
     Возвращает mapping localId -> serverId.
     """
     ensure_packages_table()
-    payload = request.json or {}
+    payload = request.get_json(silent=True) or {}
     packages = payload.get('packages', [])
     conn = get_db_connection()
 
@@ -1215,9 +1674,14 @@ def read_cfg():
         port = 80
     return website_url, port
 
+# SERVER_NAME нужен маршрутам с subdomain="svoyak" и должен быть задан
+# до первого запроса, а не только при запуске через __main__.
+website_url, port = read_cfg()
+app.config['SERVER_NAME'] = os.environ.get("SVOYAK_SERVER_NAME", website_url)
+app.jinja_env.filters['zip'] = zip
+
 if __name__ == "__main__":
-    website_url, port = read_cfg()
-    print(website_url)
-    app.config['SERVER_NAME'] = website_url
-    app.jinja_env.filters['zip'] = zip
-    app.run(debug=True, port=port)
+    ensure_schema()
+    debug = os.environ.get("SVOYAK_DEBUG", "").lower() in ("1", "true", "yes")
+    print(f"svoyak on {app.config['SERVER_NAME']}:{port}, debug={debug}, db={DB_PATH}")
+    app.run(debug=debug, port=port, threaded=True)

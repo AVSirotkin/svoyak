@@ -214,7 +214,7 @@
             gap: 6px;
             background: var(--primary-light);
             color: var(--primary-dark);
-            padding: 6px 14px;
+            padding: 6px 10px 6px 14px;
             border-radius: 20px;
             font-size: 14px;
             font-weight: 500;
@@ -228,17 +228,53 @@
             transform: scale(1.02);
         }
 
-        .player-tag .remove-btn {
+        .player-tag .player-tag-name { pointer-events: none; }
+
+        .player-tag .tag-btn {
             background: none;
             border: none;
             color: var(--gray-400);
             cursor: pointer;
             font-size: 16px;
-            padding: 0 2px;
+            padding: 0;
             line-height: 1;
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            margin: -4px -2px -4px 0;
+            border-radius: 50%;
         }
 
+        .player-tag .tag-btn:hover { color: var(--gray-700); background: rgba(15, 23, 42, .06); }
+        .player-tag .tag-btn:active { background: rgba(15, 23, 42, .12); }
         .player-tag .remove-btn:hover { color: var(--danger); }
+
+        /* Зачёркнутый стул: «не сажать в этот бой» */
+        .player-tag .block-btn::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 50%;
+            height: 1.5px;
+            border-radius: 1px;
+            background: currentColor;
+            transform: rotate(-40deg);
+        }
+
+        .player-tag.is-blocked {
+            background: var(--warning-bg);
+            color: #92400e;
+            border: 2px dashed var(--warning);
+            opacity: .85;
+        }
+
+        .player-tag.is-blocked:hover { border-color: var(--warning); }
+        .player-tag.is-blocked .block-btn { color: var(--danger); }
+        .player-tag.is-blocked .block-btn::after { height: 2px; }
 
         .add-player-row {
             display: flex;
@@ -262,47 +298,6 @@
             border-color: var(--primary);
             box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
         }
-
-        .blocked-list {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            min-height: 44px;
-            padding: 8px;
-            border: 2px dashed var(--gray-300);
-            border-radius: 8px;
-            background: var(--gray-50);
-            transition: var(--transition);
-        }
-
-        .blocked-list.drag-over {
-            border-color: var(--primary);
-            background: var(--primary-light);
-        }
-
-        .blocked-tag {
-            background: var(--danger-bg);
-            color: var(--danger);
-            padding: 4px 12px;
-            border-radius: 16px;
-            font-size: 13px;
-            font-weight: 500;
-            cursor: default;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .blocked-tag .remove-btn {
-            background: none;
-            border: none;
-            color: var(--danger);
-            cursor: pointer;
-            font-size: 14px;
-            padding: 0 2px;
-        }
-
-        .blocked-tag .remove-btn:hover { color: #dc2626; }
 
         .mode-buttons {
             display: flex;
@@ -817,6 +812,101 @@
             min-width: 220px;
         }
 
+        /* Комната без турнирной сетки: прошедшие бои и прогноз */
+        #current-bracket.bracketless {
+            display: block;
+            overflow: visible;
+            min-height: 0;
+            padding: 4px 0 0;
+        }
+        .overview-section + .overview-section { margin-top: 22px; }
+        .overview-heading {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 0 0 10px;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--gray-700);
+        }
+        .overview-count {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--gray-500);
+            background: var(--gray-100);
+            border-radius: 999px;
+            padding: 1px 8px;
+        }
+        .overview-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+            gap: 12px;
+        }
+        .overview-empty {
+            color: var(--gray-500);
+            font-size: 13px;
+            padding: 6px 0;
+        }
+        .result-card {
+            background: white;
+            border: 2px solid var(--gray-200);
+            border-radius: 10px;
+            padding: 10px 12px;
+            transition: var(--transition);
+            cursor: pointer;
+        }
+        .result-card:hover { border-color: var(--primary); box-shadow: var(--shadow-hover); }
+        .result-card:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+        .result-card.forecast {
+            cursor: default;
+            border-style: dashed;
+            background: var(--primary-light);
+        }
+        .result-card.forecast:hover { border-color: var(--primary); box-shadow: none; }
+        .result-card-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .result-card-title { font-weight: 600; font-size: 13px; color: var(--primary); }
+        .result-card-badge {
+            font-size: 11px;
+            color: var(--gray-500);
+            text-transform: uppercase;
+            letter-spacing: .04em;
+        }
+        .result-row {
+            display: grid;
+            grid-template-columns: 20px 1fr auto auto;
+            align-items: center;
+            gap: 8px;
+            padding: 3px 0;
+            font-size: 13px;
+            border-top: 1px solid var(--gray-100);
+        }
+        .result-row:first-child { border-top: none; }
+        .result-place {
+            color: var(--gray-500);
+            text-align: center;
+            font-variant-numeric: tabular-nums;
+        }
+        .result-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .result-score { font-weight: 600; font-variant-numeric: tabular-nums; }
+        .result-score.is-positive { color: var(--success); }
+        .result-score.is-negative { color: var(--danger); }
+        .result-score.is-zero { color: var(--gray-500); }
+        .result-points {
+            color: var(--gray-500);
+            min-width: 40px;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+        .result-row.is-winner .result-name { font-weight: 600; }
+        .result-row.is-winner .result-place { color: var(--warning); font-weight: 700; }
+        .result-card.forecast .result-row { grid-template-columns: 20px 1fr; }
+
         .match-card {
             background: white;
             border: 2px solid var(--gray-200);
@@ -1008,23 +1098,6 @@
             border-radius: 8px;
             margin: 8px 0;
             text-align: center;
-        }
-
-        .game-history-item {
-            background: var(--gray-50);
-            border-radius: 6px;
-            padding: 8px 12px;
-            font-size: 13px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border: 1px solid var(--gray-200);
-            margin-top: 4px;
-        }
-
-        .game-history-item .gid {
-            font-weight: 600;
-            color: var(--primary);
         }
 
         .game-match-nav {
@@ -1587,6 +1660,42 @@
         ::-webkit-scrollbar-track { background: var(--gray-100); border-radius: 4px; }
         ::-webkit-scrollbar-thumb { background: var(--gray-300); border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: var(--gray-400); }
+
+        /* Подсказки имён: свой список вместо datalist.
+           На планшетах с физической клавиатурой браузер не показывает
+           подсказки datalist, поэтому список рисуется в DOM. */
+        .name-suggest {
+            position: fixed;
+            z-index: 20000;
+            display: block;
+            padding: 4px;
+            background: white;
+            border: 1px solid var(--gray-200);
+            border-radius: 10px;
+            box-shadow: 0 12px 32px rgba(15, 23, 42, .18);
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
+        }
+        .name-suggest[hidden] { display: none; }
+        .name-suggest-item {
+            padding: 11px 12px;
+            border-radius: 7px;
+            font-size: 16px;
+            line-height: 1.25;
+            color: var(--gray-800, #1e293b);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            cursor: pointer;
+            touch-action: manipulation;
+            user-select: none;
+        }
+        .name-suggest-item.is-active { background: var(--primary-light); color: var(--primary-dark); }
+        .name-suggest-item mark { background: #fde68a; color: inherit; padding: 0 1px; border-radius: 3px; }
+        @media (max-width: 720px) {
+            .name-suggest-item { padding: 13px 14px; }
+        }
     </style>
 </head>
 <body>
@@ -1625,20 +1734,21 @@
         </div>
         <div class="panel-body">
             <div class="add-player-row">
-                <input type="text" id="player_to_add" list="players_list" placeholder="Добавить игрока...">
+                <input type="text" id="player_to_add" data-suggest="all" placeholder="Добавить игрока..." autocomplete="off" autocapitalize="off" spellcheck="false">
+                <!-- Список всех игроков: источник данных для NameSuggest.
+                     Атрибут list не используется — на планшетах datalist не раскрывается. -->
                 <datalist id="players_list">{% for player in Players %}<option>{{player["name"]}}</option>{% endfor %}</datalist>
                 <button onclick="addActive()" class="btn btn-primary btn-sm">➕ Добавить</button>
             </div>
             <div id="activeplayers" class="players-grid"></div>
-            <div id="active_players_list" style="display:none;"></div>
+            <p class="text-muted" style="margin-top:8px;">🪑 на плашке — не сажать игрока в этот бой</p>
             <div class="flex gap-8 mt-12">
-                <input placeholder="Удалить игрока" id="remove_player" data-type="remove"
+                <input placeholder="Удалить игрока" id="remove_player" data-type="remove" data-suggest="active"
+                       autocomplete="off" autocapitalize="off" spellcheck="false"
                        ondrop="drop_handler(event)" ondragover="dragsover(event)"
                        onchange="remove_pl(event)" style="flex:1; padding:6px 12px; border:2px solid var(--gray-200); border-radius:8px;">
                 <button onclick="remove_pl()" class="btn btn-danger btn-sm">✕</button>
             </div>
-            <hr style="margin:16px 0; border:none; border-top:1px solid var(--gray-200);">
-            <div id="GameStory"></div>
         </div>
     </div>
 
@@ -1664,7 +1774,7 @@
                     <div class="player-input-row">
                         <button onclick="clearPlayer(1)" class="btn btn-danger btn-xs">🗑</button>
                         <input type="text" class="player_input" data-type="players" id="player1"
-                               ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 1">
+                               ondrop="drop_handler(event);" data-suggest="active" autocomplete="off" placeholder="игрок 1">
                         <input type="number" class="player_input_score" id="score1" placeholder="счет" step="1">
                         <div class="move-btns">
                             <button class="btn btn-outline btn-xs" onclick="pl_move(1,1)">⬇</button>
@@ -1675,7 +1785,7 @@
                     <div class="player-input-row">
                         <button onclick="clearPlayer(2)" class="btn btn-danger btn-xs">🗑</button>
                         <input type="text" class="player_input" data-type="players" id="player2"
-                               ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 2">
+                               ondrop="drop_handler(event);" data-suggest="active" autocomplete="off" placeholder="игрок 2">
                         <input type="number" class="player_input_score" id="score2" placeholder="счет" step="1">
                         <div class="move-btns">
                             <button class="btn btn-outline btn-xs" onclick="pl_move(2,-1)">⬆</button>
@@ -1686,7 +1796,7 @@
                     <div class="player-input-row">
                         <button onclick="clearPlayer(3)" class="btn btn-danger btn-xs">🗑</button>
                         <input type="text" class="player_input" data-type="players" id="player3"
-                               ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 3">
+                               ondrop="drop_handler(event);" data-suggest="active" autocomplete="off" placeholder="игрок 3">
                         <input type="number" class="player_input_score" id="score3" placeholder="счет" step="1">
                         <div class="move-btns">
                             <button class="btn btn-outline btn-xs" onclick="pl_move(3,-2)">⬆⬆</button>
@@ -1697,7 +1807,7 @@
                     <div class="player-input-row">
                         <button onclick="clearPlayer(4)" class="btn btn-danger btn-xs">🗑</button>
                         <input type="text" class="player_input" data-type="players" id="player4"
-                               ondrop="drop_handler(event);" list="active_players_list" placeholder="игрок 4">
+                               ondrop="drop_handler(event);" data-suggest="active" autocomplete="off" placeholder="игрок 4">
                         <input type="number" class="player_input_score" id="score4" placeholder="счет" step="1">
                         <div class="move-btns">
                             <button class="btn btn-outline btn-xs" onclick="pl_move(4,-3)">⬆⬆⬆</button>
@@ -1938,28 +2048,6 @@
             </div>
     </div>
 
-    <!-- ПАНЕЛЬ 7: Блокировка -->
-    <div class="panel" id="panel-block">
-        <div class="panel-header" draggable="true"
-            ondragstart="panelDragStart(event)"
-            ondragend="panelDragEnd(event)">
-            <span class="panel-title"><span class="icon">🔒</span> Блокировка</span>
-            <div class="panel-controls">
-                <button class="panel-collapse" title="Свернуть">▼</button>
-                <button class="panel-expand" title="Развернуть">⛶</button>
-            </div>
-        </div>
-        <div class="panel-body">
-            <p class="text-muted">Перетащите игрока сюда, чтобы заблокировать на одну игру</p>
-            <div id="blocked_for_one_game" class="blocked-list"
-                 data-type="one_game_block"
-                 ondrop="drop_handler(event)"
-                 ondragover="dragsover(event)">
-                <list id="one_game_block_list" data-type="one_game_block"></list>
-            </div>
-        </div>
-    </div>
-
     <!-- ПАНЕЛЬ 8: Веса -->
     <div class="panel" id="panel-weights">
         <div class="panel-header" draggable="true"
@@ -1987,7 +2075,7 @@
         <div class="panel-header" draggable="true"
             ondragstart="panelDragStart(event)"
             ondragend="panelDragEnd(event)">
-            <span class="panel-title"><span class="icon">🏅</span> Турнирная сетка</span>
+            <span class="panel-title" id="bracketsPanelTitle"><span class="icon">🏅</span> Турнирная сетка</span>
             <div class="panel-controls">
                 <button class="panel-collapse" title="Свернуть">▼</button>
                 <button class="panel-expand" title="Развернуть">⛶</button>
@@ -1995,7 +2083,7 @@
         </div>
         <div class="panel-body">
             <div class="flex gap-8 mb-12">
-                <button onclick="redrawBrackets()" class="btn btn-primary">🔄 Обновить сетку</button>
+                <button id="refreshBracketsBtn" onclick="redrawBrackets()" class="btn btn-primary">🔄 Обновить сетку</button>
             </div>
             <div class="brackets" id="current-bracket">
                 <span class="text-muted">Загрузка сетки...</span>
@@ -2037,6 +2125,9 @@
     </div>
 </div>
 
+<!-- Выпадающий список подсказок имён (см. NameSuggest в скрипте) -->
+<div id="name-suggest" class="name-suggest" role="listbox" aria-label="Подсказки имён" hidden></div>
+
 <script>
 // ============================================================
 // 1. ПАНЕЛИ: Drag & Drop
@@ -2050,7 +2141,6 @@ const DEFAULT_PANELS_ORDER = [
     'panel-question-card',
     'panel-package',
     'panel-quiz',
-    'panel-block',
     'panel-weights',
     'panel-tournament-brackets'
 ];
@@ -4111,15 +4201,19 @@ function saveGame() {
 
 function switchMatch(newMatchId) {
     saveGame();
-    gameindex = newMatchId;
+    // Из турнирной сетки id матча приходит строкой ("4"), из-за чего
+    // "4" + 1 давало "41" в прогнозе и заголовке игры.
+    const numericId = Number(newMatchId);
+    gameindex = (String(newMatchId).trim() !== '' && Number.isFinite(numericId))
+        ? numericId
+        : newMatchId;
     document.getElementById('game').textContent = `🎯 Игра ${gameindex}`;
 
     ClearPlayers();
     gameState.scores = Array(gameData.players.length).fill(0);
 
-    loadGame(newMatchId);
+    loadGame(gameindex);
 
-    GetGameHistory();
     update_weight();
     redrawBrackets();
     refreshTable();
@@ -4214,6 +4308,7 @@ function addActive() {
         active = data;
         UpdateActivePlayer(active);
         document.getElementById('player_to_add').value = '';
+        redrawBrackets();
     }).catch(console.error);
 }
 
@@ -4224,7 +4319,9 @@ function remove_from_active(name) {
         body: JSON.stringify({ name })
     }).then(r => r.json()).then(data => {
         active = data;
+        one_game_block_array = one_game_block_array.filter(n => n !== name);
         UpdateActivePlayer(active);
+        redrawBrackets();
     }).catch(console.error);
 }
 
@@ -4232,20 +4329,58 @@ function UpdateActivePlayer(list) {
     const div = document.getElementById('activeplayers');
     div.innerHTML = '';
     list.forEach(p => {
+        const blocked = one_game_block_array.includes(p.name);
         const tag = document.createElement('span');
-        tag.className = 'player-tag';
+        tag.className = 'player-tag' + (blocked ? ' is-blocked' : '');
         tag.draggable = true;
+        tag.dataset.name = p.name;
+        tag.title = blocked
+            ? 'Не сажаем в этот бой — нажмите 🪑, чтобы вернуть'
+            : 'Перетащите в игровое поле';
         tag.ondragstart = (e) => { player_name_drag = p.name; e.dataTransfer.effectAllowed = 'copyMove'; };
-        tag.innerHTML = `${p.name} <span class="remove-btn" onclick="remove_from_active('${p.name}')">✕</span>`;
+
+        const nameEl = document.createElement('span');
+        nameEl.className = 'player-tag-name';
+        nameEl.textContent = p.name;
+        tag.append(nameEl);
+
+        const blockBtn = document.createElement('button');
+        blockBtn.type = 'button';
+        blockBtn.className = 'tag-btn block-btn';
+        blockBtn.textContent = '🪑';
+        blockBtn.title = blocked ? 'Снова можно сажать' : 'Не сажать в этот бой';
+        blockBtn.setAttribute('aria-pressed', blocked ? 'true' : 'false');
+        blockBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            toggleOneGameBlock(p.name);
+        });
+        tag.append(blockBtn);
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'tag-btn remove-btn';
+        removeBtn.textContent = '✕';
+        removeBtn.title = 'Убрать из комнаты';
+        removeBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            remove_from_active(p.name);
+        });
+        tag.append(removeBtn);
+
         div.appendChild(tag);
     });
-    const dl = document.getElementById('active_players_list');
-    dl.innerHTML = '';
-    list.forEach(p => {
-        const opt = document.createElement('option');
-        opt.value = p.name;
-        dl.appendChild(opt);
-    });
+}
+
+function toggleOneGameBlock(name) {
+    if (!name) return;
+    if (one_game_block_array.includes(name)) {
+        one_game_block_array = one_game_block_array.filter(n => n !== name);
+    } else {
+        one_game_block_array.push(name);
+    }
+    UpdateActivePlayer(active);
+    // Прогноз и «Заполнить игроков» учитывают блокировку — обновляем панель.
+    redrawBrackets();
 }
 
 function remove_pl() {
@@ -4276,6 +4411,7 @@ function FillPositions() {
         update_players_names();
         refreshTable();
         updateQuestionInfo();
+        redrawBrackets();
     }).catch(console.error);
 }
 
@@ -4304,27 +4440,14 @@ function pl_move(id, pos) {
 }
 
 // ============================================================
-// 14. DRAG & DROP ДЛЯ БЛОКИРОВКИ
+// 14. DRAG & DROP ИГРОКОВ
 // ============================================================
-function dragstart_handler(ev) {
-    player_name_drag = ev.target.textContent.replace('✕', '').trim();
-    ev.effectAllowed = "copyMove";
-}
-
 function dragsover(ev) {
     ev.preventDefault();
-    const list = ev.target.closest('.blocked-list');
-    if (list) list.classList.add('drag-over');
-}
-
-function dragend_handler(ev) {
-    document.querySelectorAll('.blocked-list').forEach(el => el.classList.remove('drag-over'));
-    player_name_drag = null;
 }
 
 function drop_handler(ev) {
     ev.preventDefault();
-    document.querySelectorAll('.blocked-list').forEach(el => el.classList.remove('drag-over'));
     const name = player_name_drag;
     if (!name) return;
     const endType = ev.target.dataset.type || ev.target.closest('[data-type]')?.dataset?.type;
@@ -4334,38 +4457,17 @@ function drop_handler(ev) {
         update_players_names();
     } else if (endType === "remove") {
         remove_from_active(name);
-    } else if (endType === "one_game_block") {
-        if (!one_game_block_array.includes(name)) {
-            one_game_block_array.push(name);
-            refreshOneGameBlock();
-        }
     }
     player_name_drag = null;
 }
 
-function refreshOneGameBlock() {
-    const list = document.getElementById('one_game_block_list');
-    list.innerHTML = '';
-    one_game_block_array.forEach(name => {
-        const li = document.createElement('span');
-        li.className = 'blocked-tag';
-        li.draggable = true;
-        li.ondragstart = dragstart_handler;
-        li.innerHTML = `${name} <span class="remove-btn" onclick="removeFromBlock('${name}')">✕</span>`;
-        list.appendChild(li);
-    });
-}
-
-function removeFromBlock(name) {
-    one_game_block_array = one_game_block_array.filter(n => n !== name);
-    refreshOneGameBlock();
-}
-window.removeFromBlock = removeFromBlock;
-
 // ============================================================
 // 15. РЕЗУЛЬТАТЫ И ИСТОРИЯ
 // ============================================================
+let isSavingResult = false;
+
 function AddResult() {
+    if (isSavingResult) return;
     console.log('[AddResult] start. gameFinished=', gameState.gameFinished,
                 'gameindex=', gameindex,
                 'players=', gameData.players);
@@ -4392,68 +4494,53 @@ function AddResult() {
         return;
     }
 
+    // Фиксируем номер боя: пока идёт запрос, пользователь может нажать
+    // «следующий бой», и глобальный gameindex уже будет другим.
+    const savedIndex = Number(gameindex);
+    isSavingResult = true;
+    const saveBtn = document.getElementById('saveResultsBtn');
+    if (saveBtn) saveBtn.disabled = true;
+
     fetch("/gameresult/{{roomid}}", {
         headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
         method: "POST",
         body: JSON.stringify({
             roomid: {{roomid}},
-            gameindex: gameindex,
+            gameindex: savedIndex,
             scores,
             detailed: getGameResults()
         })
     })
-    .then(r => r.json())
+    .then(async r => {
+        const data = await r.json().catch(() => null);
+        if (!r.ok) {
+            throw new Error((data && (data.message || data.status)) || `HTTP ${r.status}`);
+        }
+        return data;
+    })
     .then(data => {
         console.log('[AddResult] response:', data);
-
-        // Успешный кейс — сервер вернул массив с результатами
-        if (Array.isArray(data) && data.length > 0) {
-            UpdateGameHistory(gameindex, data);
-            gameState.gameFinished = true;
-            saveGame();
-            switchMatch(Number(gameindex) + 1);
-            redrawBrackets();
-            showResetGameOver();
-            return;
+        if (!Array.isArray(data) || data.length === 0) {
+            throw new Error('сервер не вернул сохранённые результаты');
         }
 
-        // Пустой объект — сервер уже имел результаты за этот gameindex,
-        // либо в scores не было ни одного непустого имени (мы это отсекли выше).
-        // Всё равно продвигаемся дальше — иначе пользователь «застрянет» на кнопке.
-        console.warn('[AddResult] Empty server response. Game likely already saved.');
-        alert('Результат этой игры уже был сохранён ранее. Переходим к следующей игре.');
         gameState.gameFinished = true;
         saveGame();
-        switchMatch(Number(gameindex) + 1);
+        // Блокировка действует на один бой — после сохранения снимаем её.
+        one_game_block_array = [];
+        UpdateActivePlayer(active);
+        switchMatch(savedIndex + 1);
+        redrawBrackets();
         showResetGameOver();
     })
     .catch(err => {
         console.error('[AddResult] fetch error:', err);
         alert('Ошибка при сохранении результата: ' + err.message);
+    })
+    .finally(() => {
+        isSavingResult = false;
+        if (saveBtn) saveBtn.disabled = false;
     });
-}
-
-function UpdateGameHistory(gameIdx, data) {
-    let log = document.getElementById(`game_log_${gameIdx}`);
-    if (!log) {
-        log = document.createElement('div');
-        log.className = 'game-history-item';
-        log.id = `game_log_${gameIdx}`;
-        document.getElementById('GameStory').appendChild(log);
-    }
-    const names = data.map(s => s.name).filter(Boolean);
-    log.innerHTML = `<span class="gid">Игра ${gameIdx}</span><span>${names.join(', ') || '—'}</span>`;
-}
-
-function GetGameHistory() {
-    fetch("/gameresult/{{roomid}}", {
-        headers: { 'Accept': 'application/json' },
-        method: "GET"
-    }).then(r => r.json()).then(data => {
-        if (Array.isArray(data)) {
-            data.forEach(item => UpdateGameHistory(item.gameindex, item.scores));
-        }
-    }).catch(console.error);
 }
 
 async function GetGameHistoryArray() {
@@ -4499,28 +4586,19 @@ function update_weight() {
 // 17. ПРОГНОЗ
 // ============================================================
 function predict_matches() {
-    const to_send = {
-        assigned: [
-            { name: document.getElementById('player1').value },
-            { name: document.getElementById('player2').value },
-            { name: document.getElementById('player3').value },
-            { name: document.getElementById('player4').value }
-        ],
-        one_game_forbiden: one_game_block_array.map(n => ({ name: n }))
-    };
-    fetch(`/predictgames/{{roomid}}/3`, {
-        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-        method: "POST",
-        body: JSON.stringify(to_send)
-    }).then(r => r.json()).then(data => {
-        const container = document.getElementById('GameStory');
-        data.forEach(item => {
-            const div = document.createElement('div');
-            div.className = 'game-history-item';
-            div.innerHTML = `<span class="gid">🔮 Игра ${gameindex + (item.shift || 0)}</span><span>${(item.data || []).map(p => p.name).filter(Boolean).join(', ') || '—'}</span>`;
-            container.appendChild(div);
-        });
-    }).catch(console.error);
+    // Прогноз теперь живёт в панели «Бои и прогноз»: показываем её
+    // и пересчитываем, чтобы кнопка вела туда же, где и результат.
+    const panel = document.getElementById('panel-tournament-brackets');
+    if (panel) {
+        const body = panel.querySelector('.panel-body');
+        if (body && body.classList.contains('collapsed')) {
+            body.classList.remove('collapsed');
+            const collapseBtn = panel.querySelector('.panel-collapse');
+            if (collapseBtn) collapseBtn.classList.remove('rotated');
+        }
+        panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    redrawBrackets();
 }
 
 // ============================================================
@@ -4801,10 +4879,174 @@ function renderBracket(schema, completedMatches, container, options = {}) {
     });
 }
 
+// ============================================================
+// 18.1. КОМНАТА БЕЗ СЕТКИ: ПРОШЕДШИЕ БОИ И ПРОГНОЗ
+// ============================================================
+let overviewRenderSeq = 0;
+
+function makeEl(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    return node;
+}
+
+function formatGameScore(score) {
+    const value = Number(score) || 0;
+    return value > 0 ? `+${value}` : String(value);
+}
+
+function formatGamePlace(position) {
+    const value = Number(position);
+    if (!Number.isFinite(value)) return '';
+    return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function buildResultCard(game) {
+    const card = makeEl('div', 'result-card');
+    card.tabIndex = 0;
+    card.setAttribute('role', 'button');
+    card.title = 'Показать детали боя';
+
+    const head = makeEl('div', 'result-card-head');
+    head.append(makeEl('span', 'result-card-title', `Игра ${game.gameindex}`));
+    card.append(head);
+
+    const rows = makeEl('div', 'result-rows');
+    const scores = [...(game.scores || [])].sort((a, b) => Number(a.position) - Number(b.position));
+    scores.forEach((score, index) => {
+        const row = makeEl('div', 'result-row' + (index === 0 ? ' is-winner' : ''));
+        row.append(makeEl('span', 'result-place', formatGamePlace(score.position)));
+        row.append(makeEl('span', 'result-name', score.name || '—'));
+        const value = Number(score.score) || 0;
+        const scoreEl = makeEl('span', 'result-score', formatGameScore(score.score));
+        scoreEl.classList.add(value > 0 ? 'is-positive' : value < 0 ? 'is-negative' : 'is-zero');
+        row.append(scoreEl);
+        row.append(makeEl('span', 'result-points', Number(score.points || 0).toFixed(2)));
+        rows.append(row);
+    });
+    card.append(rows);
+
+    const openDetails = () => showMatchDetailsModal(game);
+    card.addEventListener('click', openDetails);
+    card.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            openDetails();
+        }
+    });
+    return card;
+}
+
+function buildForecastCard(entry, gameNumber) {
+    const card = makeEl('div', 'result-card forecast');
+    const head = makeEl('div', 'result-card-head');
+    head.append(makeEl('span', 'result-card-title', `Игра ${gameNumber}`));
+    head.append(makeEl('span', 'result-card-badge', 'прогноз'));
+    card.append(head);
+
+    const rows = makeEl('div', 'result-rows');
+    (entry.data || []).forEach((player) => {
+        const row = makeEl('div', 'result-row');
+        row.append(makeEl('span', 'result-place', '•'));
+        row.append(makeEl('span', 'result-name', player.name || '—'));
+        rows.append(row);
+    });
+    card.append(rows);
+    return card;
+}
+
+async function fetchPredictions() {
+    const assigned = [1, 2, 3, 4].map((index) => ({
+        name: (document.getElementById(`player${index}`)?.value || '').trim()
+    }));
+    const response = await fetch('/predictgames/{{roomid}}/3', {
+        method: 'POST',
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            assigned,
+            one_game_forbiden: one_game_block_array.map((name) => ({ name }))
+        })
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    return Array.isArray(data) ? data : [];
+}
+
+async function renderGamesOverview() {
+    const seq = ++overviewRenderSeq;
+    const container = document.getElementById('current-bracket');
+    if (!container) return;
+
+    container.classList.add('bracketless');
+    const titleEl = document.getElementById('bracketsPanelTitle');
+    if (titleEl) titleEl.innerHTML = '<span class="icon">📊</span> Бои и прогноз';
+    const refreshBtn = document.getElementById('refreshBracketsBtn');
+    if (refreshBtn) refreshBtn.textContent = '🔄 Обновить';
+
+    const games = await GetGameHistoryArray();
+    let predictions = [];
+    let predictionFailed = false;
+    try {
+        predictions = await fetchPredictions();
+    } catch (error) {
+        predictionFailed = true;
+        console.error('[games overview] прогноз не построен:', error);
+    }
+    if (seq !== overviewRenderSeq) return; // пришёл более свежий запрос
+
+    const forecasts = predictions.filter((entry) => (entry.data || []).some((player) => player.name));
+    // История — от последнего боя к первому.
+    const orderedGames = [...games].sort((a, b) => Number(b.gameindex) - Number(a.gameindex));
+
+    const fragment = document.createDocumentFragment();
+
+    const forecastSection = makeEl('div', 'overview-section');
+    const forecastHeading = makeEl('div', 'overview-heading');
+    forecastHeading.append(makeEl('span', null,
+        forecasts.length > 1
+            ? `Прогноз на следующие ${forecasts.length} боя`
+            : 'Прогноз на следующий бой'));
+    forecastSection.append(forecastHeading);
+
+    if (forecasts.length) {
+        const grid = makeEl('div', 'overview-grid');
+        const base = Number(gameindex) || 1;
+        forecasts.forEach((entry) => {
+            grid.append(buildForecastCard(entry, base + (Number(entry.shift) || 0)));
+        });
+        forecastSection.append(grid);
+    } else {
+        forecastSection.append(makeEl('div', 'overview-empty',
+            predictionFailed
+                ? 'Не удалось построить прогноз. Попробуйте обновить.'
+                : 'Для прогноза нужно хотя бы четыре активных игрока.'));
+    }
+    fragment.append(forecastSection);
+
+    const gamesSection = makeEl('div', 'overview-section');
+    const gamesHeading = makeEl('div', 'overview-heading');
+    gamesHeading.append(makeEl('span', null, 'Прошедшие бои'));
+    if (orderedGames.length) gamesHeading.append(makeEl('span', 'overview-count', orderedGames.length));
+    gamesSection.append(gamesHeading);
+    if (orderedGames.length) {
+        const grid = makeEl('div', 'overview-grid');
+        orderedGames.forEach((game) => grid.append(buildResultCard(game)));
+        gamesSection.append(grid);
+    } else {
+        gamesSection.append(makeEl('div', 'overview-empty', 'Сыгранных боёв пока нет.'));
+    }
+    fragment.append(gamesSection);
+
+    container.replaceChildren(fragment);
+}
+
 async function redrawBrackets() {
     const rules = {{rules | tojson}};
     if (rules.brackets) {
         if (typeof rules.brackets === 'string') rules.brackets = JSON.parse(rules.brackets);
+        const container = document.getElementById('current-bracket');
+        if (container) container.classList.remove('bracketless');
         const activePlayers = await fetch('/activeplayers/{{roomid}}').then(r => r.json());
         const playerNames = activePlayers.map(p => p.name);
         const gameArray = await GetGameHistoryArray();
@@ -4814,6 +5056,20 @@ async function redrawBrackets() {
             onPlayMatch: (matchId, players) => switchToMatch(matchId, players),
             onShowDetails: (matchId, data) => showMatchDetailsModal(data)
         });
+        return;
+    }
+
+    try {
+        await renderGamesOverview();
+    } catch (error) {
+        console.error('[redrawBrackets]', error);
+        const container = document.getElementById('current-bracket');
+        if (container) {
+            container.classList.add('bracketless');
+            container.replaceChildren(
+                makeEl('div', 'overview-empty', 'Не удалось загрузить бои и прогноз.')
+            );
+        }
     }
 }
 
@@ -4967,7 +5223,6 @@ async function importState(file) {
             renderPackageSelector();
 
             UpdateActivePlayer(active);
-            refreshOneGameBlock();
             updatePlayerInputs();
             update_players_names();
             refreshTable();
@@ -4975,7 +5230,6 @@ async function importState(file) {
             updatePackageInfo();
             document.getElementById('game').textContent = `🎯 Игра ${gameindex}`;
             loadGame(gameindex);
-            GetGameHistory();
             update_weight();
             updateQuestionCard();
             redrawBrackets();
@@ -4991,20 +5245,52 @@ async function importState(file) {
 // 20. ЗАВЕРШЕНИЕ КОМНАТЫ
 // ============================================================
 function FinalizeRoom() {
-    if (confirm('После завершения боев вы не сможете изменять данные. Вы уверены?')) {
-        fetch("/api/finalizeroom/{{roomid}}").then(r => r.json()).then(data => {
+    if (!confirm('После завершения боев вы не сможете изменять данные. Вы уверены?')) return;
+
+    // Если текущий бой ещё не сохранён, предупреждаем: иначе победитель
+    // будет посчитан без него.
+    if (!gameState.gameFinished && (gameData.players || []).some(p => p)) {
+        if (!confirm('Текущий бой не сохранён. Завершить комнату без него?')) return;
+    }
+
+    fetch(`/api/finalizeroom/{{roomid}}`, { method: 'POST' })
+        .then(async r => {
+            const data = await r.json().catch(() => null);
+            if (!r.ok) throw new Error((data && data.status) || `HTTP ${r.status}`);
+            return data;
+        })
+        .then(data => {
             if (data.status === "Ok") {
                 alert(`🏆 Победитель: ${data.winer}`);
                 window.location.href = `/view/{{roomid}}`;
             } else {
                 alert(`❌ ${data.status}`);
             }
-        }).catch(console.error);
-    }
+        })
+        .catch(err => {
+            console.error('[FinalizeRoom]', err);
+            alert('Не удалось завершить комнату: ' + err.message);
+        });
 }
 
-function ClearCurrentGameLog(forced = true) {
+async function ClearCurrentGameLog(forced = true) {
     if (forced && !confirm(`Вы уверены, что хотите стереть данные за бой ${gameindex}?`)) return;
+
+    const savedIndex = Number(gameindex);
+    if (forced) {
+        // «Очистить бой» — удаляем сохранённый результат на сервере.
+        // «Сбросить» (forced=false) только сбрасывает ввод и базу не трогает.
+        try {
+            const r = await fetch(`/gameresult/{{roomid}}/${savedIndex}`, { method: 'DELETE' });
+            const data = await r.json().catch(() => null);
+            if (!r.ok) throw new Error((data && data.message) || `HTTP ${r.status}`);
+        } catch (err) {
+            console.error('[ClearCurrentGameLog]', err);
+            alert('Не удалось удалить сохранённый результат: ' + err.message);
+            return;
+        }
+    }
+
     gameState.scores = Array(gameData.players.length).fill(0);
     gameState.editMode = false;
     gameState.currentBlock = 0;
@@ -5057,7 +5343,6 @@ function init_page() {
         active = data;
         UpdateActivePlayer(active);
     }).catch(console.error);
-    GetGameHistory();
     update_weight();
     initControlButtons();
     updatePackageInfo();
@@ -5099,12 +5384,9 @@ window.switchMatch = switchMatch;
 window.loadGame = loadGame;
 window.drop_handler = drop_handler;
 window.dragsover = dragsover;
-window.dragstart_handler = dragstart_handler;
-window.dragend_handler = dragend_handler;
 window.panelDragStart = panelDragStart;
 window.panelDragEnd = panelDragEnd;
 window.clearPlayer = clearPlayer;
-window.refreshOneGameBlock = refreshOneGameBlock;
 window.showMatchDetailsModal = showMatchDetailsModal;
 window.renderBracket = renderBracket;
 window.toggleHalfMinus = toggleHalfMinus;
@@ -5139,6 +5421,299 @@ window.appendSegmentFromPicker = appendSegmentFromPicker;
 window.updateAddSegmentPreview = updateAddSegmentPreview;
 window.removeSegmentAt = removeSegmentAt;
 window.appendThemesFromPackage = appendThemesFromPackage;
+
+// ============================================================
+// 22. ПОДСКАЗКИ ИМЁН
+// Своя выпадашка вместо <datalist>: на планшете с физической
+// клавиатурой браузер не раскрывает подсказки datalist, а список,
+// нарисованный в DOM, работает везде одинаково.
+// ============================================================
+const NameSuggest = (() => {
+    const popup = document.getElementById('name-suggest');
+    const MAX_ITEMS = 12;
+    const pickers = new WeakMap();
+    let currentInput = null;
+    let currentOptions = null;
+    let items = [];
+    let activeIndex = -1;
+    let suppressInputRender = false;
+
+    const normalize = (value) => String(value == null ? '' : value)
+        .toLowerCase()
+        .replace(/ё/g, 'е')
+        .trim();
+
+    function allPlayerNames() {
+        const names = new Set();
+        document.querySelectorAll('#players_list option').forEach(option => {
+            const value = (option.value || option.textContent || '').trim();
+            if (value) names.add(value);
+        });
+        (active || []).forEach(player => {
+            if (player && player.name) names.add(player.name);
+        });
+        return [...names];
+    }
+
+    function sourceNames(source) {
+        if (source === 'active') {
+            return [...new Set((active || []).map(p => p && p.name).filter(Boolean))];
+        }
+        return allPlayerNames();
+    }
+
+    function collect(query) {
+        const q = normalize(query);
+        const found = [];
+        for (const name of sourceNames(currentOptions.source)) {
+            const normalized = normalize(name);
+            let rank;
+            if (!q) rank = 0;
+            else if (normalized.startsWith(q)) rank = 0;
+            else if (normalized.includes(q)) rank = 1;
+            else continue;
+            found.push({ name, rank });
+        }
+        found.sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name, 'ru'));
+        return found.slice(0, MAX_ITEMS).map(item => item.name);
+    }
+
+    function highlightedName(name, query) {
+        const q = query.trim();
+        if (!q) return document.createTextNode(name);
+        const index = normalize(name).indexOf(normalize(q));
+        if (index < 0) return document.createTextNode(name);
+        const fragment = document.createDocumentFragment();
+        fragment.append(name.slice(0, index));
+        const mark = document.createElement('mark');
+        mark.textContent = name.slice(index, index + q.length);
+        fragment.append(mark, name.slice(index + q.length));
+        return fragment;
+    }
+
+    function isOpen() {
+        return !popup.hidden && currentInput !== null;
+    }
+
+    function ensureVisible() {
+        const element = popup.querySelector('.name-suggest-item.is-active');
+        if (!element) return;
+        const top = element.offsetTop;
+        const bottom = top + element.offsetHeight;
+        if (top < popup.scrollTop) popup.scrollTop = top;
+        else if (bottom > popup.scrollTop + popup.clientHeight) popup.scrollTop = bottom - popup.clientHeight;
+    }
+
+    function position() {
+        if (!currentInput) return;
+        const rect = currentInput.getBoundingClientRect();
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+        const margin = 6;
+
+        const width = Math.max(160, Math.min(rect.width, viewportWidth - 8));
+        popup.style.width = width + 'px';
+        popup.style.left = Math.max(4, Math.min(rect.left, viewportWidth - width - 4)) + 'px';
+
+        const contentHeight = popup.scrollHeight;
+        const spaceBelow = viewportHeight - rect.bottom - margin;
+        const spaceAbove = rect.top - margin;
+        const placeAbove = spaceBelow < Math.min(contentHeight, 200) && spaceAbove > spaceBelow;
+        const maxHeight = Math.max(120, Math.min(320, placeAbove ? spaceAbove : spaceBelow));
+        popup.style.maxHeight = maxHeight + 'px';
+        const visibleHeight = Math.min(contentHeight, maxHeight);
+        const top = placeAbove ? rect.top - visibleHeight - margin : rect.bottom + margin;
+        popup.style.top = Math.max(4, top) + 'px';
+    }
+
+    function hide() {
+        if (currentInput) currentInput.setAttribute('aria-expanded', 'false');
+        popup.hidden = true;
+        popup.replaceChildren();
+        items = [];
+        activeIndex = -1;
+        currentInput = null;
+        currentOptions = null;
+    }
+
+    function render() {
+        if (!currentInput) return;
+        const query = currentInput.value;
+        items = collect(query);
+        if (!items.length) {
+            hide();
+            return;
+        }
+        // Ничего не подсвечиваем заранее: Enter не должен подменять
+        // только что введённое имя первым совпадением.
+        activeIndex = -1;
+        popup.replaceChildren();
+        items.forEach((name, index) => {
+            const element = document.createElement('div');
+            element.className = 'name-suggest-item';
+            element.setAttribute('role', 'option');
+            element.setAttribute('aria-selected', 'false');
+            element.dataset.index = String(index);
+            element.append(highlightedName(name, query));
+            popup.append(element);
+        });
+        popup.hidden = false;
+        currentInput.setAttribute('aria-expanded', 'true');
+        position();
+    }
+
+    function setActive(index) {
+        if (!items.length) return;
+        activeIndex = (index + items.length) % items.length;
+        popup.querySelectorAll('.name-suggest-item').forEach((element, i) => {
+            const on = i === activeIndex;
+            element.classList.toggle('is-active', on);
+            element.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+        ensureVisible();
+    }
+
+    function pick(index) {
+        if (!currentInput || index < 0 || index >= items.length) return false;
+        const input = currentInput;
+        const options = currentOptions;
+        const value = items[index];
+        // Поле намеренно не перефокусируем: preventDefault на pointerdown
+        // и так оставляет фокус, а повторный focus снова открыл бы список.
+        input.value = value;
+        hide();
+        // Сообщаем остальному коду о новом значении, но не открываем
+        // список заново собственным обработчиком input.
+        suppressInputRender = true;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        if (options.dispatchChange !== false) {
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        return true;
+    }
+
+    function onSubmitKey(event) {
+        if (isOpen()) {
+            event.preventDefault();
+            const options = currentOptions;
+            if (activeIndex >= 0) {
+                pick(activeIndex);
+            } else if (options && typeof options.onEnter === 'function') {
+                // Ничего не выбрано стрелками — Enter выполняет действие поля
+                // с тем, что введено (важно для нового игрока, чьё имя
+                // начинается так же, как у существующего).
+                hide();
+                options.onEnter();
+            } else {
+                hide();
+            }
+            return true;
+        }
+        if (currentOptions && typeof currentOptions.onEnter === 'function') {
+            event.preventDefault();
+            currentOptions.onEnter();
+            return true;
+        }
+        return false;
+    }
+
+    function onKeyDown(event) {
+        if (event.key === 'ArrowDown') {
+            if (!isOpen()) render();
+            event.preventDefault();
+            setActive(activeIndex + 1);
+        } else if (event.key === 'ArrowUp') {
+            if (!isOpen()) render();
+            event.preventDefault();
+            setActive(activeIndex < 0 ? items.length - 1 : activeIndex - 1);
+        } else if (event.key === 'Enter') {
+            onSubmitKey(event);
+        } else if (event.key === 'Escape') {
+            if (isOpen()) {
+                event.preventDefault();
+                hide();
+            }
+        } else if (event.key === 'Tab') {
+            hide();
+        }
+    }
+
+    function attach(input, options) {
+        if (!input) return;
+        pickers.set(input, Object.assign({ source: 'all', dispatchChange: true }, options || {}));
+        input.setAttribute('autocomplete', 'off');
+        input.setAttribute('autocapitalize', 'off');
+        input.setAttribute('spellcheck', 'false');
+        input.setAttribute('role', 'combobox');
+        input.setAttribute('aria-autocomplete', 'list');
+        input.setAttribute('aria-expanded', 'false');
+        input.setAttribute('aria-controls', 'name-suggest');
+
+        input.addEventListener('focus', () => {
+            currentInput = input;
+            currentOptions = pickers.get(input);
+            render();
+        });
+        input.addEventListener('input', () => {
+            if (suppressInputRender) {
+                suppressInputRender = false;
+                return;
+            }
+            if (currentInput !== input) {
+                currentInput = input;
+                currentOptions = pickers.get(input);
+            }
+            render();
+        });
+        input.addEventListener('keydown', onKeyDown);
+        input.addEventListener('blur', () => {
+            const blurred = input;
+            window.setTimeout(() => {
+                if (currentInput === blurred) hide();
+            }, 120);
+        });
+    }
+
+    popup.addEventListener('pointerdown', (event) => {
+        const element = event.target.closest('.name-suggest-item');
+        if (!element) return;
+        event.preventDefault(); // не отдавать фокус полю и не закрывать список
+        pick(Number(element.dataset.index));
+    });
+
+    document.addEventListener('pointerdown', (event) => {
+        if (!isOpen()) return;
+        if (event.target === currentInput || popup.contains(event.target)) return;
+        hide();
+    }, true);
+
+    const reposition = () => { if (isOpen()) position(); };
+    window.addEventListener('resize', reposition);
+    window.addEventListener('scroll', reposition, true);
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', reposition);
+        window.visualViewport.addEventListener('scroll', reposition);
+    }
+
+    function init() {
+        attach(document.getElementById('player_to_add'), {
+            source: 'all',
+            onEnter: () => addActive()
+        });
+        attach(document.getElementById('remove_player'), {
+            source: 'active',
+            dispatchChange: false,
+            onEnter: () => remove_pl()
+        });
+        document.querySelectorAll('.player_input').forEach(input => {
+            attach(input, { source: 'active' });
+        });
+    }
+
+    return { init, hide, attach };
+})();
+
+NameSuggest.init();
 
 document.addEventListener('DOMContentLoaded', init_page);
 </script>
