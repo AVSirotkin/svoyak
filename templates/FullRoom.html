@@ -276,6 +276,39 @@
         .player-tag.is-blocked .block-btn { color: var(--danger); }
         .player-tag.is-blocked .block-btn::after { height: 2px; }
 
+        /* Баннер автономной работы */
+        .offline-banner {
+            position: sticky;
+            top: 0;
+            z-index: 15000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            padding: 8px 16px;
+            font-size: 14px;
+            font-weight: 500;
+            background: var(--warning-bg);
+            color: #92400e;
+            border-bottom: 1px solid var(--warning);
+            box-shadow: 0 2px 8px rgba(15, 23, 42, .08);
+        }
+        .offline-banner[hidden] { display: none; }
+        .offline-banner.is-offline {
+            background: var(--danger-bg);
+            color: #991b1b;
+            border-bottom-color: var(--danger);
+        }
+        .offline-banner .btn {
+            padding: 4px 10px;
+            font-size: 13px;
+            background: white;
+            color: inherit;
+            border: 1px solid currentColor;
+        }
+        .offline-banner .btn:hover { background: rgba(255, 255, 255, .6); }
+
         .add-player-row {
             display: flex;
             gap: 8px;
@@ -1699,6 +1732,11 @@
     </style>
 </head>
 <body>
+
+<div id="offline-banner" class="offline-banner" hidden>
+    <span id="offline-banner-text"></span>
+    <button id="offline-retry" class="btn btn-sm" onclick="Offline.retry()">Повторить</button>
+</div>
 
 <header class="page-header">
     <h1>
@@ -4300,29 +4338,23 @@ document.getElementById('applyThemeCountBtn').addEventListener('click', () => {
 function addActive() {
     const name = document.getElementById('player_to_add').value.trim();
     if (!name) return;
-    fetch("/activeplayers/{{roomid}}", {
-        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-        method: "POST",
-        body: JSON.stringify({ name })
-    }).then(r => r.json()).then(data => {
-        active = data;
-        UpdateActivePlayer(active);
-        document.getElementById('player_to_add').value = '';
-        redrawBrackets();
-    }).catch(console.error);
+    if (!active.some(player => player.name === name)) {
+        active = active.concat([{ playerid: null, name }]);
+        Offline.setActivePlayers(active);
+        Offline.enqueue('addPlayer', { name });
+    }
+    UpdateActivePlayer(active);
+    document.getElementById('player_to_add').value = '';
+    redrawBrackets();
 }
 
 function remove_from_active(name) {
-    fetch("/removeactiveplayer/{{roomid}}", {
-        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-        method: "POST",
-        body: JSON.stringify({ name })
-    }).then(r => r.json()).then(data => {
-        active = data;
-        one_game_block_array = one_game_block_array.filter(n => n !== name);
-        UpdateActivePlayer(active);
-        redrawBrackets();
-    }).catch(console.error);
+    active = active.filter(player => player.name !== name);
+    one_game_block_array = one_game_block_array.filter(n => n !== name);
+    Offline.setActivePlayers(active);
+    Offline.enqueue('removePlayer', { name });
+    UpdateActivePlayer(active);
+    redrawBrackets();
 }
 
 function UpdateActivePlayer(list) {
@@ -4389,30 +4421,47 @@ function remove_pl() {
     document.getElementById('remove_player').value = '';
 }
 
-function FillPositions() {
-    const to_send = {
-        assigned: [
-            { name: document.getElementById('player1').value },
-            { name: document.getElementById('player2').value },
-            { name: document.getElementById('player3').value },
-            { name: document.getElementById('player4').value }
-        ],
-        one_game_forbiden: one_game_block_array.map(n => ({ name: n }))
-    };
-    fetch("/fillpositions/{{roomid}}", {
-        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-        method: "POST",
-        body: JSON.stringify(to_send)
-    }).then(r => r.json()).then(data => {
-        if (data.length > 0) document.getElementById('player1').value = data[0].name || '';
-        if (data.length > 1) document.getElementById('player2').value = data[1].name || '';
-        if (data.length > 2) document.getElementById('player3').value = data[2].name || '';
-        if (data.length > 3) document.getElementById('player4').value = data[3].name || '';
-        update_players_names();
-        refreshTable();
-        updateQuestionInfo();
-        redrawBrackets();
-    }).catch(console.error);
+function applyFilledPositions(data) {
+    const list = Array.isArray(data) ? data : [];
+    for (let i = 1; i <= 4; i += 1) {
+        const item = list[i - 1];
+        document.getElementById('player' + i).value = item && item.name ? item.name : '';
+    }
+    update_players_names();
+    refreshTable();
+    updateQuestionInfo();
+    redrawBrackets();
+}
+
+async function FillPositions() {
+    const assigned = [1, 2, 3, 4].map(index => ({
+        name: document.getElementById('player' + index).value
+    }));
+    const forbidden = one_game_block_array.map(name => ({ name }));
+    const localFill = () => SelectionModel.fill(
+        Offline.getActivePlayers(), Offline.getResultsMap(),
+        assigned, one_game_block_array, Number(gameindex) || 1
+    );
+
+    if (Offline.isOnline()) {
+        try {
+            const response = await Offline.fetchWithTimeout('/fillpositions/{{roomid}}', {
+                method: 'POST',
+                headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+                body: JSON.stringify({ assigned, one_game_forbiden: forbidden })
+            });
+            if (response.ok) {
+                const data = await response.json();
+                if (Array.isArray(data) && data.length) {
+                    applyFilledPositions(data);
+                    return;
+                }
+            }
+        } catch (error) {
+            console.warn('[offline] серверный подбор недоступен, используем локальный', error);
+        }
+    }
+    applyFilledPositions(localFill());
 }
 
 function ClearPlayers() {
@@ -4464,10 +4513,7 @@ function drop_handler(ev) {
 // ============================================================
 // 15. РЕЗУЛЬТАТЫ И ИСТОРИЯ
 // ============================================================
-let isSavingResult = false;
-
 function AddResult() {
-    if (isSavingResult) return;
     console.log('[AddResult] start. gameFinished=', gameState.gameFinished,
                 'gameindex=', gameindex,
                 'players=', gameData.players);
@@ -4494,92 +4540,89 @@ function AddResult() {
         return;
     }
 
-    // Фиксируем номер боя: пока идёт запрос, пользователь может нажать
-    // «следующий бой», и глобальный gameindex уже будет другим.
+    // Сохраняем локально сразу: сервер не обязателен, отправка пойдёт в очередь.
     const savedIndex = Number(gameindex);
-    isSavingResult = true;
-    const saveBtn = document.getElementById('saveResultsBtn');
-    if (saveBtn) saveBtn.disabled = true;
+    const detailed = getGameResults();
+    Offline.saveGameLocal(savedIndex, scores);
+    Offline.enqueue('saveGame', { gameindex: savedIndex, scores, detailed });
 
-    fetch("/gameresult/{{roomid}}", {
-        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-        method: "POST",
-        body: JSON.stringify({
-            roomid: {{roomid}},
-            gameindex: savedIndex,
-            scores,
-            detailed: getGameResults()
-        })
-    })
-    .then(async r => {
-        const data = await r.json().catch(() => null);
-        if (!r.ok) {
-            throw new Error((data && (data.message || data.status)) || `HTTP ${r.status}`);
-        }
-        return data;
-    })
-    .then(data => {
-        console.log('[AddResult] response:', data);
-        if (!Array.isArray(data) || data.length === 0) {
-            throw new Error('сервер не вернул сохранённые результаты');
-        }
-
-        gameState.gameFinished = true;
-        saveGame();
-        // Блокировка действует на один бой — после сохранения снимаем её.
-        one_game_block_array = [];
-        UpdateActivePlayer(active);
-        switchMatch(savedIndex + 1);
-        redrawBrackets();
-        showResetGameOver();
-    })
-    .catch(err => {
-        console.error('[AddResult] fetch error:', err);
-        alert('Ошибка при сохранении результата: ' + err.message);
-    })
-    .finally(() => {
-        isSavingResult = false;
-        if (saveBtn) saveBtn.disabled = false;
-    });
+    gameState.gameFinished = true;
+    saveGame();
+    // Блокировка действует на один бой — после сохранения снимаем её.
+    one_game_block_array = [];
+    UpdateActivePlayer(active);
+    switchMatch(savedIndex + 1);
+    redrawBrackets();
+    showResetGameOver();
 }
 
 async function GetGameHistoryArray() {
-    try {
-        const r = await fetch("/gameresult/{{roomid}}", { headers: { 'Accept': 'application/json' } });
-        if (!r.ok) return [];
-        const data = await r.json();
-        return Array.isArray(data) ? data : [];
-    } catch { return []; }
+    if (Offline.isOnline()) {
+        try {
+            const r = await Offline.fetchWithTimeout("/gameresult/{{roomid}}", {
+                headers: { 'Accept': 'application/json' }
+            });
+            if (r.ok) {
+                const data = await r.json();
+                if (Array.isArray(data)) {
+                    Offline.setResultsFromServer(data);
+                    return data;
+                }
+            }
+        } catch (error) {
+            console.warn('[offline] история недоступна, показываем локальную', error);
+        }
+    }
+    return Offline.getResults();
 }
 
 // ============================================================
 // 16. ВЕСА
 // ============================================================
-function update_weight() {
-    const to_send = [
-        { name: document.getElementById('player1').value },
-        { name: document.getElementById('player2').value },
-        { name: document.getElementById('player3').value },
-        { name: document.getElementById('player4').value }
-    ];
-    fetch("/weigth/{{roomid}}", {
-        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-        method: "POST",
-        body: JSON.stringify(to_send)
-    }).then(r => r.json()).then(data => {
-        const tb = document.getElementById('weight');
-        let tbody = tb.querySelector('tbody');
-        if (!tbody) {
-            tbody = document.createElement('tbody');
-            tb.appendChild(tbody);
-        }
-        tbody.innerHTML = '';
-        data.forEach(p => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `<td>${p.name}</td><td>${p.skiped || 0}</td><td>${p.played || 0}</td><td>${p.weight || 0}</td>`;
-            tbody.appendChild(tr);
+function renderWeights(rows) {
+    const table = document.getElementById('weight');
+    if (!table) return;
+    let tbody = table.querySelector('tbody');
+    if (!tbody) {
+        tbody = document.createElement('tbody');
+        table.appendChild(tbody);
+    }
+    tbody.replaceChildren();
+    (rows || []).forEach(player => {
+        const tr = document.createElement('tr');
+        [player.name, player.skiped != null ? player.skiped : 0,
+         player.played != null ? player.played : 0,
+         player.weight != null ? player.weight : 0].forEach(value => {
+            const td = document.createElement('td');
+            td.textContent = String(value);
+            tr.appendChild(td);
         });
-    }).catch(console.error);
+        tbody.appendChild(tr);
+    });
+}
+
+async function update_weight() {
+    if (Offline.isOnline()) {
+        try {
+            const response = await Offline.fetchWithTimeout('/weigth/{{roomid}}', {
+                method: 'POST',
+                headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+                body: JSON.stringify([1, 2, 3, 4].map(index => ({
+                    name: document.getElementById('player' + index).value
+                })))
+            });
+            if (response.ok) {
+                const data = await response.json();
+                if (Array.isArray(data)) {
+                    renderWeights(data);
+                    return;
+                }
+            }
+        } catch (error) {
+            console.warn('[offline] веса с сервера недоступны, считаем локально', error);
+        }
+    }
+    renderWeights(SelectionModel.weights(Offline.getActivePlayers(), Offline.getResultsMap()));
 }
 
 // ============================================================
@@ -4960,17 +5003,32 @@ async function fetchPredictions() {
     const assigned = [1, 2, 3, 4].map((index) => ({
         name: (document.getElementById(`player${index}`)?.value || '').trim()
     }));
-    const response = await fetch('/predictgames/{{roomid}}/3', {
-        method: 'POST',
-        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            assigned,
-            one_game_forbiden: one_game_block_array.map((name) => ({ name }))
-        })
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
-    return Array.isArray(data) ? data : [];
+    if (Offline.isOnline()) {
+        try {
+            const response = await Offline.fetchWithTimeout('/predictgames/{{roomid}}/3', {
+                method: 'POST',
+                headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    assigned,
+                    one_game_forbiden: one_game_block_array.map((name) => ({ name }))
+                })
+            });
+            if (response.ok) {
+                const data = await response.json();
+                if (Array.isArray(data) && data.length) return data;
+            }
+        } catch (error) {
+            console.warn('[offline] прогноз с сервера недоступен, считаем локально', error);
+        }
+    }
+    return SelectionModel.forecast(
+        Offline.getActivePlayers(),
+        Offline.getResultsMap(),
+        assigned,
+        one_game_block_array,
+        Number(gameindex) || 1,
+        3
+    );
 }
 
 async function renderGamesOverview() {
@@ -5253,7 +5311,13 @@ function FinalizeRoom() {
         if (!confirm('Текущий бой не сохранён. Завершить комнату без него?')) return;
     }
 
-    fetch(`/api/finalizeroom/{{roomid}}`, { method: 'POST' })
+    if (!Offline.isOnline()) {
+        alert('Комната завершается на сервере. Результаты боев уже сохранены локально — ' +
+              'завершите комнату, когда появится связь.');
+        return;
+    }
+
+    Offline.fetchWithTimeout(`/api/finalizeroom/{{roomid}}`, { method: 'POST' })
         .then(async r => {
             const data = await r.json().catch(() => null);
             if (!r.ok) throw new Error((data && data.status) || `HTTP ${r.status}`);
@@ -5273,22 +5337,15 @@ function FinalizeRoom() {
         });
 }
 
-async function ClearCurrentGameLog(forced = true) {
+function ClearCurrentGameLog(forced = true) {
     if (forced && !confirm(`Вы уверены, что хотите стереть данные за бой ${gameindex}?`)) return;
 
     const savedIndex = Number(gameindex);
     if (forced) {
-        // «Очистить бой» — удаляем сохранённый результат на сервере.
+        // «Очистить бой» — удаляем результат локально и ставим в очередь.
         // «Сбросить» (forced=false) только сбрасывает ввод и базу не трогает.
-        try {
-            const r = await fetch(`/gameresult/{{roomid}}/${savedIndex}`, { method: 'DELETE' });
-            const data = await r.json().catch(() => null);
-            if (!r.ok) throw new Error((data && data.message) || `HTTP ${r.status}`);
-        } catch (err) {
-            console.error('[ClearCurrentGameLog]', err);
-            alert('Не удалось удалить сохранённый результат: ' + err.message);
-            return;
-        }
+        Offline.deleteGameLocal(savedIndex);
+        Offline.enqueue('deleteGame', { gameindex: savedIndex });
     }
 
     gameState.scores = Array(gameData.players.length).fill(0);
@@ -5307,6 +5364,7 @@ async function ClearCurrentGameLog(forced = true) {
     updateQuestionCard();
     saveGame();
     showResetGameOver();
+    redrawBrackets();
     document.getElementById('answerControls').style.display = 'block';
     document.getElementById('nextQuestionBtn').style.display = 'inline-flex';
     document.getElementById('prevQuestionBtn').style.display = 'inline-flex';
@@ -5327,6 +5385,9 @@ function Info() {
 // ============================================================
 function init_page() {
     gameindex = {{gameindex}};
+    // Если на устройстве есть неотправленные бои, следующий номер не должен с ними совпасть.
+    const localNext = Offline.getNextGameindex();
+    if (localNext > Number(gameindex)) gameindex = localNext;
     document.getElementById('game').textContent = `🎯 Игра ${gameindex}`;
 
     loadPackagesFromLocalStorage();
@@ -5339,10 +5400,9 @@ function init_page() {
     renderPackageSelector();
 
     loadGame(gameindex);
-    fetch("/activeplayers/{{roomid}}").then(r => r.json()).then(data => {
-        active = data;
-        UpdateActivePlayer(active);
-    }).catch(console.error);
+    // Игроки, история и очередь отправки берутся из локального состояния;
+    // если сервер доступен, оно обновится в фоне.
+    Offline.init();
     update_weight();
     initControlButtons();
     updatePackageInfo();
@@ -5714,6 +5774,479 @@ const NameSuggest = (() => {
 })();
 
 NameSuggest.init();
+
+// ============================================================
+// 22. АВТОНОМНАЯ РАБОТА: ЛОКАЛЬНОЕ СОСТОЯНИЕ И ОЧЕРЕДЬ ОТПРАВКИ
+// ============================================================
+const SelectionModel = (() => {
+    const STORAGE_KEY = 'svoyak_selection_model_v1';
+    const BUILTIN = { id: 'builtin-simple', version: 1, title: 'Упрощённый офлайн-подбор' };
+    let model = BUILTIN;
+    try {
+        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+        if (saved && saved.id) model = saved;
+    } catch (error) { /* ignore */ }
+
+    function random(seed) {
+        let value = (Number(seed) || 1) >>> 0;
+        return () => {
+            value = (value + 0x6D2B79F5) | 0;
+            let t = Math.imul(value ^ (value >>> 15), 1 | value);
+            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+    }
+
+    function metrics(active, results) {
+        const games = {};
+        const pairs = {};
+        const ensure = (name) => {
+            if (!name) return;
+            if (!(name in games)) { games[name] = 0; pairs[name] = {}; }
+        };
+        active.forEach(player => ensure(player.name));
+        Object.values(results || {}).forEach(rows => {
+            (rows || []).forEach(row => ensure(row.name));
+            (rows || []).forEach(row => { games[row.name] = (games[row.name] || 0) + 1; });
+            for (let i = 0; i < rows.length; i++) {
+                for (let j = i + 1; j < rows.length; j++) {
+                    const a = rows[i].name;
+                    const b = rows[j].name;
+                    if (!a || !b) continue;
+                    pairs[a][b] = (pairs[a][b] || 0) + 1;
+                    pairs[b][a] = (pairs[b][a] || 0) + 1;
+                }
+            }
+        });
+        return { games, pairs };
+    }
+
+    // Упрощённая модель: сначала меньше сыгранных игр, затем меньше общих игр.
+    function fill(active, results, assigned, forbidden, seed) {
+        const slots = (assigned || []).slice(0, 4).map(item => ({ name: String(item && item.name || '').trim() }));
+        while (slots.length < 4) slots.push({ name: '' });
+        const forbiddenSet = new Set((forbidden || []).map(name => String(name)));
+        const { games, pairs } = metrics(active, results);
+        const chosen = slots.map(slot => slot.name).filter(Boolean);
+        const available = active.map(player => player.name)
+            .filter(name => name && !chosen.includes(name) && !forbiddenSet.has(name));
+        const rnd = random(seed);
+        while (chosen.length < 4 && available.length) {
+            let bestIndex = -1;
+            let bestCost = Infinity;
+            available.forEach((name, index) => {
+                const pairCost = chosen.reduce((sum, other) => sum + ((pairs[name] && pairs[name][other]) || 0), 0);
+                const cost = (games[name] || 0) * 100 + pairCost * 10 + rnd() * 0.01;
+                if (cost < bestCost) { bestCost = cost; bestIndex = index; }
+            });
+            if (bestIndex < 0) break;
+            chosen.push(available[bestIndex]);
+            available.splice(bestIndex, 1);
+        }
+        let cursor = 0;
+        return slots.map(slot => {
+            if (slot.name) return { name: slot.name };
+            const name = chosen[cursor] || '';
+            cursor += 1;
+            return { name };
+        });
+    }
+
+    function forecast(active, results, assigned, forbidden, seed, count = 3) {
+        const simulated = {};
+        Object.keys(results || {}).forEach(key => {
+            simulated[key] = (results[key] || []).map(row => ({ name: row.name }));
+        });
+        const out = [];
+        let next = fill(active, simulated, assigned, forbidden, seed);
+        for (let i = 0; i < count; i++) {
+            out.push({ shift: i, data: next.map(item => ({ name: item.name })) });
+            simulated['__sim_' + i] = next.filter(item => item.name).map(item => ({ name: item.name }));
+            next = fill(active, simulated, [], forbidden, (Number(seed) || 1) + i + 1);
+        }
+        return out;
+    }
+
+    function weights(active, results) {
+        const { games, pairs } = metrics(active, results);
+        return active.map(player => {
+            const pairSum = Object.values(pairs[player.name] || {}).reduce((sum, value) => sum + value, 0);
+            const played = games[player.name] || 0;
+            return {
+                name: player.name,
+                skiped: '—',
+                played,
+                weight: 1000 - played * 100 - pairSum * 5
+            };
+        }).sort((a, b) => b.weight - a.weight);
+    }
+
+    return { fill, forecast, weights, info: () => model };
+})();
+
+const Offline = (() => {
+    const roomId = Number({{roomid}});
+    const STATE_KEY = 'svoyak_room_' + roomId + '_state_v1';
+    const OUTBOX_KEY = 'svoyak_room_' + roomId + '_outbox_v1';
+    let state = loadState();
+    let outbox = loadOutbox();
+    let online = navigator.onLine;
+    let flushing = false;
+    let checking = false;
+    let timer = null;
+    let lastError = '';
+
+    function loadState() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(STATE_KEY) || 'null');
+            if (saved && Number(saved.roomId) === roomId) {
+                return {
+                    roomId,
+                    activePlayers: Array.isArray(saved.activePlayers) ? saved.activePlayers : [],
+                    results: saved.results && typeof saved.results === 'object' ? saved.results : {},
+                    updatedAt: saved.updatedAt || null
+                };
+            }
+        } catch (error) { /* ignore */ }
+        return { roomId, activePlayers: [], results: {}, updatedAt: null };
+    }
+
+    function loadOutbox() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(OUTBOX_KEY) || '[]');
+            return Array.isArray(saved) ? saved : [];
+        } catch (error) {
+            return [];
+        }
+    }
+
+    function saveState() {
+        state.updatedAt = new Date().toISOString();
+        try {
+            localStorage.setItem(STATE_KEY, JSON.stringify(state));
+        } catch (error) {
+            console.error('[offline] не удалось сохранить состояние', error);
+        }
+    }
+
+    function saveOutbox() {
+        try {
+            localStorage.setItem(OUTBOX_KEY, JSON.stringify(outbox));
+        } catch (error) {
+            console.error('[offline] не удалось сохранить очередь', error);
+        }
+    }
+
+    function plural(count, one, few, many) {
+        const mod10 = count % 10;
+        const mod100 = count % 100;
+        if (mod10 === 1 && mod100 !== 11) return one;
+        if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+        return many;
+    }
+
+    function updateBanner() {
+        const banner = document.getElementById('offline-banner');
+        if (!banner) return;
+        const text = document.getElementById('offline-banner-text');
+        const retry = document.getElementById('offline-retry');
+        const pending = outbox.length;
+        banner.hidden = online && pending === 0;
+        banner.classList.toggle('is-offline', !online);
+        if (!online) {
+            text.textContent = pending
+                ? 'Нет связи с сервером. Работаем локально, ' + pending + ' ' +
+                  plural(pending, 'изменение', 'изменения', 'изменений') + ' в очереди.'
+                : 'Нет связи с сервером. Работаем локально — данные сохраняются на этом устройстве.';
+            retry.hidden = false;
+        } else if (pending) {
+            text.textContent = (flushing ? 'Синхронизация… ' : 'Не отправлено: ') +
+                pending + (lastError ? '. ' + lastError : '');
+            retry.hidden = false;
+        }
+    }
+
+    function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+        return fetch(url, Object.assign({}, options, { signal: controller.signal }))
+            .finally(() => clearTimeout(timeout));
+    }
+
+    function setOnline(value) {
+        if (online === value) return false;
+        online = value;
+        updateBanner();
+        if (online) {
+            clearTimeout(timer);
+            flush();
+        } else {
+            scheduleCheck();
+        }
+        return true;
+    }
+
+    function noteFailure() {
+        setOnline(false);
+    }
+
+    async function check() {
+        if (checking) return;
+        checking = true;
+        try {
+            const response = await fetchWithTimeout('/api/ping', { cache: 'no-store' }, 4000);
+            setOnline(response.ok);
+        } catch (error) {
+            setOnline(false);
+        } finally {
+            checking = false;
+            scheduleCheck();
+        }
+    }
+
+    function scheduleCheck() {
+        clearTimeout(timer);
+        timer = setTimeout(check, online ? 30000 : 8000);
+    }
+
+    function getActivePlayers() {
+        return state.activePlayers.map(player => ({ playerid: player.playerid, name: player.name }));
+    }
+
+    function setActivePlayers(list) {
+        const seen = new Set();
+        const players = [];
+        (list || []).forEach(player => {
+            const name = String(player && player.name || '').trim();
+            if (!name || seen.has(name)) return;
+            seen.add(name);
+            players.push({ playerid: player && player.playerid != null ? player.playerid : null, name });
+        });
+        state.activePlayers = players;
+        saveState();
+    }
+
+    function getResultsMap() { return state.results; }
+
+    function getResults() {
+        return Object.keys(state.results).map(Number).sort((a, b) => a - b)
+            .map(gameindex => ({ gameindex, scores: state.results[gameindex] }));
+    }
+
+    function getNextGameindex() {
+        const keys = Object.keys(state.results).map(Number);
+        return (keys.length ? Math.max.apply(null, keys) : 0) + 1;
+    }
+
+    function setResultsFromServer(list) {
+        const serverMap = {};
+        (list || []).forEach(game => {
+            if (!game || !Array.isArray(game.scores)) return;
+            serverMap[Number(game.gameindex)] = game.scores.map(row => Object.assign({}, row));
+        });
+        // Если в очереди есть несохранённые игры, локальные данные важнее.
+        state.results = outbox.length ? Object.assign(serverMap, state.results) : serverMap;
+        saveState();
+    }
+
+    function computeRows(scores) {
+        const rows = [];
+        (scores || []).forEach(item => {
+            const name = String(item && item.name || '').trim();
+            const raw = item && item.score;
+            if (!name || raw === undefined || raw === null || String(raw).trim() === '') return;
+            const score = Number(String(raw).replace(',', '.'));
+            if (!Number.isFinite(score)) return;
+            rows.push({ playerid: item.playerid != null ? item.playerid : null, name, score });
+        });
+        rows.forEach(row => {
+            const greater = rows.filter(other => other.score > row.score).length;
+            const greaterOrEqual = rows.filter(other => other.score >= row.score).length;
+            row.position = (greater + 1 + greaterOrEqual) / 2;
+            row.points = Math.round((5 - row.position + row.score / 1000) * 1000) / 1000;
+        });
+        return rows;
+    }
+
+    function saveGameLocal(gameindex, scores) {
+        const rows = computeRows(scores);
+        state.results[Number(gameindex)] = rows;
+        saveState();
+        return rows;
+    }
+
+    function deleteGameLocal(gameindex) {
+        delete state.results[Number(gameindex)];
+        saveState();
+    }
+
+    function enqueue(type, payload) {
+        outbox.push({
+            id: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+            type,
+            payload,
+            createdAt: new Date().toISOString(),
+            attempts: 0
+        });
+        saveOutbox();
+        updateBanner();
+        flush();
+    }
+
+    function send(op) {
+        const options = { method: 'POST', headers: { 'Content-Type': 'application/json' } };
+        let url;
+        let body;
+        if (op.type === 'addPlayer') {
+            url = '/activeplayers/' + roomId;
+            body = { name: op.payload.name };
+        } else if (op.type === 'removePlayer') {
+            url = '/removeactiveplayer/' + roomId;
+            body = { name: op.payload.name };
+        } else if (op.type === 'saveGame') {
+            url = '/gameresult/' + roomId;
+            body = {
+                roomid: roomId,
+                gameindex: Number(op.payload.gameindex),
+                scores: op.payload.scores,
+                detailed: op.payload.detailed || null
+            };
+        } else if (op.type === 'deleteGame') {
+            url = '/gameresult/' + roomId + '/' + Number(op.payload.gameindex);
+            options.method = 'DELETE';
+            delete options.headers;
+        } else {
+            throw new Error('Неизвестная операция ' + op.type);
+        }
+        if (body !== undefined) options.body = JSON.stringify(body);
+        return fetchWithTimeout(url, options);
+    }
+
+    async function flush() {
+        if (flushing || !outbox.length) { updateBanner(); return; }
+        flushing = true;
+        lastError = '';
+        updateBanner();
+        while (outbox.length) {
+            const op = outbox[0];
+            let response;
+            try {
+                response = await send(op);
+            } catch (error) {
+                noteFailure();
+                break;
+            }
+            if (response.ok) {
+                outbox.shift();
+                saveOutbox();
+                if (op.type === 'saveGame') {
+                    try {
+                        const rows = await response.json();
+                        if (Array.isArray(rows)) {
+                            state.results[Number(op.payload.gameindex)] = rows;
+                            saveState();
+                        }
+                    } catch (error) { /* тело ответа не обязательно */ }
+                }
+                continue;
+            }
+            if (response.status === 409) {
+                lastError = 'комната уже завершена на сервере';
+                outbox.shift();
+                saveOutbox();
+                continue;
+            }
+            op.attempts = (op.attempts || 0) + 1;
+            lastError = 'ошибка сервера ' + response.status;
+            if (op.attempts >= 3) {
+                outbox.shift();
+                saveOutbox();
+                continue;
+            }
+            saveOutbox();
+            break;
+        }
+        flushing = false;
+        saveOutbox();
+        updateBanner();
+        if (online && outbox.length === 0) await syncFromServer();
+    }
+
+    async function syncFromServer() {
+        try {
+            const [playersResponse, historyResponse] = await Promise.all([
+                fetchWithTimeout('/activeplayers/' + roomId, { cache: 'no-store' }),
+                fetchWithTimeout('/gameresult/' + roomId, { cache: 'no-store' })
+            ]);
+            if (playersResponse.ok) {
+                const players = await playersResponse.json();
+                if (Array.isArray(players)) setActivePlayers(players);
+            }
+            if (historyResponse.ok) {
+                const history = await historyResponse.json();
+                if (Array.isArray(history)) setResultsFromServer(history);
+            }
+            active = getActivePlayers();
+            UpdateActivePlayer(active);
+            redrawBrackets();
+            update_weight();
+        } catch (error) {
+            noteFailure();
+        }
+    }
+
+    async function init() {
+        active = getActivePlayers();
+        UpdateActivePlayer(active);
+        updateBanner();
+        scheduleCheck();
+        window.addEventListener('online', () => { online = true; updateBanner(); flush(); });
+        window.addEventListener('offline', () => { setOnline(false); });
+        if (navigator.onLine) {
+            online = true;
+            await flush();
+            if (!outbox.length) await syncFromServer();
+        } else {
+            online = false;
+            updateBanner();
+            redrawBrackets();
+        }
+    }
+
+    function retry() {
+        check();
+        if (online) flush();
+    }
+
+    return {
+        init, retry, flush, check,
+        isOnline: () => online,
+        isFlushing: () => flushing,
+        pending: () => outbox.length,
+        getActivePlayers, setActivePlayers,
+        getResults, getResultsMap, getNextGameindex,
+        setResultsFromServer, saveGameLocal, deleteGameLocal,
+        enqueue, fetchWithTimeout
+    };
+})();
+
+window.Offline = Offline;
+
+// Офлайн-перезагрузка: service worker кеширует страницу комнаты.
+// Работает только в защищённом контексте (https или localhost).
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js', { scope: '/' })
+            .then(async (registration) => {
+                await navigator.serviceWorker.ready;
+                const worker = registration.active || navigator.serviceWorker.controller;
+                if (worker) {
+                    worker.postMessage({ type: 'cache-page', url: window.location.href });
+                }
+            })
+            .catch((error) => console.warn('[sw] регистрация не удалась', error));
+    });
+}
 
 document.addEventListener('DOMContentLoaded', init_page);
 </script>

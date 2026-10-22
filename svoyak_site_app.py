@@ -931,6 +931,23 @@ def ReturnFuturePositions(roomid, games_num):
 
 
 
+@app.route('/sw.js', subdomain = "svoyak")
+def ServiceWorker():
+    """Service worker для офлайн-перезагрузки страницы комнаты."""
+    response = app.send_static_file('sw.js')
+    response.headers['Service-Worker-Allowed'] = '/'
+    response.headers['Cache-Control'] = 'no-cache'
+    return response
+
+
+@app.route('/api/ping', subdomain = "svoyak", methods = ["GET", "HEAD"])
+def PingApi():
+    """Лёгкая проверка доступности сервера для офлайн-режима страницы."""
+    response = app.response_class(json.dumps({"status": "ok"}), mimetype="application/json")
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 @app.route('/api/addroom', subdomain = "svoyak", methods = ["POST"])
 def CreateRoomApi():
     data = request.get_json(silent=True) or {}
