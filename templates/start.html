@@ -3,617 +3,1570 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Сыграем в свояк? - Турнирная платформа</title>
+    <title>Свояк — турниры по своей игре</title>
+    <meta name="description" content="Свояк — платформа для проведения соревнований по вашей игре: комнаты, подсчёт очков, турнирные сетки и статистика игроков.">
+    <meta name="color-scheme" content="light">
+    <meta name="theme-color" content="#F6F7F4">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%2334557A'/%3E%3Ctext x='32' y='45' font-family='Segoe UI,Arial,sans-serif' font-size='38' font-weight='700' text-anchor='middle' fill='%23ffffff'%3E%D0%A1%3C/text%3E%3C/svg%3E">
     <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            font-family: Arial, sans-serif;
+        :root {
+            --bg: #F6F7F4;
+            --surface: #FFFFFF;
+            --ink: #1B1D1F;
+            --muted: #6A7078;
+            --line: #E3E6DF;
+            --line-strong: #D2D7CE;
+            --accent: #34557A;
+            --accent-hover: #2A4664;
+            --accent-soft: #EDF2F7;
+            --gold: #8A641F;
+            --green: #2E6B4F;
+            --red: #A14A3F;
+            --radius: 12px;
+            --shell: 1060px;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; }
+
+        html {
+            scroll-behavior: smooth;
+            -webkit-text-size-adjust: 100%;
         }
 
         body {
-            background-color: #f5f5f5;
+            margin: 0;
+            font-family: "Segoe UI Variable Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-size: 15px;
+            line-height: 1.45;
+            color: var(--ink);
+            background: var(--bg);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
 
-        .header {
-            background-color: #2c3e50;
-            padding: 1rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            color: white;
-        }
+        h1, h2, h3, p { margin: 0; }
+        a { color: inherit; text-decoration: none; }
+        button { font: inherit; color: inherit; }
+        svg { display: block; }
+        [hidden] { display: none !important; }
 
-        .logo {
-            font-size: 1.5rem;
-            font-weight: bold;
-        }
+        ::selection { background: rgba(52, 85, 122, .16); }
 
-        .auth-buttons button {
-            margin-left: 1rem;
-            padding: 0.5rem 1rem;
-            border: none;
+        :focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 3px;
             border-radius: 4px;
-            cursor: pointer;
-            background-color: #3498db;
-            color: white;
         }
 
-        .main-content {
-            display: grid;
-            grid-template-columns: 3fr 1fr;
-            gap: 2rem;
-            padding: 2rem;
-            max-width: 1200px;
-            margin: 0 auto;
+        .shell {
+            width: min(var(--shell), 100% - 48px);
+            margin-inline: auto;
         }
 
-        .tournament-creation {
-            background-color: white;
-            padding: 1.5rem;
+        /* ---------- Header ---------- */
+
+        .site-header {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            background: var(--surface);
+            border-bottom: 1px solid var(--line);
+        }
+
+        .header-inner {
+            display: flex;
+            align-items: center;
+            gap: 28px;
+            height: 64px;
+        }
+
+        .brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 9px;
+            font-size: 1.02rem;
+            font-weight: 700;
+            letter-spacing: -.015em;
+        }
+
+        .brand-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 2px;
+            background: var(--accent);
+        }
+
+        .main-nav {
+            display: flex;
+            align-items: center;
+            gap: 22px;
+            margin-left: 2px;
+        }
+
+        .main-nav a {
+            font-size: .86rem;
+            color: var(--muted);
+            transition: color .15s ease;
+        }
+
+        .main-nav a:hover { color: var(--ink); }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-left: auto;
+        }
+
+        .auth-link {
+            font-size: .85rem;
+            font-weight: 600;
+            color: var(--muted);
+            transition: color .15s ease;
+        }
+
+        .auth-link:hover { color: var(--ink); }
+
+        /* ---------- Buttons ---------- */
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: .55rem .9rem;
+            border: 1px solid transparent;
             border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            font-size: .85rem;
+            font-weight: 600;
+            line-height: 1.2;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: background .15s ease, border-color .15s ease, color .15s ease;
         }
 
-        .tournaments-section {
+        .btn-primary {
+            background: var(--accent);
+            color: #fff;
+        }
+
+        .btn-primary:hover { background: var(--accent-hover); }
+
+        .btn-secondary {
+            background: var(--surface);
+            border-color: var(--line-strong);
+            color: var(--ink);
+        }
+
+        .btn-secondary:hover { border-color: #AEB6AA; }
+
+        .btn-link {
+            font-size: .84rem;
+            font-weight: 600;
+            color: var(--accent);
+            white-space: nowrap;
+        }
+
+        .btn-link:hover { text-decoration: underline; }
+
+        /* ---------- Intro ---------- */
+
+        .intro {
+            padding: 24px 0 20px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .intro-grid {
             display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: 2rem;
-            margin-top: 2rem;
+            grid-template-columns: minmax(0, 1.55fr) minmax(250px, .45fr);
+            gap: 48px;
+            align-items: end;
+        }
+
+        .eyebrow {
+            margin-bottom: 8px;
+            font-size: .78rem;
+            color: var(--muted);
+        }
+
+        .intro h1 {
+            font-size: clamp(1.8rem, 3.2vw, 2.35rem);
+            font-weight: 650;
+            line-height: 1.08;
+            letter-spacing: -.032em;
+        }
+
+        .intro .lead {
+            max-width: 54ch;
+            margin-top: 8px;
+            font-size: .93rem;
+            line-height: 1.45;
+            color: var(--muted);
+        }
+
+        .intro-actions {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-top: 14px;
+        }
+
+        .intro-note {
+            padding-left: 22px;
+            border-left: 1px solid var(--line);
+            font-size: .82rem;
+            line-height: 1.45;
+            color: var(--muted);
+        }
+
+        .intro-note strong {
+            display: block;
+            margin-bottom: 4px;
+            font-size: .85rem;
+            font-weight: 600;
+            color: var(--ink);
+        }
+
+        /* ---------- Shared card frame ---------- */
+
+        .card {
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            background: var(--surface);
+        }
+
+        .card-head {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding-bottom: 9px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .venue-mark {
+            display: grid;
+            place-items: center;
+            flex-shrink: 0;
+            width: 30px;
+            height: 30px;
+            border-radius: 8px;
+            font-size: .8rem;
+            font-weight: 650;
+            line-height: 1;
+        }
+
+        .venue-mark--blue { background: #E8EEF5; color: #34557A; }
+        .venue-mark--sage { background: #EAF0E8; color: #4D6B4A; }
+        .venue-mark--sand { background: #F3EEE4; color: #7A5E35; }
+
+        .card-identity {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .card-title {
+            overflow: hidden;
+            font-size: .9rem;
+            font-weight: 600;
+            line-height: 1.25;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+
+        .card-sub {
+            margin-top: 1px;
+            font-size: .73rem;
+            color: var(--muted);
+            white-space: nowrap;
+        }
+
+        .card-foot {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-top: auto;
+            padding-top: 7px;
+            border-top: 1px solid var(--line);
+            font-size: .74rem;
+            color: var(--muted);
+        }
+
+        .card-link {
+            font-size: .77rem;
+            font-weight: 600;
+            color: var(--accent);
+            white-space: nowrap;
+        }
+
+        .card:hover .card-link { text-decoration: underline; }
+
+        /* ---------- Sections ---------- */
+
+        .section {
+            margin-top: 28px;
+            scroll-margin-top: 76px;
+        }
+
+        .intro + .section { margin-top: 22px; }
+
+        .section-head {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .section-head h2 {
+            font-size: 1rem;
+            font-weight: 650;
+            letter-spacing: -.012em;
+        }
+
+        .section-note {
+            font-size: .78rem;
+            color: var(--muted);
+            white-space: nowrap;
+        }
+
+        .section-tools {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .track-arrow {
+            display: grid;
+            place-items: center;
+            width: 30px;
+            height: 30px;
+            padding: 0;
+            border: 1px solid var(--line-strong);
+            border-radius: 7px;
+            background: var(--surface);
+            color: var(--muted);
+            font-size: .9rem;
+            line-height: 1;
+            cursor: pointer;
+            transition: color .15s ease, border-color .15s ease;
+        }
+
+        .track-arrow:hover {
+            color: var(--ink);
+            border-color: #AEB6AA;
+        }
+
+        /* ---------- Tournament cards ---------- */
+
+        .tournament-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
         }
 
         .tournament-card {
-            background: white;
-            padding: 1.5rem;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin: 1rem 0;
-        }
-
-        .winners-list {
             display: flex;
             flex-direction: column;
-            gap: 0.5rem;
-            margin: 1rem 0;
+            min-height: 174px;
+            padding: 14px;
+            transition: border-color .15s ease;
         }
 
-        .winner {
-            display: flex;
+        .tournament-card:hover { border-color: #B9C1B5; }
+
+        .status {
+            display: inline-flex;
             align-items: center;
-            padding: 0.8rem;
-            background: #f8f9fa;
-            border-radius: 4px;
+            gap: 5px;
+            padding-top: 3px;
+            font-size: .72rem;
+            font-weight: 600;
+            color: var(--green);
+            white-space: nowrap;
         }
 
-        .winner-icon {
-            font-size: 1.2rem;
-            margin-right: 1rem;
-        }
-
-        .status-indicator {
-            display: inline-block;
-            padding: 0.2rem 0.5rem;
-            border-radius: 12px;
-            font-size: 0.8rem;
-        }
-
-        .status-active {
-            background: #d4edda;
-            color: #155724;
-        }
-
-        .status-completed {
-            background: #fff3cd;
-            color: #856404;
-        }
-
-        .recent-events {
-            background-color: white;
-            padding: 1.5rem;
-            margin: 1rem;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-
-        .battle-card {
-            border: 1px solid #eee;
-            border-radius: 8px;
-            padding: 1rem;
-            margin: 1rem 0;
-        }
-
-        .participants {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 0.5rem;
-            margin: 1rem 0;
-        }
-
-        .participant {
-            display: flex;
-            align-items: center;
-            padding: 0.5rem;
-            background-color: #f8f9fa;
-            border-radius: 4px;
-        }
-
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0,0,0,0.5);
-            justify-content: center;
-            align-items: center;
-        }
-
-        .modal-content {
-            background-color: white;
-            padding: 2rem;
-            border-radius: 8px;
-            width: 300px;
-        }
-
-        input {
-            width: 100%;
-            padding: 0.5rem;
-            margin: 0.5rem 0;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
-
-        .loader {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #3498db;
+        .status::before {
+            content: "";
+            width: 5px;
+            height: 5px;
             border-radius: 50%;
+            background: var(--green);
+        }
+
+        .tournament-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin: 10px 0;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .tournament-stat strong {
+            display: block;
+            font-size: 1.25rem;
+            font-weight: 650;
+            line-height: 1.1;
+            letter-spacing: -.02em;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .tournament-stat span {
+            font-size: .73rem;
+            color: var(--muted);
+        }
+
+        .create-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            min-height: 174px;
+            padding: 18px;
+            border: 1px dashed var(--line-strong);
+            border-radius: var(--radius);
+            text-align: center;
+            transition: border-color .15s ease, background .15s ease;
+        }
+
+        .create-card:hover {
+            border-color: #AEB6AA;
+            background: #FBFCF9;
+        }
+
+        .create-plus {
+            display: grid;
+            place-items: center;
             width: 30px;
             height: 30px;
-            animation: spin 1s linear infinite;
-            margin: 20px auto;
+            margin-bottom: 1px;
+            border-radius: 9px;
+            background: var(--accent-soft);
+            color: var(--accent);
+            font-size: 1.2rem;
+            line-height: 1;
         }
 
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        .create-card strong {
+            font-size: .9rem;
+            font-weight: 600;
         }
 
-        .error-message {
-            color: #dc3545;
-            padding: 1rem;
-            text-align: center;
+        .create-card span:last-child {
+            max-width: 24ch;
+            font-size: .76rem;
+            color: var(--muted);
         }
 
-        .games-grid {
+        /* ---------- Battle cards ---------- */
+
+        .battle-track {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(var(--card-width), 1fr));
-            gap: 15px;
-            margin-bottom: 25px;
+            grid-auto-flow: column;
+            grid-auto-columns: 330px;
+            gap: 16px;
+            overflow-x: auto;
+            overscroll-behavior-x: contain;
+            scroll-snap-type: x mandatory;
+            padding: 16px 2px 8px;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
         }
-        
-        .game-card {
-            border-radius: 8px;
-            box-shadow: 0 3px 6px rgba(0,0,0,0.1);
-            padding: 12px;
-            background-color: white;
+
+        .battle-track::-webkit-scrollbar { display: none; }
+
+        .battle-card {
             display: flex;
             flex-direction: column;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-        
-        .game-card:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 5px 10px rgba(0,0,0,0.15);
-        }
-        
-        .game-card.past {
-            border-left: 4px solid var(--winner-color);
-        }
-        
-        .game-card.future {
-            border-left: 4px solid #f39c12;
-        }
-        
-        .game-card.tournament {
-            border-left: 4px solid #e74c3c;
-        }
-        
-        .game-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
-            padding-bottom: 8px;
-            border-bottom: 1px solid #eee;
-        }
-        
-        .game-id {
-            font-weight: bold;
-            color: var(--primary-color);
-            font-size: 1.1rem;
-        }
-        
-        .game-date {
-            color: #7f8c8d;
-            font-size: 0.85rem;
-        }
-        
-        .game-type {
-            font-size: 0.75rem;
-            background-color: #e0e0e0;
-            padding: 2px 8px;
-            border-radius: 10px;
-            margin-left: 8px;
-        }
-        
-        .game-type.tournament {
-            background-color: #fde8e8;
-            color: #e74c3c;
-        }
-        
-        .players-container {
-            display: flex;
-        }
-        
-        .players-column {
-            flex-grow: 1;
-        }
-        
-        .player-row {
-            display: flex;
-            margin-bottom: 6px;
-            align-items: center;
-        }
-        
-        .player-place {
-            width: 24px;
-            text-align: center;
-            font-weight: bold;
-            margin-right: 8px;
-            flex-shrink: 0;
-        }
-        
-        .place-1 { color: #f1c40f; }
-        .place-2 { color: #95a5a6; }
-        .place-3 { color: #cd7f32; }
-        .place-4 { color: #7f8c8d; }
-        
-        .player-name {
-            flex-grow: 1;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            min-width: 100px;
-        }
-        
-        .player-score {
-            width: 50px;
-            text-align: right;
-            font-family: 'Courier New', monospace;
-            font-weight: bold;
-            color: var(--secondary-color);
-        }
-        
-        .player-points {
-            width: 50px;
-            text-align: right;
-            font-size: 0.85rem;
-            color: #7f8c8d;
-        }
-        
-        .positive-score {
-            color: #27ae60;
-        }
-        
-        .negative-score {
-            color: #e74c3c;
-        }
-        
-        .game-footer {
-            display: flex;
-            justify-content: space-between;
-            font-size: 0.75rem;
-            color: #7f8c8d;
-            margin-top: 10px;
-            padding-top: 8px;
-            border-top: 1px solid #eee;
+            min-height: 210px;
+            padding: 12px 14px 10px 16px;
+            border-left: 3px solid var(--green);
+            scroll-snap-align: start;
+            transition: border-color .15s ease;
         }
 
+        .battle-card:hover {
+            border-color: #B9C1B5;
+            border-left-color: var(--green);
+        }
+
+        .battle-head {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .battle-head-top {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            min-width: 0;
+        }
+
+        .battle-id {
+            font-size: 1.02rem;
+            font-weight: 700;
+            line-height: 1.15;
+            color: var(--accent);
+            letter-spacing: -.01em;
+            white-space: nowrap;
+        }
+
+        .battle-count {
+            padding: 2px 7px;
+            border-radius: 9px;
+            background: #F0F1EC;
+            color: var(--muted);
+            font-size: .64rem;
+            line-height: 1.2;
+            white-space: nowrap;
+        }
+
+        .battle-date {
+            margin-left: auto;
+            font-size: .72rem;
+            color: var(--muted);
+            white-space: nowrap;
+        }
+
+        .battle-venue {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 0;
+            font-size: .74rem;
+            color: var(--muted);
+        }
+
+        .battle-venue .venue-mark {
+            width: 22px;
+            height: 22px;
+            border-radius: 6px;
+            font-size: .66rem;
+        }
+
+        .battle-venue span:last-child {
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+
+        .battle-players {
+            margin: 3px 0;
+            padding: 0;
+            list-style: none;
+        }
+
+        .battle-player {
+            display: grid;
+            grid-template-columns: 22px minmax(0, 1fr) 46px 42px;
+            gap: 6px;
+            align-items: center;
+            padding: 4px 0;
+            font-size: .8rem;
+            line-height: 1.3;
+        }
+
+        .battle-place {
+            width: 22px;
+            font-size: .78rem;
+            font-weight: 700;
+            color: var(--muted);
+            text-align: center;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .battle-place.place-1 { color: #A47A1E; }
+        .battle-place.place-2 { color: #7C858C; }
+        .battle-place.place-3 { color: #A56A3F; }
+        .battle-place.place-4 { color: #8B9197; }
+
+        .battle-name {
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+
+        .battle-score {
+            font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+            font-size: .78rem;
+            font-weight: 700;
+            color: var(--ink);
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .battle-score.is-positive { color: var(--green); }
+        .battle-score.is-negative { color: var(--red); }
+
+        .battle-points {
+            font-size: .72rem;
+            color: var(--muted);
+            font-variant-numeric: tabular-nums;
+            text-align: right;
+        }
+
+        .battle-state {
+            color: var(--green);
+            font-weight: 600;
+        }
+
+        .battle-state::before {
+            content: "✔";
+            margin-right: 4px;
+        }
+
+        /* ---------- Winners ---------- */
+
+        .winner-track {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .winner-card {
+            display: flex;
+            flex-direction: column;
+            min-height: 136px;
+            padding: 12px;
+            transition: border-color .15s ease;
+        }
+
+        .winner-card:hover { border-color: #B9C1B5; }
+
+        .winner-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .winner-date {
+            font-size: .72rem;
+            color: var(--muted);
+            white-space: nowrap;
+        }
+
+        .winner-name {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            margin-top: 10px;
+            font-size: .98rem;
+            font-weight: 650;
+            line-height: 1.3;
+        }
+
+        .winner-name span {
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+
+        .winner-trophy {
+            flex: 0 0 auto;
+            width: 18px;
+            height: 18px;
+            color: var(--gold);
+        }
+
+        .icon-sprite {
+            position: absolute;
+            width: 0;
+            height: 0;
+            overflow: hidden;
+        }
+
+        .winner-event {
+            display: flex;
+            align-items: center;
+            flex: 1;
+            gap: 7px;
+            min-width: 0;
+            font-size: .76rem;
+            color: var(--muted);
+        }
+
+        .winner-event .venue-mark {
+            width: 22px;
+            height: 22px;
+            border-radius: 6px;
+            font-size: .66rem;
+        }
+
+        .winner-event span:last-child {
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+
+        .winner-card .card-foot {
+            justify-content: flex-end;
+            padding-top: 7px;
+            font-size: .71rem;
+        }
+
+        /* ---------- Skeletons ---------- */
+
+        @keyframes shimmer {
+            0% { background-position: 100% 0; }
+            100% { background-position: 0 0; }
+        }
+
+        .sk-line {
+            height: 11px;
+            margin-bottom: 9px;
+            border-radius: 5px;
+            background: linear-gradient(90deg, #EDEFEA 25%, #F7F8F4 37%, #EDEFEA 63%);
+            background-size: 400% 100%;
+            animation: shimmer 1.4s ease infinite;
+        }
+
+        .sk-line:last-child { margin-bottom: 0; }
+        .sk-line--sm { width: 42%; }
+        .sk-line--md { width: 70%; }
+        .sk-line--lg { width: 88%; height: 15px; }
+        .sk-line--row { height: 15px; }
+
+        .card.is-skeleton { pointer-events: none; }
+
+        /* ---------- Empty / error ---------- */
+
+        .state-box {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 26px 20px;
+            border: 1px dashed var(--line-strong);
+            border-radius: var(--radius);
+            background: rgba(255, 255, 255, .6);
+            text-align: center;
+        }
+
+        .state-icon {
+            display: grid;
+            place-items: center;
+            width: 38px;
+            height: 38px;
+            margin-bottom: 10px;
+            border-radius: 10px;
+            background: var(--accent-soft);
+            color: var(--accent);
+            font-size: 1rem;
+        }
+
+        .state-box strong {
+            font-size: .95rem;
+            font-weight: 650;
+        }
+
+        .state-box p {
+            max-width: 46ch;
+            margin-top: 4px;
+            font-size: .82rem;
+            color: var(--muted);
+        }
+
+        .state-box .btn { margin-top: 14px; }
+
+        .state-box--error {
+            border-color: #E7CFCB;
+            background: #FDF8F7;
+        }
+
+        .state-box--error .state-icon {
+            background: #F8E7E4;
+            color: var(--red);
+        }
+
+        /* Static mode: single state box instead of a scrolling track */
+
+        .tournament-cards.is-static,
+        .battle-track.is-static,
+        .winner-track.is-static {
+            display: block;
+            padding-top: 14px;
+        }
+
+        /* ---------- Toast ---------- */
+
+        .toast {
+            position: fixed;
+            left: 50%;
+            bottom: 22px;
+            z-index: 60;
+            padding: 9px 14px;
+            border-radius: 8px;
+            background: var(--ink);
+            color: #fff;
+            font-size: .82rem;
+            box-shadow: 0 12px 30px -14px rgba(0, 0, 0, .5);
+            opacity: 0;
+            transform: translate(-50%, 8px);
+            pointer-events: none;
+            transition: opacity .18s ease, transform .18s ease;
+        }
+
+        .toast.is-on {
+            opacity: 1;
+            transform: translate(-50%, 0);
+        }
+
+        /* ---------- Footer ---------- */
+
+        .site-footer {
+            margin-top: 36px;
+            padding: 18px 0 26px;
+            border-top: 1px solid var(--line);
+            color: var(--muted);
+            font-size: .78rem;
+        }
+
+        .footer-inner {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .footer-brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            color: var(--ink);
+            font-weight: 600;
+        }
+
+        .footer-brand .brand-dot {
+            width: 7px;
+            height: 7px;
+        }
+
+        /* ---------- Responsive ---------- */
+
+        @media (max-width: 1120px) {
+            .winner-track {
+                grid-auto-flow: column;
+                grid-auto-columns: 200px;
+                grid-template-columns: none;
+                gap: 12px;
+                overflow-x: auto;
+                overscroll-behavior-x: contain;
+                scroll-snap-type: x mandatory;
+                padding-bottom: 8px;
+                scrollbar-width: none;
+            }
+
+            .winner-track::-webkit-scrollbar { display: none; }
+            .winner-card { scroll-snap-align: start; }
+        }
+
+        @media (max-width: 880px) {
+            .intro { padding: 30px 0 26px; }
+
+            .intro-grid {
+                grid-template-columns: minmax(0, 1fr);
+                gap: 22px;
+            }
+
+            .intro-note {
+                padding-top: 15px;
+                padding-left: 0;
+                border-top: 1px solid var(--line);
+                border-left: 0;
+            }
+
+            .tournament-cards {
+                grid-auto-flow: column;
+                grid-auto-columns: min(330px, calc(100vw - 68px));
+                grid-template-columns: none;
+                gap: 14px;
+                overflow-x: auto;
+                overscroll-behavior-x: contain;
+                scroll-snap-type: x mandatory;
+                padding-bottom: 8px;
+                scrollbar-width: none;
+            }
+
+            .tournament-cards::-webkit-scrollbar { display: none; }
+            .tournament-card,
+            .create-card { scroll-snap-align: start; }
+        }
+
+        @media (max-width: 760px) {
+            .shell { width: min(var(--shell), 100% - 36px); }
+            .header-inner { gap: 18px; height: 58px; }
+            .main-nav { display: none; }
+            .intro { padding: 22px 0 20px; }
+            .section { margin-top: 24px; }
+        }
+
+        @media (max-width: 560px) {
+            .battle-track {
+                grid-auto-columns: min(330px, calc(100vw - 68px));
+                gap: 14px;
+            }
+
+            .intro-actions {
+                align-items: stretch;
+                flex-direction: column;
+                gap: 12px;
+            }
+
+            .intro-actions .btn { width: 100%; }
+            .intro-actions .btn-link { text-align: center; }
+        }
+
+        @media (max-width: 430px) {
+            .shell { width: min(var(--shell), 100% - 28px); }
+            .brand { font-size: .96rem; }
+            .header-actions .btn { padding: .5rem .7rem; font-size: .79rem; }
+            .section-note { display: none; }
+        }
+
+        @media (max-width: 360px) {
+            .battle-card { padding: 10px 12px 9px 13px; }
+
+            .battle-player {
+                grid-template-columns: 18px minmax(0, 1fr) 38px 36px;
+                gap: 4px;
+                font-size: .76rem;
+            }
+
+            .battle-place { font-size: .74rem; }
+            .battle-score { font-size: .74rem; }
+            .battle-points { font-size: .68rem; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            html { scroll-behavior: auto; }
+            *, *::before, *::after {
+                animation-duration: .01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: .01ms !important;
+            }
+        }
     </style>
 </head>
 <body>
-    <header class="header">
-        <div class="logo">Сыграем в свояк?</div>
-        <div class="auth-buttons">
-            <button onclick="showModal('login')">Войти</button>
-            <button onclick="showModal('register')">Регистрация</button>
+    <svg class="icon-sprite" width="0" height="0" aria-hidden="true" focusable="false">
+        <symbol id="icon-trophy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M7 4h10v5a5 5 0 0 1-10 0V4Z"/>
+            <path d="M7 6H4v1a4 4 0 0 0 4 4M17 6h3v1a4 4 0 0 1-4 4"/>
+            <path d="M12 14v7M8 21h8"/>
+        </symbol>
+    </svg>
+
+    <header class="site-header">
+        <div class="shell header-inner">
+            <a class="brand" href="/" aria-label="Свояк — на главную">
+                <span class="brand-dot" aria-hidden="true"></span>
+                Свояк
+            </a>
+
+            <nav class="main-nav" aria-label="Основная навигация">
+                <a href="#active">Турниры</a>
+                <a href="#games">Бои</a>
+                <a href="#winners">Победители</a>
+            </nav>
+
+            <div class="header-actions">
+                <a class="auth-link" href="#" data-auth>Войти</a>
+                <a class="btn btn-secondary" href="/init/0">Создать турнир</a>
+            </div>
         </div>
     </header>
 
-    <main class="main-content">
-        <div >
+    <main class="shell">
+        <section class="intro">
+            <div class="intro-grid">
+                <div>
+                    <p class="eyebrow">Турнирная платформа</p>
+                    <h1>Проводите турниры по своей игре</h1>
+                    <p class="lead">
+                        Комнаты для игры, подсчёт очков, история боёв и статистика игроков.
+                        Соберите участников и ведите турнир — результаты появятся здесь.
+                    </p>
+                    <div class="intro-actions">
+                        <a class="btn btn-primary" href="/init/0">Создать турнир</a>
+                        <a class="btn-link" href="#active">Смотреть турниры →</a>
+                    </div>
+                </div>
 
-            <div class="tournament-creation">
-                <h2><a href="/init/0">Создать новый турнир</a></h2>
-                <!-- <form id="createTournament" style="display: none;">
-                    <input type="text" placeholder="Название турнира" required>
-                    <select required>
-                        <option value="">Выберите правила</option>
-                        <option>Классические</option>
-                        <option>Экспресс</option>
-                        <option>Командные</option>
-                    </select>
-                    <button onclick="window.location.href='/init/0'">Создать</button>
-                    type="submit"> 
-                    Создать</button> 
-                </form>
-                <p id="loginPrompt">Войдите, чтобы создать турнир</p> -->
+                <aside class="intro-note">
+                    <strong>Для ведущих, организаторов и игроков</strong>
+                    Регулярные встречи и разовые турниры: счёт, сетки и история игр — в одном месте.
+                </aside>
+            </div>
+        </section>
+
+        <section class="section" id="active">
+            <div class="section-head">
+                <h2>Сейчас идёт</h2>
+                <span class="section-note" id="activeCount"></span>
             </div>
 
-            <div class="recent-events">
-                <h2>Последние бои</h2>
-                <div id="recentBattles" class=".games-grid">
-                    <div class="loader"></div>
-                    <div class="error-message" style="display: none;"></div>
+            <div class="tournament-cards" id="activeTournaments" aria-live="polite" aria-busy="true">
+                <div class="card tournament-card is-skeleton" aria-hidden="true">
+                    <div class="sk-line sk-line--sm"></div>
+                    <div class="sk-line sk-line--lg"></div>
+                    <div class="sk-line sk-line--md"></div>
+                    <div class="sk-line sk-line--row"></div>
+                </div>
+                <div class="card tournament-card is-skeleton" aria-hidden="true">
+                    <div class="sk-line sk-line--sm"></div>
+                    <div class="sk-line sk-line--lg"></div>
+                    <div class="sk-line sk-line--md"></div>
+                    <div class="sk-line sk-line--row"></div>
+                </div>
+                <div class="card tournament-card is-skeleton" aria-hidden="true">
+                    <div class="sk-line sk-line--sm"></div>
+                    <div class="sk-line sk-line--lg"></div>
+                    <div class="sk-line sk-line--md"></div>
+                    <div class="sk-line sk-line--row"></div>
                 </div>
             </div>
-        </div>
-        <div class="tournaments-section">
-            <div id="activeTournaments">
-                <h2>Активные турниры</h2>
-                <div class="loader"></div>
-                <div class="error-message" style="display: none;"></div>
+        </section>
+
+        <section class="section" id="games">
+            <div class="section-head">
+                <h2>Последние бои</h2>
+                <div class="section-tools" id="battleTools" hidden>
+                    <span class="section-note" id="battleNote"></span>
+                    <button class="track-arrow" type="button" data-dir="-1" aria-label="Предыдущие бои">←</button>
+                    <button class="track-arrow" type="button" data-dir="1" aria-label="Следующие бои">→</button>
+                </div>
             </div>
 
-            <div id="completedTournaments">
-                <h2>Завершенные турниры</h2>
-                <div class="loader"></div>
-                <div class="error-message" style="display: none;"></div>
+            <div class="battle-track" id="battleTrack" tabindex="0" aria-label="Последние бои, прокручивается горизонтально" aria-live="polite" aria-busy="true">
+                <div class="card battle-card is-skeleton" aria-hidden="true">
+                    <div class="sk-line sk-line--sm"></div>
+                    <div class="sk-line sk-line--md"></div>
+                    <div class="sk-line sk-line--row"></div>
+                    <div class="sk-line sk-line--row"></div>
+                    <div class="sk-line sk-line--row"></div>
+                    <div class="sk-line sk-line--row"></div>
+                </div>
+                <div class="card battle-card is-skeleton" aria-hidden="true">
+                    <div class="sk-line sk-line--sm"></div>
+                    <div class="sk-line sk-line--md"></div>
+                    <div class="sk-line sk-line--row"></div>
+                    <div class="sk-line sk-line--row"></div>
+                    <div class="sk-line sk-line--row"></div>
+                    <div class="sk-line sk-line--row"></div>
+                </div>
+                <div class="card battle-card is-skeleton" aria-hidden="true">
+                    <div class="sk-line sk-line--sm"></div>
+                    <div class="sk-line sk-line--md"></div>
+                    <div class="sk-line sk-line--row"></div>
+                    <div class="sk-line sk-line--row"></div>
+                    <div class="sk-line sk-line--row"></div>
+                    <div class="sk-line sk-line--row"></div>
+                </div>
             </div>
-        </div>
+        </section>
 
- 
+        <section class="section" id="winners">
+            <div class="section-head">
+                <h2>Победители</h2>
+                <span class="section-note" id="winnerCount"></span>
+            </div>
+
+            <div class="winner-track" id="winnerTrack" aria-live="polite" aria-busy="true">
+                <div class="card winner-card is-skeleton" aria-hidden="true">
+                    <div class="sk-line sk-line--md"></div>
+                    <div class="sk-line sk-line--lg"></div>
+                    <div class="sk-line sk-line--sm"></div>
+                </div>
+                <div class="card winner-card is-skeleton" aria-hidden="true">
+                    <div class="sk-line sk-line--md"></div>
+                    <div class="sk-line sk-line--lg"></div>
+                    <div class="sk-line sk-line--sm"></div>
+                </div>
+                <div class="card winner-card is-skeleton" aria-hidden="true">
+                    <div class="sk-line sk-line--md"></div>
+                    <div class="sk-line sk-line--lg"></div>
+                    <div class="sk-line sk-line--sm"></div>
+                </div>
+                <div class="card winner-card is-skeleton" aria-hidden="true">
+                    <div class="sk-line sk-line--md"></div>
+                    <div class="sk-line sk-line--lg"></div>
+                    <div class="sk-line sk-line--sm"></div>
+                </div>
+                <div class="card winner-card is-skeleton" aria-hidden="true">
+                    <div class="sk-line sk-line--md"></div>
+                    <div class="sk-line sk-line--lg"></div>
+                    <div class="sk-line sk-line--sm"></div>
+                </div>
+            </div>
+        </section>
     </main>
 
-    <!-- Модальные окна -->
-    <div id="loginModal" class="modal">
-        <div class="modal-content">
-            <h2>Вход</h2>
-            <form id="loginForm">
-                <input type="email" placeholder="Email" required>
-                <input type="password" placeholder="Пароль" required>
-                <button type="submit">Войти</button>
-            </form>
+    <footer class="site-footer">
+        <div class="shell footer-inner">
+            <span class="footer-brand"><span class="brand-dot" aria-hidden="true"></span>Свояк</span>
+            <span>Платформа для турниров по вашей игре · <span id="footerYear">2026</span></span>
         </div>
-    </div>
+    </footer>
 
-    <div id="registerModal" class="modal">
-        <div class="modal-content">
-            <h2>Регистрация</h2>
-            <form id="registerForm">
-                <input type="email" placeholder="Email" required>
-                <input type="password" placeholder="Пароль" required>
-                <input type="password" placeholder="Подтвердите пароль" required>
-                <button type="submit">Зарегистрироваться</button>
-            </form>
-        </div>
-    </div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <script>
-        const API_URL = 'https://api.example.com';
+        (function () {
+            'use strict';
 
-        async function loadData(endpoint, containerId) {
-            const container = document.getElementById(containerId);
-            const loader = container.querySelector('.loader');
-            const errorMsg = container.querySelector('.error-message');
+            var MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+            var MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+            var TONES = ['blue', 'sage', 'sand'];
 
-            try {
-                loader.style.display = 'block';
-                errorMsg.style.display = 'none';
-                
-                const response = await fetch(`${endpoint}`);
-                if (!response.ok) throw new Error('Ошибка загрузки данных');
-                
-                const data = await response.json();
-                // console.log(data)
-                renderData(data, containerId);
-            } catch (error) {
-                errorMsg.textContent = error.message;
-                errorMsg.style.display = 'block';
-            } finally {
-                loader.style.display = 'none';
-            }
-        }
+            var activeEl = document.getElementById('activeTournaments');
+            var activeCount = document.getElementById('activeCount');
+            var battleTrack = document.getElementById('battleTrack');
+            var battleTools = document.getElementById('battleTools');
+            var battleNote = document.getElementById('battleNote');
+            var winnerEl = document.getElementById('winnerTrack');
+            var winnerCount = document.getElementById('winnerCount');
 
-        function renderData(data, containerId) {
-            const container = document.getElementById(containerId);
-            container.querySelector('.error-message').style.display = 'none';
-            
-            if (!data || !Array.isArray(data)) {
-                container.innerHTML += '<div class="error-message">Нет данных для отображения</div>';
-                return;
+            /* ---------- helpers ---------- */
+
+            function escapeHtml(value) {
+                return String(value == null ? '' : value).replace(/[&<>"']/g, function (ch) {
+                    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+                });
             }
 
-            let html = '';
-            switch(containerId) {
-                case 'activeTournaments':
-                    html = data.map(t => `
-                        <div class="tournament-card">
-                            <h3>${t.name || 'Без названия'}</h3>
-                            <p class="status-indicator status-active">
-                                Активен • ${t.timeLeft || 'N/A'}
-                            </p>
-                            <p>Участников: ${t.participants || 0}</p>
-                            <a href="/view/${t.id || '#'}">Перейти →</a>
-                        </div>
-                    `).join('');
-                    container.innerHTML = container.querySelector('h2').outerHTML + html;
-                    break;
+            function plural(count, forms) {
+                var abs = Math.abs(count) % 100;
+                var last = abs % 10;
+                if (abs > 10 && abs < 20) return forms[2];
+                if (last > 1 && last < 5) return forms[1];
+                if (last === 1) return forms[0];
+                return forms[2];
+            }
 
-                case 'completedTournaments':
-                    console.log('recentBattles')
-                    html = data.map(t => `
-                        <div class="tournament-card">
-                            <h3>${t.name || 'Без названия'}</h3>
-                            <p class="status-indicator status-completed">
-                                Завершен
-                            </p>
-                            <div class="winners-list">
-                                ${(t.winners || []).map((w, i) => `
-                                    <div class="winner">
-                                        <span class="winner-icon">
-                                            ${['🥇', '🥈', '🥉'][i] || '🏅'}
-                                        </span>
-                                        ${w.name || 'Неизвестный игрок'}
-                                    </div>
-                                `).join('')}
-                            </div>
-                            <a href="/view/${t.id || '#'}">Посмотреть результаты →</a>
-                        </div>
-                    `).join('');
-                    container.innerHTML = container.querySelector('h2').outerHTML + html;
-                    break;
+            function toNumber(value) {
+                var number = Number(value);
+                return Number.isFinite(number) ? number : 0;
+            }
 
-                case 'recentBattles':
-                    console.log('recentBattles')
-                    html = data.forEach(game => {
-                        const card = document.createElement('div');
-                        card.className = 'game-card past';
-                        
-                        console.log(game.scores)
-                        // Сортируем игроков по занятым местам
-                        const sortedPlayers = [...game.scores].sort((a, b) => a.position - b.position);
-                        
-                        let playersHtml = '';
-                        sortedPlayers.forEach(player => {
-                            const scoreClass = player.score >= 0 ? 'positive-score' : 'negative-score';
-                            
-                            playersHtml += `
-                                <div class="player-row">
-                                    <span class="player-place place-${player.position}">${player.position}</span>
-                                    <span class="player-name" title="${player.name}">${player.name}</span>
-                                    <span class="player-score ${scoreClass}">${player.score > 0 ? '+' : ''}${player.score}</span>
-                                    <span class="player-points">${player.points.toFixed(2)}</span>
-                                </div>
-                            `;
-                        });
-                        
-                        card.innerHTML = `
-                            <div class="game-header">
-                                <span class="game-id">Игра #${game.gameindex}</span>
-                                <span class="game-type">обычная</span>
-                            </div>
-                            <div class="players-container">
-                                <div class="players-column">
-                                    ${playersHtml}
-                                </div>
-                            </div>
-                            <div class="game-footer">
-                                ✔ Завершена
-                            </div>
-                        `;
-                        
-                        container.appendChild(card);
-                        return card
+            function parseTournamentName(name) {
+                var raw = String(name == null ? '' : name).trim();
+                var match = raw.match(/^(.*?)\s+(\d{4}-\d{2}-\d{2})$/);
+                if (!match) return { title: raw || 'Турнир', date: null };
+                return { title: match[1].trim() || 'Турнир', date: match[2] };
+            }
+
+            function formatDate(iso, style) {
+                if (!iso) return '';
+                var parts = String(iso).split('-');
+                if (parts.length !== 3) return String(iso);
+                var day = parseInt(parts[2], 10);
+                var month = parseInt(parts[1], 10) - 1;
+                if (!day || month < 0 || month > 11) return String(iso);
+                if (style === 'short') return day + ' ' + MONTHS_SHORT[month];
+                return day + ' ' + MONTHS[month] + ' ' + parts[0];
+            }
+
+            function formatScore(value) {
+                var number = toNumber(value);
+                if (number > 0) return '+' + number;
+                if (number < 0) return '−' + Math.abs(number);
+                return '0';
+            }
+
+            function formatPoints(value) {
+                var number = Number(value);
+                if (!Number.isFinite(number)) return '—';
+                return number.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            }
+
+            function scoreClass(value) {
+                var number = toNumber(value);
+                if (number > 0) return ' is-positive';
+                if (number < 0) return ' is-negative';
+                return '';
+            }
+
+            function sortScores(scores) {
+                return (Array.isArray(scores) ? scores.slice() : []).sort(function (a, b) {
+                    var byPlace = toNumber(a.position) - toNumber(b.position);
+                    if (byPlace !== 0) return byPlace;
+                    return toNumber(b.score) - toNumber(a.score);
+                });
+            }
+
+            function venueMark(name) {
+                var label = String(name == null ? '' : name).trim();
+                var letter = label ? label.charAt(0).toUpperCase() : '•';
+                var sum = 0;
+                for (var i = 0; i < label.length; i++) sum += label.charCodeAt(i);
+                return '<span class="venue-mark venue-mark--' + TONES[sum % TONES.length] + '" aria-hidden="true">' +
+                    escapeHtml(letter) + '</span>';
+            }
+
+            async function getJson(url) {
+                var response = await fetch(url, { headers: { Accept: 'application/json' } });
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                return response.json();
+            }
+
+            function setBusy(element, busy) {
+                if (element) element.setAttribute('aria-busy', busy ? 'true' : 'false');
+            }
+
+            /* ---------- states ---------- */
+
+            function stateMarkup(options) {
+                var action = '';
+                if (options.href) {
+                    action = '<a class="btn ' + (options.error ? 'btn-secondary' : 'btn-primary') + '" href="' +
+                        escapeHtml(options.href) + '">' + escapeHtml(options.action) + '</a>';
+                } else if (options.retry) {
+                    action = '<button class="btn btn-secondary" type="button" data-retry="' +
+                        escapeHtml(options.retry) + '">Попробовать снова</button>';
+                }
+
+                return '<div class="state-box' + (options.error ? ' state-box--error' : '') + '">' +
+                    '<div class="state-icon" aria-hidden="true">' + (options.error ? '!' : '◇') + '</div>' +
+                    '<strong>' + escapeHtml(options.title) + '</strong>' +
+                    '<p>' + escapeHtml(options.text) + '</p>' +
+                    action +
+                    '</div>';
+            }
+
+            function showState(element, options) {
+                element.classList.add('is-static');
+                element.innerHTML = stateMarkup(options);
+            }
+
+            /* ---------- skeletons ---------- */
+
+            function tournamentSkeleton() {
+                return '<div class="card tournament-card is-skeleton" aria-hidden="true">' +
+                    '<div class="sk-line sk-line--sm"></div>' +
+                    '<div class="sk-line sk-line--lg"></div>' +
+                    '<div class="sk-line sk-line--md"></div>' +
+                    '<div class="sk-line sk-line--row"></div>' +
+                    '</div>';
+            }
+
+            function battleSkeleton() {
+                return '<div class="card battle-card is-skeleton" aria-hidden="true">' +
+                    '<div class="sk-line sk-line--sm"></div>' +
+                    '<div class="sk-line sk-line--md"></div>' +
+                    '<div class="sk-line sk-line--row"></div>' +
+                    '<div class="sk-line sk-line--row"></div>' +
+                    '<div class="sk-line sk-line--row"></div>' +
+                    '<div class="sk-line sk-line--row"></div>' +
+                    '</div>';
+            }
+
+            function winnerSkeleton() {
+                return '<div class="card winner-card is-skeleton" aria-hidden="true">' +
+                    '<div class="sk-line sk-line--md"></div>' +
+                    '<div class="sk-line sk-line--lg"></div>' +
+                    '<div class="sk-line sk-line--sm"></div>' +
+                    '</div>';
+            }
+
+            /* ---------- renderers ---------- */
+
+            function renderActive(items) {
+                var list = Array.isArray(items) ? items : [];
+                activeCount.textContent = list.length
+                    ? list.length + ' ' + plural(list.length, ['турнир', 'турнира', 'турниров'])
+                    : '';
+
+                if (!list.length) {
+                    showState(activeEl, {
+                        title: 'Активных турниров пока нет',
+                        text: 'Создайте комнату и добавьте игроков — турнир появится здесь, как только начнётся игра.',
+                        href: '/init/0',
+                        action: 'Создать турнир'
                     });
+                    return;
+                }
 
-                    break;
+                activeEl.classList.remove('is-static');
+                var html = list.slice(0, 3).map(function (tournament) {
+                    var id = toNumber(tournament.id);
+                    var parsed = parseTournamentName(tournament.name);
+                    var players = toNumber(tournament.participants);
+                    var games = toNumber(tournament.games);
+                    var href = id ? '/view/' + id : '/init/0';
+                    var dateLine = parsed.date ? formatDate(parsed.date, 'long') : 'дата не указана';
+
+                    return '<a class="card tournament-card" href="' + escapeHtml(href) + '">' +
+                        '<header class="card-head">' +
+                            venueMark(parsed.title) +
+                            '<div class="card-identity">' +
+                                '<div class="card-title" title="' + escapeHtml(parsed.title) + '">' + escapeHtml(parsed.title) + '</div>' +
+                                '<div class="card-sub">' + escapeHtml(dateLine) + '</div>' +
+                            '</div>' +
+                            '<span class="status">идёт</span>' +
+                        '</header>' +
+                        '<div class="tournament-stats">' +
+                            '<div class="tournament-stat"><strong>' + players + '</strong><span>' +
+                                plural(players, ['игрок', 'игрока', 'игроков']) + '</span></div>' +
+                            '<div class="tournament-stat"><strong>' + games + '</strong><span>' +
+                                plural(games, ['бой', 'боя', 'боёв']) + '</span></div>' +
+                        '</div>' +
+                        '<footer class="card-foot">' +
+                            '<span>' + (id ? 'Турнир #' + id : 'Турнир') + '</span>' +
+                            '<span class="card-link">Посмотреть →</span>' +
+                        '</footer>' +
+                    '</a>';
+                }).join('');
+
+                if (list.length < 3) {
+                    html += '<a class="create-card" href="/init/0">' +
+                        '<span class="create-plus" aria-hidden="true">+</span>' +
+                        '<strong>Новый турнир</strong>' +
+                        '<span>Собрать игроков и начать</span>' +
+                        '</a>';
+                }
+
+                activeEl.innerHTML = html;
             }
-            
-            // container.innerHTML = container.querySelector('h2').outerHTML + html;
-        }
 
-        function initDataLoading() {
-            loadData('/tournaments/active', 'activeTournaments');
-            loadData('/tournaments/completed', 'completedTournaments');
-            loadData('/lastgames/3', 'recentBattles');
-        }
+            function renderBattles(items) {
+                var list = Array.isArray(items) ? items : [];
+                battleNote.textContent = list.length
+                    ? list.length + ' ' + plural(list.length, ['бой', 'боя', 'боёв'])
+                    : '';
 
-        function updateUI() {
-            const loggedIn = localStorage.getItem('loggedIn');
-            if (loggedIn) {
-                document.querySelector('.auth-buttons').innerHTML = `
-                    <button onclick="location.href='/profile'">Мой профиль</button>
-                    <button onclick="logout()">Выйти</button>
-                `;
-                document.getElementById('createTournament').style.display = 'block';
-                document.getElementById('loginPrompt').style.display = 'none';
+                if (!list.length) {
+                    showState(battleTrack, {
+                        title: 'Боёв пока нет',
+                        text: 'Сохраните первый результат в комнате — он сразу появится здесь.',
+                        href: '#active',
+                        action: 'К активным турнирам'
+                    });
+                    return;
+                }
+
+                battleTrack.classList.remove('is-static');
+                battleTrack.innerHTML = list.slice(0, 4).map(function (game) {
+                    var roomId = toNumber(game.roomid);
+                    var gameIndex = toNumber(game.gameindex);
+                    var allScores = sortScores(game.scores);
+                    var rows = allScores.slice(0, 4);
+                    var href = roomId ? '/view/' + roomId : '#games';
+                    var venue = game.roomname ? String(game.roomname) : (roomId ? 'Турнир #' + roomId : 'Турнир');
+                    var gameDate = game.date ? formatDate(game.date, 'long') : '';
+                    var count = allScores.length;
+
+                    return '<a class="card battle-card" href="' + escapeHtml(href) + '">' +
+                        '<header class="battle-head">' +
+                            '<div class="battle-head-top">' +
+                                '<span class="battle-id">Бой ' + gameIndex + '</span>' +
+                                '<span class="battle-count">' + count + ' ' +
+                                    plural(count, ['игрок', 'игрока', 'игроков']) + '</span>' +
+                                '<span class="battle-date">' + escapeHtml(gameDate) + '</span>' +
+                            '</div>' +
+                            '<div class="battle-venue">' +
+                                venueMark(venue) +
+                                '<span>' + escapeHtml(venue) + '</span>' +
+                            '</div>' +
+                        '</header>' +
+                        '<ul class="battle-players">' +
+                            rows.map(function (player) {
+                                var place = Math.round(toNumber(player.position));
+                                var score = toNumber(player.score);
+                                var placeClass = place >= 1 && place <= 4 ? ' place-' + place : '';
+                                return '<li class="battle-player">' +
+                                    '<span class="battle-place' + placeClass + '">' + (place || '—') + '</span>' +
+                                    '<span class="battle-name" title="' + escapeHtml(player.name) + '">' + escapeHtml(player.name) + '</span>' +
+                                    '<span class="battle-score' + scoreClass(score) + '">' + formatScore(score) + '</span>' +
+                                    '<span class="battle-points" title="Турнирные очки">' + formatPoints(player.points) + '</span>' +
+                                '</li>';
+                            }).join('') +
+                        '</ul>' +
+                        '<footer class="card-foot">' +
+                            '<span class="battle-state">Завершён</span>' +
+                            '<span class="card-link">Посмотреть бой →</span>' +
+                        '</footer>' +
+                    '</a>';
+                }).join('');
+
+                syncTrackTools();
             }
-            initDataLoading();
-        }
 
-        function showModal(type) {
-            document.getElementById(`${type}Modal`).style.display = 'flex';
-        }
+            function renderWinners(items) {
+                var list = (Array.isArray(items) ? items : []).filter(function (tournament) {
+                    var winners = Array.isArray(tournament.winners) ? tournament.winners : [];
+                    return winners.length && winners[0] && winners[0].name;
+                });
 
-        function closeModal(type) {
-            document.getElementById(`${type}Modal`).style.display = 'none';
-        }
+                winnerCount.textContent = list.length
+                    ? list.length + ' ' + plural(list.length, ['турнир', 'турнира', 'турниров'])
+                    : '';
 
-        document.getElementById('loginForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            localStorage.setItem('loggedIn', 'true');
-            updateUI();
-            closeModal('login');
-        });
+                if (!list.length) {
+                    showState(winnerEl, {
+                        title: 'Пока пусто',
+                        text: 'Победители появятся после первого завершённого турнира.',
+                        href: '/init/0',
+                        action: 'Создать турнир'
+                    });
+                    return;
+                }
 
-        document.getElementById('registerForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            closeModal('register');
-            showModal('login');
-        });
+                winnerEl.classList.remove('is-static');
+                winnerEl.innerHTML = list.slice(0, 5).map(function (tournament) {
+                    var id = toNumber(tournament.id);
+                    var parsed = parseTournamentName(tournament.name);
+                    var winners = Array.isArray(tournament.winners) ? tournament.winners : [];
+                    var winnerName = winners[0].name;
+                    var href = id ? '/view/' + id : '#games';
+                    var dateLine = parsed.date ? formatDate(parsed.date, 'short') : '';
 
-        function logout() {
-            localStorage.removeItem('loggedIn');
-            location.reload();
-        }
-
-        window.onload = updateUI;
-        window.onclick = function(e) {
-            if (e.target.classList.contains('modal')) {
-                e.target.style.display = 'none';
+                    return '<a class="card winner-card" href="' + escapeHtml(href) + '">' +
+                        '<header class="winner-top">' +
+                            '<div class="winner-event">' +
+                                venueMark(parsed.title) +
+                                '<span>' + escapeHtml(parsed.title) + '</span>' +
+                            '</div>' +
+                            '<span class="winner-date">' + escapeHtml(dateLine) + '</span>' +
+                        '</header>' +
+                        '<div class="winner-name">' +
+                            '<svg class="winner-trophy" aria-hidden="true"><use href="#icon-trophy"></use></svg>' +
+                            '<span title="' + escapeHtml(winnerName) + '">' + escapeHtml(winnerName) + '</span>' +
+                        '</div>' +
+                        '<footer class="card-foot">' +
+                            '<span class="card-link">Итоги →</span>' +
+                        '</footer>' +
+                    '</a>';
+                }).join('');
             }
-        }
 
-        // Моковые данные
-        async function fetch2(url) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            const mockData = {
-                'tournaments/active': [{
-                    id: 1,
-                    name: 'Весенний чемпионат',
-                    timeLeft: '3 дня осталось',
-                    participants: 12
-                }],
-                'tournaments/completed': [{
-                    id: 2,
-                    name: 'Зимний кубок',
-                    winners: [
-                        {name: 'Профессионал123'},
-                        {name: 'Игрок2000'},
-                        {name: 'НовыйЧемпион'}
-                    ]
-                }],
-                'battles/recent': [{
-                    id: 123,
-                    tournamentId: 1,
-                    participants: [
-                        {name: 'Игрок 1', position: 1},
-                        {name: 'Игрок 2', position: 2},
-                        {name: 'Игрок 3', position: 3},
-                        {name: 'Игрок 4', position: 4}
-                    ]
-                }]
-            };
+            /* ---------- track tools ---------- */
 
-            return {
-                ok: true,
-                json: () => mockData[url.split('/').pop()]
-            };
-        }
+            function syncTrackTools() {
+                if (!battleTools) return;
+                var scrollable = !battleTrack.classList.contains('is-static') &&
+                    battleTrack.scrollWidth > battleTrack.clientWidth + 1;
+                battleTools.hidden = !scrollable;
+            }
+
+            /* ---------- loaders ---------- */
+
+            async function loadActive() {
+                setBusy(activeEl, true);
+                activeEl.classList.remove('is-static');
+                activeEl.innerHTML = tournamentSkeleton();
+                try {
+                    renderActive(await getJson('/tournaments/active'));
+                } catch (error) {
+                    showState(activeEl, {
+                        title: 'Не удалось загрузить',
+                        text: 'Список активных турниров недоступен. Проверьте соединение и попробуйте ещё раз.',
+                        retry: 'active',
+                        error: true
+                    });
+                } finally {
+                    setBusy(activeEl, false);
+                }
+            }
+
+            async function loadBattles() {
+                setBusy(battleTrack, true);
+                if (battleTools) battleTools.hidden = true;
+                battleTrack.classList.remove('is-static');
+                battleTrack.innerHTML = battleSkeleton() + battleSkeleton() + battleSkeleton();
+                try {
+                    renderBattles(await getJson('/lastgames/4'));
+                } catch (error) {
+                    showState(battleTrack, {
+                        title: 'Не удалось загрузить',
+                        text: 'Последние бои недоступны. Проверьте соединение и попробуйте ещё раз.',
+                        retry: 'battles',
+                        error: true
+                    });
+                } finally {
+                    setBusy(battleTrack, false);
+                }
+            }
+
+            async function loadWinners() {
+                setBusy(winnerEl, true);
+                winnerEl.classList.remove('is-static');
+                winnerEl.innerHTML = winnerSkeleton() + winnerSkeleton() + winnerSkeleton() +
+                    winnerSkeleton() + winnerSkeleton();
+                try {
+                    renderWinners(await getJson('/tournaments/completed'));
+                } catch (error) {
+                    showState(winnerEl, {
+                        title: 'Не удалось загрузить',
+                        text: 'Победители недоступны. Проверьте соединение и попробуйте ещё раз.',
+                        retry: 'winners',
+                        error: true
+                    });
+                } finally {
+                    setBusy(winnerEl, false);
+                }
+            }
+
+            /* ---------- interactions ---------- */
+
+            document.addEventListener('click', function (event) {
+                var retry = event.target.closest('[data-retry]');
+                if (retry) {
+                    var target = retry.getAttribute('data-retry');
+                    if (target === 'active') loadActive();
+                    if (target === 'battles') loadBattles();
+                    if (target === 'winners') loadWinners();
+                    return;
+                }
+
+                var arrow = event.target.closest('.track-arrow');
+                if (arrow) {
+                    var card = battleTrack.querySelector('.battle-card');
+                    var step = card ? card.getBoundingClientRect().width + 16 : 346;
+                    battleTrack.scrollBy({
+                        left: Number(arrow.getAttribute('data-dir')) * step,
+                        behavior: 'smooth'
+                    });
+                }
+            });
+
+            var authLink = document.querySelector('[data-auth]');
+            var toast = document.getElementById('toast');
+            var toastTimer = null;
+            if (authLink && toast) {
+                authLink.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    toast.textContent = 'Вход пока в разработке';
+                    toast.classList.add('is-on');
+                    clearTimeout(toastTimer);
+                    toastTimer = setTimeout(function () {
+                        toast.classList.remove('is-on');
+                    }, 2200);
+                });
+            }
+
+            var frame = null;
+            window.addEventListener('resize', function () {
+                if (frame) cancelAnimationFrame(frame);
+                frame = requestAnimationFrame(syncTrackTools);
+            });
+
+            var yearEl = document.getElementById('footerYear');
+            if (yearEl) yearEl.textContent = String(new Date().getFullYear());
+
+            loadActive();
+            loadBattles();
+            loadWinners();
+        })();
     </script>
 </body>
 </html>

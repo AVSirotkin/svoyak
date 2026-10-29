@@ -759,9 +759,17 @@ def GetLastResult(lastcount):
             ).fetchall()
             if not scores:
                 continue
+            # Название площадки и дату показываем на главной вместо номера комнаты.
+            room = conn.execute(
+                "SELECT a.date, v.venuename FROM activerooms a "
+                "LEFT JOIN venues v ON v.venueid = a.venueid WHERE a.roomid = ?",
+                (roomid,),
+            ).fetchone()
             res.append({
                 "gameindex": gameindex,
                 "roomid": roomid,
+                "roomname": (room["venuename"] if room and room["venuename"] else None),
+                "date": (room["date"] if room else None),
                 "scores": [dict(r) for r in scores],
             })
             if len(res) >= lastcount:
