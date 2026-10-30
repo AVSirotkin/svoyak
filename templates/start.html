@@ -127,6 +127,16 @@
 
         .auth-link:hover { color: var(--ink); }
 
+        .auth-form { display: inline; margin: 0; }
+
+        button.auth-link {
+            background: none;
+            border: none;
+            padding: 0;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
         /* ---------- Buttons ---------- */
 
         .btn {
@@ -980,7 +990,14 @@
             </nav>
 
             <div class="header-actions">
-                <a class="auth-link" href="#" data-auth>Войти</a>
+                {% if current_user %}
+                <span class="auth-link">{{ current_user.name }}</span>
+                <form method="post" action="/logout" class="auth-form">
+                    <button class="auth-link" type="submit">Выйти</button>
+                </form>
+                {% else %}
+                <a class="auth-link" href="/login">Войти</a>
+                {% endif %}
                 <a class="btn btn-secondary" href="/init/0">Создать турнир</a>
             </div>
         </div>
@@ -1539,20 +1556,7 @@
                 }
             });
 
-            var authLink = document.querySelector('[data-auth]');
-            var toast = document.getElementById('toast');
-            var toastTimer = null;
-            if (authLink && toast) {
-                authLink.addEventListener('click', function (event) {
-                    event.preventDefault();
-                    toast.textContent = 'Вход пока в разработке';
-                    toast.classList.add('is-on');
-                    clearTimeout(toastTimer);
-                    toastTimer = setTimeout(function () {
-                        toast.classList.remove('is-on');
-                    }, 2200);
-                });
-            }
+
 
             var frame = null;
             window.addEventListener('resize', function () {

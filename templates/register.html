@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-md-6 col-lg-5">
+        <div class="card">
+            <div class="card-body">
+                <h4 class="mb-3">Регистрация ведущего</h4>
+
+                {% if error %}
+                <div class="alert alert-danger">{{ error }}</div>
+                {% endif %}
+
+                <form method="post" action="/register">
+                    <div class="mb-3">
+                        <label class="form-label" for="login">Логин</label>
+                        <input class="form-control" id="login" name="login" value="{{ form.login }}" autofocus>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="name">Как вас зовут</label>
+                        <input class="form-control" id="name" name="name" value="{{ form.name }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="password">Пароль</label>
+                        <input class="form-control" id="password" name="password" type="password">
+                        <div class="form-text">Не короче шести символов.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="password2">Пароль ещё раз</label>
+                        <input class="form-control" id="password2" name="password2" type="password">
+                    </div>
+                    <button class="btn btn-primary w-100" type="submit">Создать учётную запись</button>
+                </form>
+
+                <p class="text-muted small mt-3 mb-0">
+                    Уже есть учётная запись? <a href="/login">Войти</a>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function init_page() {}
+</script>
+{% endblock %}

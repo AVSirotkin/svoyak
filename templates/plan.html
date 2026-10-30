@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .stage-card .card-header { background: #f8f9fa; }
+    .game-tile { transition: box-shadow .15s ease; }
+    .game-tile:hover { box-shadow: 0 2px 10px rgba(0, 0, 0, .08); }
+    .seed-chip { font-variant-numeric: tabular-nums; }
+    .tie-row { background: #fff8e1; }
+</style>
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <div class="text-muted small">Турнир {{ roomid }}</div>
+        <h2 class="mb-1">{{ overview.rules.name if overview.rules else 'Без схемы' }}</h2>
+        <div class="text-muted small">
+            {{ overview.room.date }} ·
+            столов: {{ overview.params.get('tables', 1) }} ·
+            игроков в комнате: {{ overview.players|length }}
+            {% if overview.owner %} · ведущий: {{ overview.owner }}{% else %} · без владельца{% endif %}
+        </div>
+    </div>
+    <div class="text-end">
+        <a class="btn btn-outline-secondary btn-sm" href="/plan/{{ roomid }}/questions">Вопросы по боям</a>
+        <a class="btn btn-outline-secondary btn-sm" href="/room/{{ roomid }}">Комната</a>
+        <a class="btn btn-outline-secondary btn-sm" href="/view/{{ roomid }}">Просмотр</a>
+    </div>
+</div>
+
+{% if plan is none %}
+<div class="alert alert-warning">
+    У комнаты нет схемы правил, планировать нечего.
+    <a href="/init/{{ roomid }}">Настроить комнату</a>
+</div>
+{% elif plan.errors %}
+<div class="alert alert-danger">
+    <strong>Схема сломана:</strong>
+    <ul class="mb-0">
+        {% for error in plan.errors %}<li>{{ error }}</li>{% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+{% if plan is not none %}
+{% if plan.conflicts %}
+<div class="alert alert-warning">
+    <strong>Один игрок в двух боях одной стадии:</strong>
+    <ul class="mb-0">
+        {% for conflict in plan.conflicts %}
+        <li>{{ conflict.name }} — стадия {{ conflict.stage }}, бои {{ conflict.games|join(', ') }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h5 class="mb-0">Жеребьёвка</h5>
+            {% if seed %}
+            <span class="text-muted small">посев сохранён</span>
+            {% endif %}
+        </div>
+
+        {% if seed %}
+        <div class="row row-cols-2 row-cols-md-3 row-cols-xl-4 g-1 mb-3">
+            {% for place, player in seed.items()|sort %}
+            <div class="col seed-chip"><span class="badge bg-secondary">{{ place }}</span> {{ player.name }}</div>
+            {% endfor %}
+        </div>
+        {% if not overview.room.finished %}
+        <button class="btn btn-sm btn-outline-danger" onclick="draw(true)">Пережеребьевать</button>
+        <span class="text-muted small ms-2">сбросит текущий план</span>
+        {% endif %}
+        {% else %}
+        <p class="text-muted mb-3">
+            Посев ещё не проводился. Жеребьёвка разложит {{ overview.players|length }} игроков комнаты по местам.
+        </p>
+        {% if not overview.room.finished %}
+        <button class="btn btn-primary" onclick="draw(false)" {% if overview.players|length < 2 %}disabled{% endif %}>
+            Провести жеребьёвку
+        </button>
+        {% else %}
+        <p class="text-muted mb-0">Турнир завершён, жеребьёвка недоступна.</p>
+        {% endif %}
+        {% endif %}
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body d-flex justify-content-between align-items-center">
+        <div>
+            <strong>Бои стола идут строго по порядку</strong>
+            <div class="text-muted small">
+                Ведущий играет бои своего стола по очереди. Разрешать играть вне очереди
+                стоит только в исключительных случаях — например, чтобы не ждать чужой стол.
+            </div>
+        </div>
+        <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" id="allow_any_order"
+                   {% if overview.params.get('allow_any_order') %}checked{% endif %}
+                   onchange="setOrder(this.checked)">
+            <label class="form-check-label small" for="allow_any_order">разрешить вне очереди</label>
+        </div>
+    </div>
+</div>
+
+{% for stage in stages %}
+<div class="card mb-3 stage-card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><strong>Стадия {{ stage.number }}</strong> · {{ stage.title }}</span>
+        {% if stage.kind == 'aggregator' %}
+        <span class="badge bg-info text-dark">пересчёт</span>
+        {% elif stage.kind == 'seed' %}
+        <span class="badge bg-secondary">посев</span>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        {% if stage.kind == 'aggregator' %}
+            {% if stage.rows %}
+            <table class="table table-sm align-middle mb-0">
+                <thead>
+                    <tr><th style="width:3rem">#</th><th>Игрок</th><th style="width:6rem">Баллы</th></tr>
+                </thead>
+                <tbody>
+                    {% for row in stage.rows %}
+                    <tr class="{{ 'tie-row' if row.tie else '' }}">
+                        <td>{{ row.place }}</td>
+                        <td>
+                            {{ row.name }}
+                            {% if row.tie %}<span class="badge bg-warning text-dark">ничья {{ row.tie }}</span>{% endif %}
+                        </td>
+                        <td>{{ row.points }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="text-muted mb-0">Пересчёт появится, когда будут сыграны бои источника.</p>
+            {% endif %}
+        {% elif stage.kind == 'seed' %}
+            <p class="text-muted mb-0">
+                {% if seed %}Посев разложен по местам, см. карточку выше.{% else %}Жеребьёвка не проводилась.{% endif %}
+            </p>
+        {% else %}
+            <div class="row row-cols-1 row-cols-lg-3 g-3">
+                {% for game in stage.games %}
+                <div class="col">
+                    <div class="border rounded p-3 h-100 d-flex flex-column game-tile">
+                        <div class="d-flex justify-content-between align-items-start mb-1">
+                            <strong>{{ game.name }}</strong>
+                            {% if game.done %}
+                            <span class="badge bg-success">сыгран</span>
+                            {% elif game.ready %}
+                            <span class="badge bg-primary">готов</span>
+                            {% else %}
+                            <span class="badge bg-secondary">ждёт</span>
+                            {% endif %}
+                            {% if game.tie %}<span class="badge bg-warning text-dark">ничья</span>{% endif %}
+                        </div>
+                        <div class="small text-muted mb-2">
+                            бой {{ game.gameindex }} · стол {{ game.table }} · очередь {{ game.order }}
+                        </div>
+                        <div class="small mb-2">
+                            {% for player in game.participants %}
+                                {% if player %}{{ player.name }}{% else %}<span class="text-muted">?</span>{% endif %}{% if not loop.last %}, {% endif %}
+                            {% endfor %}
+                        </div>
+                        {% if game.warning %}
+                        <div class="small text-warning-emphasis mb-2">
+                            {% if game.warning == 'roster_mismatch' %}состав отличается от правил{% else %}сыгран без готовых участников{% endif %}
+                        </div>
+                        {% endif %}
+                        <a class="btn btn-sm btn-outline-primary mt-auto" href="/room/{{ roomid }}/{{ game.table }}">
+                            Пульт стола {{ game.table }}
+                        </a>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+
+{% if queues %}
+<div class="card mb-3">
+    <div class="card-body">
+        <h5>Очереди столов</h5>
+        <div class="row row-cols-1 row-cols-md-3 g-3">
+            {% for queue in queues %}
+            <div class="col">
+                <a class="text-decoration-none" href="/room/{{ roomid }}/{{ queue.table }}">
+                    <strong>Стол {{ queue.table }}</strong>
+                </a>
+                <div class="small text-muted">бои: {{ queue.games|join(' → ') }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function init_page() {}
+
+    async function setOrder(allow) {
+        const response = await fetch('/api/plan/{{ roomid }}/order', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+            body: JSON.stringify({allow: allow})
+        });
+        const data = await response.json();
+        if (data.status !== 'ok') {
+            alert(data.message || 'Не удалось изменить правило порядка');
+            document.location.reload();
+        }
+    }
+
+    async function draw(force) {
+        if (force && !confirm("Пережеребьёвка изменит план турнира. Продолжить?")) {
+            return;
+        }
+        const response = await fetch("/api/plan/{{ roomid }}/draw", {
+            method: "POST",
+            headers: {"Content-Type": "application/json", "Accept": "application/json"},
+            body: JSON.stringify({force: force})
+        });
+        const data = await response.json();
+        if (data.status === "ok") {
+            document.location.reload();
+        } else {
+            alert(data.message || "Не удалось провести жеребьёвку");
+        }
+    }
+</script>
+{% endblock %}

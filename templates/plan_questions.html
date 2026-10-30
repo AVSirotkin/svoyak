@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .game-card { border: 1px solid #dee2e6; border-radius: .6rem; margin-bottom: .75rem; }
+    .game-card .head { display: flex; justify-content: space-between; align-items: center;
+                       gap: .5rem; padding: .6rem 1rem; background: #f8f9fa;
+                       border-bottom: 1px solid #eee; border-radius: .6rem .6rem 0 0; }
+    .game-card .body { padding: .8rem 1rem 1rem; }
+    .theme-list { max-height: 22rem; overflow-y: auto; border: 1px solid #eee;
+                  border-radius: .4rem; padding: .5rem .75rem; }
+    .theme-item { display: block; margin-bottom: .2rem; }
+</style>
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <div class="text-muted small">Турнир {{ roomid }}</div>
+        <h2 class="mb-1">Вопросы по боям</h2>
+        <div class="text-muted small">
+            Админ раскладывает темы пакета по боям. Ведущий получает уже готовый набор.
+        </div>
+    </div>
+    <a class="btn btn-outline-secondary btn-sm" href="/plan/{{ roomid }}">Пульт турнира</a>
+</div>
+
+{% if not packages %}
+<div class="alert alert-warning">
+    В комнате нет ни одного пакета вопросов. Загрузите пакет в полном пульте комнаты,
+    затем вернитесь сюда.
+</div>
+{% endif %}
+
+{% for game in plan.games|sort(attribute='order') %}
+{% set binding = assigned.get(game.gameindex) %}
+<div class="game-card" id="game-{{ game.gameindex }}" data-game="{{ game.gameindex }}">
+    <div class="head">
+        <span>
+            <strong>{{ game.name }}</strong>
+            <span class="text-muted small">· бой {{ game.gameindex }} · стадия {{ game.stage }} · стол {{ game.table }}</span>
+        </span>
+        <span class="text-muted small">
+            {% if binding %}{{ binding.topics|length }} тем{% else %}не назначено{% endif %}
+            {% if started.get(game.gameindex) %}
+            <span class="badge bg-warning text-dark" title="бой уже идёт по сохранённому протоколу">
+                идёт бой
+            </span>
+            {% endif %}
+        </span>
+    </div>
+    <div class="body">
+        {% if binding %}
+        <div class="mb-2 small">
+            {% for topic in binding.topics %}<span class="badge bg-light text-dark border me-1">{{ topic }}</span>{% endfor %}
+        </div>
+        {% endif %}
+
+        <details {% if not binding and loop.first %}open{% endif %}>
+            <summary class="text-muted small">назначить темы</summary>
+            <div class="row g-2 mt-1">
+                <div class="col-md-5">
+                    <label class="form-label small mb-1">Пакет</label>
+                    <select class="form-select form-select-sm package-select">
+                        <option value="">— выберите пакет —</option>
+                        {% for package in packages %}
+                        <option value="{{ package.packageid }}"
+                                {% if binding and binding.packageid == package.packageid %}selected{% endif %}>
+                            {{ package.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-7">
+                    <label class="form-label small mb-1">Темы</label>
+                    <div class="theme-list" data-themes="[]">
+                        <span class="text-muted small">Сначала выберите пакет</span>
+                    </div>
+                </div>
+            </div>
+            <div class="d-flex gap-2 mt-2">
+                <button class="btn btn-sm btn-primary" onclick="saveBinding(this)">Сохранить</button>
+                {% if binding %}
+                <button class="btn btn-sm btn-outline-danger" onclick="saveBinding(this, true)">Снять привязку</button>
+                {% endif %}
+            </div>
+        </details>
+    </div>
+</div>
+{% endfor %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function init_page() {}
+
+    const ROOMID = {{ roomid }};
+    const CACHE = {};
+
+    async function loadPackage(packageid) {
+        if (CACHE[packageid]) return CACHE[packageid];
+        const response = await fetch('/api/packages/' + ROOMID + '/' + packageid, {
+            headers: {'Accept': 'application/json'}
+        });
+        if (!response.ok) throw new Error('пакет не загрузился');
+        const data = await response.json();
+        const topics = (data.data && data.data.topics) || [];
+        CACHE[packageid] = topics;
+        return topics;
+    }
+
+    function renderThemes(list, topics, selected) {
+        if (!topics.length) {
+            list.innerHTML = '<span class="text-muted small">В пакете нет тем</span>';
+            list.dataset.themes = '[]';
+            return;
+        }
+        const chosen = new Set(selected || []);
+        list.innerHTML = topics.map((topic, index) => `
+            <label class="theme-item">
+                <input class="form-check-input me-2 theme-check" type="checkbox" value="${index}"
+                       ${chosen.has(topic.topic) ? 'checked' : ''}>
+                ${topic.topic}
+                <span class="text-muted small">· ${(topic.questions || []).length} вопр.</span>
+            </label>
+        `).join('');
+    }
+
+    async function fillGame(card, selectedTopics) {
+        const select = card.querySelector('.package-select');
+        const list = card.querySelector('.theme-list');
+        if (!select.value) {
+            list.innerHTML = '<span class="text-muted small">Сначала выберите пакет</span>';
+            return;
+        }
+        list.innerHTML = '<span class="text-muted small">Загружаю…</span>';
+        try {
+            const topics = await loadPackage(select.value);
+            renderThemes(list, topics, selectedTopics || []);
+        } catch (error) {
+            list.innerHTML = '<span class="text-danger small">Не удалось загрузить пакет</span>';
+        }
+    }
+
+    document.querySelectorAll('.game-card').forEach((card) => {
+        const select = card.querySelector('.package-select');
+        if (!select) return;
+
+        select.addEventListener('change', () => fillGame(card, []));
+        if (select.value) {
+            const assigned = {{ assigned|tojson }};
+            const binding = assigned[card.dataset.game];
+            fillGame(card, binding ? binding.topics : []);
+        }
+    });
+
+    async function saveBinding(button, clear, force) {
+        const card = button.closest('.game-card');
+        const select = card.querySelector('.package-select');
+        const gameindex = Number(card.dataset.game);
+
+        let themes = [];
+        if (!clear) {
+            if (!select.value) {
+                alert('Выберите пакет');
+                return;
+            }
+            themes = Array.from(card.querySelectorAll('.theme-check:checked')).map((box) => Number(box.value));
+            if (!themes.length) {
+                alert('Отметьте хотя бы одну тему');
+                return;
+            }
+        }
+
+        button.disabled = true;
+        try {
+            const response = await fetch('/api/plan/' + ROOMID + '/questions', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+                body: JSON.stringify({
+                    gameindex: gameindex,
+                    packageid: select.value ? Number(select.value) : null,
+                    themes: themes,
+                    force: Boolean(force)
+                })
+            });
+            if (response.status === 401) {
+                document.location.href = '/login?next=' + encodeURIComponent(document.location.pathname);
+                return;
+            }
+            const data = await response.json();
+            if (response.status === 409) {
+                if (confirm(data.message)) {
+                    button.disabled = false;
+                    await saveBinding(button, clear, true);
+                }
+                return;
+            }
+            if (data.status === 'ok') {
+                document.location.reload();
+            } else {
+                alert(data.message || 'Не удалось сохранить');
+            }
+        } finally {
+            button.disabled = false;
+        }
+    }
+</script>
+{% endblock %}

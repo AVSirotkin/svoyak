@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .tie-row { background: #fff8e1; }
+    .game-tile { border: 1px solid #e5e7eb; border-radius: .5rem; height: 100%; }
+    .game-tile .head { padding: .6rem .8rem; border-bottom: 1px solid #f1f3f5;
+                       display: flex; justify-content: space-between; align-items: center; }
+    .game-tile .body { padding: .6rem .8rem .8rem; }
+    .table-tile { border: 1px solid #e5e7eb; border-radius: .5rem; height: 100%; }
+    .table-tile .head { padding: .5rem .8rem; background: #f8f9fa; border-bottom: 1px solid #eee;
+                        font-weight: 600; }
+    .table-tile .body { padding: .6rem .8rem .8rem; }
+    .meta-line { color: #6b7280; font-size: .9rem; }
+    .winner-line { font-size: 1.05rem; }
+</style>
+
+<div class="mb-4">
+    <div class="meta-line">Турнир {{ roomid }}</div>
+    <h2 class="mb-1">{{ overview.rules.name if overview.rules else 'Турнир' }}</h2>
+    <div class="meta-line">
+        {{ overview.room.date }}
+        {% if venue %} · {{ venue }}{% endif %}
+        · столов: {{ overview.params.get('tables', 1) }}
+        · игроков: {{ overview.players|length }}
+        {% if overview.room.finished %} · <span class="badge bg-secondary">завершён</span>{% endif %}
+    </div>
+    {% if winner %}
+    <div class="winner-line mt-2">
+        🏆 Победитель: <strong>{{ winner.name }}</strong>
+    </div>
+    {% endif %}
+</div>
+
+{% if plan.errors %}
+<div class="alert alert-warning">
+    Схема турнира разобрана не полностью:
+    <ul class="mb-0">
+        {% for error in plan.errors %}<li>{{ error }}</li>{% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="mb-3">Сейчас за столами</h5>
+        <div class="row row-cols-1 row-cols-md-3 g-3">
+            {% for item in tables_view %}
+            <div class="col">
+                <div class="table-tile">
+                    <div class="head">Стол {{ item.table }}</div>
+                    <div class="body">
+                        {% if item.current %}
+                        <div class="small text-muted mb-1">{{ item.current.name }} · бой {{ item.current.gameindex }}</div>
+                        <div class="small">
+                            {% for player in item.current.participants %}
+                                {% if player %}{{ player.name }}{% else %}?{% endif %}{% if not loop.last %}, {% endif %}
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <div class="small text-muted">бои закончились</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+{% for stage in stages %}
+{% if stage.kind != 'seed' or seed %}
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><strong>Стадия {{ stage.number }}</strong> · {{ stage.title }}</span>
+        {% if stage.kind == 'aggregator' %}<span class="badge bg-info text-dark">пересчёт</span>{% endif %}
+    </div>
+    <div class="card-body">
+        {% if stage.kind == 'seed' %}
+            <div class="row row-cols-2 row-cols-md-4 row-cols-xl-6 g-2">
+                {% for place, player in seed.items()|sort %}
+                <div class="col small"><span class="badge bg-light text-dark">{{ place }}</span> {{ player.name }}</div>
+                {% endfor %}
+            </div>
+        {% elif stage.kind == 'aggregator' %}
+            {% if stage.rows %}
+            <table class="table table-sm align-middle mb-0">
+                <thead>
+                    <tr><th style="width:3rem">#</th><th>Игрок</th><th style="width:6rem">Баллы</th></tr>
+                </thead>
+                <tbody>
+                    {% for row in stage.rows %}
+                    <tr class="{{ 'tie-row' if row.tie else '' }}">
+                        <td>{{ row.place }}</td>
+                        <td>
+                            {{ row.name }}
+                            {% if row.tie %}<span class="badge bg-warning text-dark">ничья</span>{% endif %}
+                        </td>
+                        <td>{{ row.points }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="text-muted mb-0">Пересчёт появится, когда будут сыграны бои источника.</p>
+            {% endif %}
+        {% else %}
+            <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3">
+                {% for game in stage.games %}
+                <div class="col">
+                    <div class="game-tile d-flex flex-column">
+                        <div class="head">
+                            <span>
+                                <strong>{{ game.name }}</strong>
+                                <span class="text-muted small">· стол {{ game.table }}</span>
+                            </span>
+                            {% if game.done %}
+                            <span class="badge bg-success">сыгран</span>
+                            {% elif game.ready %}
+                            <span class="badge bg-primary">идёт</span>
+                            {% else %}
+                            <span class="badge bg-light text-dark">ждёт</span>
+                            {% endif %}
+                            {% if game.tie %}<span class="badge bg-warning text-dark">ничья</span>{% endif %}
+                        </div>
+                        <div class="body">
+                            {% if game.done %}
+                                {% for score in game.scores|sort(attribute='position') %}
+                                <div class="d-flex justify-content-between small">
+                                    <span>{{ score.position }}. {{ score.name }}</span>
+                                    <span class="text-muted">{{ score.points }}</span>
+                                </div>
+                                {% endfor %}
+                            {% else %}
+                                {% for player in game.participants %}
+                                <div class="small">
+                                    {% if player %}{{ player.name }}{% else %}<span class="text-muted">—</span>{% endif %}
+                                </div>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endfor %}
+
+<div class="mb-5">
+    <a class="btn btn-outline-secondary btn-sm" href="/viewbrackets/{{ roomid }}">Сетка целиком</a>
+    <a class="btn btn-outline-secondary btn-sm" href="/">К списку турниров</a>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function init_page() {}
+</script>
+{% endblock %}

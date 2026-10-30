@@ -1,0 +1,1574 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Стол {{ table }} — турнир {{ roomid }}</title>
+    <link rel="stylesheet" href="/static/fullroom.css">
+    <style>
+        /* Только то, чего нет в общем стиле: строки посадки и очередь боёв. */
+        .panel-header { cursor: default; }
+        .slot-row {
+            display: grid;
+            grid-template-columns: 28px 1fr 190px 90px auto;
+            gap: 8px;
+            align-items: center;
+            padding: 8px 12px;
+            background: var(--gray-50);
+            border: 1px solid var(--gray-200);
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+        .slot-row .place { color: var(--gray-500); font-weight: 600; text-align: center; }
+        .slot-row .name { font-weight: 500; color: var(--gray-800); }
+        .slot-row .player-select {
+            display: none;
+            width: 100%;
+            padding: 6px 8px;
+            border: 1px solid var(--gray-300);
+            border-radius: 8px;
+            font: inherit;
+            background: white;
+        }
+        .slot-row .score-input {
+            width: 100%;
+            padding: 6px 8px;
+            border: 1px solid var(--gray-300);
+            border-radius: 8px;
+            font: inherit;
+            text-align: right;
+            background: white;
+        }
+        .changing .slot-row .name { display: none; }
+        .changing .slot-row .player-select { display: block; }
+        .moves { display: flex; gap: 4px; }
+        .tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
+            background: var(--gray-100);
+            color: var(--gray-700);
+            border: 1px solid var(--gray-200);
+        }
+        .tag.ok { background: var(--success-bg); color: var(--success); border-color: var(--success); }
+        .tag.wait { background: var(--warning-bg); color: var(--warning); border-color: var(--warning); }
+        .note { color: var(--gray-600); font-size: 14px; }
+        .queue-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 8px 12px;
+            font-size: 14px;
+            border-bottom: 1px solid var(--gray-100);
+        }
+        .queue-row:last-child { border-bottom: none; }
+        .queue-row.current { background: var(--primary-light); border-radius: 8px; }
+        .slots { display: block; }
+    </style>
+</head>
+<body>
+
+{% macro game_rows(game) %}
+<div class="slots">
+    {% if game.done %}
+        {% for score in game.scores %}
+        <div class="slot-row">
+            <span class="place">{{ loop.index }}</span>
+            <span class="name">{{ score.name }}</span>
+            <select class="player-select">
+                <option value="{{ score.playerid }}" selected>{{ score.name }}</option>
+                {% for player in overview.players %}
+                <option value="{{ player.playerid }}">{{ player.name }}</option>
+                {% endfor %}
+            </select>
+            <input class="score-input player_input_score" type="number" step="1" value="{{ score.score }}">
+            <div class="moves">
+                <button class="btn btn-outline btn-xs" type="button" onclick="move(this, -1)">⬆</button>
+                <button class="btn btn-outline btn-xs" type="button" onclick="move(this, 1)">⬇</button>
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+        {% for player in game.participants %}
+        <div class="slot-row">
+            <span class="place">{{ loop.index }}</span>
+            <span class="name">{{ player.name if player else '' }}</span>
+            <select class="player-select">
+                <option value="{{ player.playerid if player else '' }}" selected>{{ player.name if player else '—' }}</option>
+                {% for option in overview.players %}
+                <option value="{{ option.playerid }}">{{ option.name }}</option>
+                {% endfor %}
+            </select>
+            <input class="score-input player_input_score" type="number" step="1" value="">
+            <div class="moves">
+                <button class="btn btn-outline btn-xs" type="button" onclick="move(this, -1)">⬆</button>
+                <button class="btn btn-outline btn-xs" type="button" onclick="move(this, 1)">⬇</button>
+            </div>
+        </div>
+        {% endfor %}
+    {% endif %}
+</div>
+{% endmacro %}
+
+<header class="page-header">
+    <h1>
+        🎯 Стол {{ table }}
+        <span class="room-badge">Турнир #{{ roomid }}</span>
+    </h1>
+    <div class="header-actions">
+        {% for other in plan.queues|sort %}
+        <a class="btn btn-sm {{ 'btn-primary' if other == table else 'btn-outline' }}"
+           href="/room/{{ roomid }}/{{ other }}">Стол {{ other }}</a>
+        {% endfor %}
+        <a class="btn btn-outline btn-sm" href="/plan/{{ roomid }}">🏆 Пульт турнира</a>
+        <a class="btn btn-outline btn-sm" href="/room/{{ roomid }}">🎮 Комната</a>
+        <a class="btn btn-outline btn-sm" href="/view/{{ roomid }}">📊 Результаты</a>
+    </div>
+</header>
+
+<div class="panels-container">
+
+{% if current is none %}
+    <div class="panel wide" id="panel-done">
+        <div class="panel-header">
+            <span class="panel-title"><span class="icon">✅</span> Все бои этого стола сыграны</span>
+        </div>
+        <div class="panel-body">
+            <div class="note">Порядок боёв был: {{ plan.queue(table)|join(' → ') }}.</div>
+        </div>
+    </div>
+{% else %}
+
+    <div class="panel wide console-card" id="panel-game" data-game="{{ current.gameindex }}">
+        <div class="panel-header">
+            <span class="panel-title">
+                <span class="icon">🎯</span>
+                Текущая игра
+                <span class="note">{{ current.name }} · бой {{ current.gameindex }} · стадия {{ current.stage }}</span>
+            </span>
+            <div class="panel-controls">
+                {% if current.done %}
+                <span class="tag ok">сыгран</span>
+                {% elif current.ready %}
+                <span class="tag ok">готов</span>
+                {% else %}
+                <span class="tag wait">ждёт</span>
+                {% endif %}
+                {% if current.warning %}<span class="tag wait">состав вручную</span>{% endif %}
+                {% if current.tie %}<span class="tag wait">ничья</span>{% endif %}
+            </div>
+        </div>
+        <div class="panel-body">
+            {% if current.done %}
+                {{ game_rows(current) }}
+                <div class="flex gap-8 mt-12">
+                    <button class="btn btn-primary btn-sm" onclick="save(this)">💾 Сохранить исправление</button>
+                    <button class="btn btn-outline btn-sm" onclick="toggleRoster(this)">👥 изменить состав</button>
+                </div>
+            {% elif current.ready %}
+                {{ game_rows(current) }}
+                <div class="flex gap-8 mt-12">
+                    <button class="btn btn-success btn-sm" onclick="save(this)">💾 Внести результат</button>
+                    <button class="btn btn-outline btn-sm" onclick="toggleRoster(this)">👥 изменить состав</button>
+                </div>
+            {% else %}
+                <div class="note mb-12">
+                    Бой ждёт результата:
+                    {% if current.blockers %}
+                        {% for blocker in current.blockers %}боя {{ blocker }}{% if not loop.last %}, {% endif %}{% endfor %}.
+                    {% else %}
+                        не хватает участников.
+                    {% endif %}
+                    Свободны места: {{ current.missing_slots|join(', ') }}.
+                </div>
+                <details>
+                    <summary class="note">Ввести состав вручную</summary>
+                    <div class="mt-12">{{ game_rows(current) }}</div>
+                    <button class="btn btn-primary btn-sm mt-12" onclick="save(this)">💾 Внести результат</button>
+                </details>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="panel" id="panel-controls">
+        <div class="panel-header">
+            <span class="panel-title"><span class="icon">🎮</span> Управление игрой</span>
+            <div class="panel-controls">
+                <button class="panel-collapse" title="Свернуть">▼</button>
+                <button class="panel-expand" title="Развернуть">⛶</button>
+            </div>
+        </div>
+        <div class="panel-body">
+            <div class="answer-controls" id="answerControls">
+                <span class="label">🎯 Ответы игроков</span>
+                <div id="controlButtons" class="answer-buttons-grid"></div>
+            </div>
+
+            <div class="game-controls-row">
+                <button id="prevQuestionBtn" class="btn btn-outline">⬅️ Предыдущий</button>
+                <button id="nextQuestionBtn" class="btn btn-primary">Следующий ➡️</button>
+                <button onclick="ClearCurrentGameLog(false)" class="btn btn-outline">🔄 Сбросить</button>
+                <label class="checkbox-group" title="При включении за неправильный ответ начисляется половина номинала">
+                    <input type="checkbox" id="halfMinusToggle" onchange="toggleHalfMinus()">
+                    ½ Половинные минусы
+                </label>
+                <label class="checkbox-group" title="Включить/выключить управление с клавиатуры">
+                    <input type="checkbox" id="keyboardToggle" checked onchange="toggleKeyboard()">
+                    ⌨️ Клавиатура
+                </label>
+            </div>
+
+            <div id="gameOverMessage" class="game-over" style="display:none;"></div>
+            <div id="warningMessage" class="warning" style="display:none;"></div>
+        </div>
+    </div>
+
+    <div class="panel" id="panel-question-card">
+        <div class="panel-header">
+            <span class="panel-title"><span class="icon">❓</span> Текущий вопрос</span>
+            <div class="panel-controls">
+                <button class="panel-collapse" title="Свернуть">▼</button>
+                <button class="panel-expand" title="Развернуть">⛶</button>
+            </div>
+        </div>
+        <div class="panel-body">
+            <div id="questionCardContainer">
+                <div class="question-card" id="questionCard">
+                    <div class="q-theme-comment" id="qThemeComment" style="display:none;">
+                        <span class="icon">⚠️</span>
+                        <span class="comment-text" id="qThemeCommentText"></span>
+                    </div>
+                    <div class="q-header">
+                        <span class="q-theme" id="qTheme">Тема не загружена</span>
+                        <span class="q-value" id="qValue">0</span>
+                    </div>
+                    <div class="q-text" id="qText">Загрузите файл с вопросами для отображения</div>
+                    <div class="q-meta">
+                        <span><span class="label">Ответ:</span> <span class="q-answer" id="qAnswer">—</span></span>
+                        <span><span class="label">Форма:</span> <span id="qForm">—</span></span>
+                        <span><span class="label">Доп.:</span> <span class="q-additional" id="qAdditional">—</span></span>
+                        <span><span class="label">Источник:</span> <span id="qSource">—</span></span>
+                    </div>
+                    <div id="qCommentContainer"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel wide" id="panel-quiz">
+        <div class="panel-header">
+            <span class="panel-title"><span class="icon">📋</span> Протокол боя</span>
+            <div class="panel-controls">
+                <span class="note" id="protocolStatus"></span>
+                <button class="panel-collapse" title="Свернуть">▼</button>
+                <button class="panel-expand" title="Развернуть">⛶</button>
+            </div>
+        </div>
+        <div class="panel-body">
+            <div class="mode-buttons">
+                <button id="toggleViewBtn" class="btn">Горизонтальное</button>
+                <button id="editModeBtn" class="btn btn-outline">✏️ Режим исправления</button>
+            </div>
+            <div class="theme-control">
+                <label>Количество тем:
+                    <select id="themeCountSelect">
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                        <option value="6" selected>6</option>
+                        <option value="8">8</option>
+                        <option value="10">10</option>
+                    </select>
+                </label>
+                <button id="applyThemeCountBtn" class="btn btn-sm btn-primary">Применить</button>
+            </div>
+
+            <div id="playerScores" class="player-scores"></div>
+
+            <div class="question-info" id="questionInfo">
+                <span>Вопрос готов</span>
+                <span class="progress">0/0</span>
+            </div>
+
+            <div class="table-container">
+                <table class="score-table vertical" id="scoreTable">
+                    <thead><tr id="headerRow"></tr></thead>
+                    <tbody id="tableBody"></tbody>
+                </table>
+            </div>
+
+            <button id="saveResultsBtn" class="btn btn-success" style="display:none;" onclick="save(this)">💾 Внести результат</button>
+        </div>
+    </div>
+
+{% endif %}
+
+{% if placeholder %}
+    <div class="panel wide" id="panel-placeholder">
+        <div class="panel-header">
+            <span class="panel-title"><span class="icon">📚</span> Пакет вопросов не привязан — работает заглушка</span>
+            <div class="panel-controls">
+                <button class="panel-collapse" title="Свернуть">▼</button>
+                <button class="panel-expand" title="Развернуть">⛶</button>
+            </div>
+        </div>
+        <div class="panel-body">
+            <div class="note mb-12">
+                Шесть тем по пять вопросов, номиналы 10–50. Вопросы можно читать с другого
+                устройства: отмечайте ответы здесь, и они сохранятся. Когда привяжете настоящий
+                пакет с такой же сеткой, отметки перейдут на него.
+            </div>
+            {% if can_bind %}
+            <a class="btn btn-primary btn-sm" href="/plan/{{ roomid }}/questions#game-{{ current.gameindex }}">
+                📚 Привязать вопросы к бою {{ current.gameindex }}
+            </a>
+            {% else %}
+            <div class="note">Вопросы привязывает организатор турнира.</div>
+            {% endif %}
+        </div>
+    </div>
+{% endif %}
+
+    <div class="panel wide" id="panel-queue">
+        <div class="panel-header">
+            <span class="panel-title">
+                <span class="icon">🗂</span> Бои стола
+                <span class="note">{{ plan.queue(table)|join(' → ') }}</span>
+            </span>
+            <div class="panel-controls">
+                {% if allow_any_order %}
+                <span class="tag wait">вне очереди разрешено</span>
+                {% endif %}
+                <button class="panel-collapse" title="Свернуть">▼</button>
+                <button class="panel-expand" title="Развернуть">⛶</button>
+            </div>
+        </div>
+        <div class="panel-body">
+            {% if allow_any_order %}
+            <div class="flex flex-wrap gap-8 mb-12">
+                {% for game in queue_games %}
+                {% if game.ready %}
+                <a class="btn btn-xs {{ 'btn-primary' if current and game.gameindex == current.gameindex else 'btn-outline' }}"
+                   href="/room/{{ roomid }}/{{ table }}?game={{ game.gameindex }}">
+                    бой {{ game.gameindex }} · {{ game.name }}
+                </a>
+                {% endif %}
+                {% endfor %}
+                <a class="btn btn-xs btn-outline" href="/room/{{ roomid }}/{{ table }}">по порядку</a>
+            </div>
+            {% endif %}
+
+            {% for game in queue_games %}
+            <div class="queue-row {{ 'current' if current and game.gameindex == current.gameindex else '' }}">
+                <span>
+                    бой {{ game.gameindex }} · {{ game.name }}
+                    {% if game.blockers and not game.done %}
+                    <span class="note">ждёт {{ game.blockers|join(', ') }}</span>
+                    {% endif %}
+                </span>
+                <span>
+                    {% if game.done %}
+                    <a class="note" href="/room/{{ roomid }}/{{ table }}?game={{ game.gameindex }}"
+                       title="открыть и исправить">{{ game.roster()|join(', ') }}</a>
+                    {% elif game.ready %}
+                    <span class="tag ok">готов</span>
+                    {% else %}
+                    <span class="tag wait">ждёт</span>
+                    {% endif %}
+                </span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+</div>
+
+<div id="modal-overlay" class="modal-overlay" style="display:none;">
+    <div class="modal-container">
+        <div class="modal-header">
+            <span class="modal-title"></span>
+            <button class="modal-close" onclick="closeModalAndRestore()">✕</button>
+        </div>
+        <div class="modal-body"></div>
+    </div>
+</div>
+
+<script>
+// ============================================================
+// ДАННЫЕ СТРАНИЦЫ
+// ============================================================
+const ROOMID = {{ roomid }};
+const GAMEINDEX = {{ current.gameindex if current else 0 }};
+const TOPICS = {{ topics|tojson }};
+const HALF_MINUS = {{ 'true' if half_minus else 'false' }};
+const PROTOCOL = {{ protocol|tojson }};
+const PLACEHOLDER = {{ 'true' if placeholder else 'false' }};
+
+// ============================================================
+// СОСТОЯНИЕ (как в FullRoom)
+// ============================================================
+let editModeActive = false;
+let PLAYER_IDS = [];
+
+const gameData = {
+    players: [],
+    questionBlocks: []
+};
+
+const gameState = {
+    currentBlock: 0,
+    currentQuestion: 0,
+    scores: [],
+    answers: [],
+    gameFinished: false,
+    editMode: false,
+    horizontalView: false,
+    halfMinus: HALF_MINUS,
+    keyboardEnabled: true,
+    roomId: String(ROOMID),
+    themeSources: []
+};
+
+// ============================================================
+// ПРОТОКОЛ: ОТМЕТКИ И АВТОСОХРАНЕНИЕ
+// ============================================================
+const MARKS = {};
+let POINTER = 0;
+let saveTimer = null;
+let themesDirty = !PROTOCOL;
+let lastSent = '';
+
+function localKey() { return 'protocol:' + ROOMID + ':' + GAMEINDEX; }
+
+function setStatus(text) {
+    const box = document.getElementById('protocolStatus');
+    if (box) box.textContent = text;
+}
+
+function rememberLocally() {
+    try {
+        localStorage.setItem(localKey(), JSON.stringify({
+            themes: TOPICS, marks: MARKS, pointer: POINTER, savedAt: Date.now()
+        }));
+    } catch (error) {
+        console.warn('[protocol] локальная копия недоступна', error);
+    }
+}
+
+function restoreProtocol() {
+    let local = null;
+    try {
+        local = JSON.parse(localStorage.getItem(localKey()) || 'null');
+    } catch (error) {
+        local = null;
+    }
+    const serverStamp = PROTOCOL && PROTOCOL.updated_at
+        ? Date.parse(String(PROTOCOL.updated_at).replace(' ', 'T') + 'Z') : 0;
+    const localStamp = local && local.savedAt ? Number(local.savedAt) : 0;
+
+    if (local && localStamp > serverStamp) {
+        Object.assign(MARKS, local.marks || {});
+        POINTER = Number(local.pointer) || 0;
+        setStatus('восстановлено из браузера, сохраняю…');
+        scheduleSave();
+        return;
+    }
+    if (PROTOCOL && PROTOCOL.marks) {
+        Object.assign(MARKS, PROTOCOL.marks);
+        POINTER = Number(PROTOCOL.pointer) || 0;
+        setStatus('сохранено ' + (PROTOCOL.updated_at || ''));
+    }
+}
+
+function scheduleSave(delay) {
+    rememberLocally();
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveProtocol, delay === undefined ? 1200 : delay);
+}
+
+async function saveProtocol() {
+    if (!GAMEINDEX) return;
+    rememberLocally();
+    const payload = {themes: TOPICS, marks: MARKS, pointer: POINTER};
+    if (PLACEHOLDER) {
+        // Заглушка: настоящих тем нет, храним только отметки.
+        payload.placeholder = true;
+        delete payload.themes;
+    } else if (themesDirty) {
+        payload.themes = TOPICS;
+    } else {
+        delete payload.themes;
+    }
+    const body = JSON.stringify(payload);
+    if (body === lastSent) return;
+    setStatus('сохраняю…');
+    try {
+        const response = await fetch('/api/plan/' + ROOMID + '/game/' + GAMEINDEX + '/protocol', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+            body: body
+        });
+        if (response.status === 401) {
+            setStatus('нужно войти — отметки пока в браузере');
+            return;
+        }
+        const data = await response.json();
+        if (data.status === 'ok') {
+            lastSent = body;
+            themesDirty = false;
+            setStatus('сохранено ' + (data.updated_at || ''));
+        } else {
+            setStatus('не сохранилось — отметки в браузере');
+        }
+    } catch (error) {
+        setStatus('нет связи — отметки в браузере');
+    }
+}
+
+// ============================================================
+// СОСТАВ БОЯ: КТО ИГРАЕТ И НА КАКОМ МЕСТЕ
+// ============================================================
+function roster() {
+    const card = document.querySelector('.console-card');
+    if (!card) return [];
+    return Array.from(card.querySelectorAll('.slot-row')).map((row) => {
+        const select = row.querySelector('.player-select');
+        const option = select.options[select.selectedIndex];
+        return {
+            playerid: Number(select.value),
+            name: option ? option.textContent.trim() : ''
+        };
+    }).filter((player) => player.playerid);
+}
+
+function blocksFromTopics() {
+    return (TOPICS || []).map((theme) => ({
+        theme: theme.topic || '',
+        comment: theme.comment || '',
+        questions: (theme.questions || []).map((question) => ({
+            value: Number(question.value) || 0,
+            text: question.text || '',
+            answer: question.answer || '',
+            form: question.form || '',
+            additional: question.additional || '',
+            source: question.source || '',
+            comment: question.comment || ''
+        }))
+    }));
+}
+
+function totalQuestions() {
+    return gameData.questionBlocks.reduce((sum, block) => sum + block.questions.length, 0);
+}
+
+function answersFromMarks() {
+    const total = totalQuestions();
+    const rows = [];
+    for (let index = 0; index < total; index++) {
+        rows.push(PLAYER_IDS.map((playerid) => {
+            const mark = MARKS[index + ':' + playerid];
+            if (mark === 'plus') return true;
+            if (mark === 'minus') return false;
+            return null;
+        }));
+    }
+    return rows;
+}
+
+function syncMarksFromAnswers() {
+    Object.keys(MARKS).forEach((key) => { delete MARKS[key]; });
+    gameState.answers.forEach((row, questionIndex) => {
+        row.forEach((answer, playerIndex) => {
+            if (answer !== true && answer !== false) return;
+            const playerid = PLAYER_IDS[playerIndex];
+            if (!playerid) return;
+            MARKS[questionIndex + ':' + playerid] = answer ? 'plus' : 'minus';
+        });
+    });
+}
+
+// ============================================================
+// БЛОКИ FULLROOM: УПРАВЛЕНИЕ ИГРОЙ И ПРОТОКОЛ
+// ============================================================
+function initAnswers() {
+    gameState.answers = [];
+    gameData.questionBlocks.forEach(block => {
+        block.questions.forEach(() => {
+            gameState.answers.push(Array(gameData.players.length).fill(null));
+        });
+    });
+}
+
+function getAbsoluteQuestionNumber() {
+    let abs = 0;
+    for (let i = 0; i < gameState.currentBlock; i++) {
+        if (i < gameData.questionBlocks.length) {
+            abs += gameData.questionBlocks[i].questions.length;
+        }
+    }
+    return abs + gameState.currentQuestion;
+}
+
+function getTotalQuestions() {
+    return gameData.questionBlocks.reduce((acc, b) => acc + b.questions.length, 0);
+}
+
+function getCurrentQuestion() {
+    if (gameData.questionBlocks.length === 0) {
+        return { theme: 'Нет тем', questions: [], current: { value: 0, text: 'Загрузите вопросы', answer: '' } };
+    }
+    if (gameState.currentBlock >= gameData.questionBlocks.length) {
+        gameState.currentBlock = 0;
+        gameState.currentQuestion = 0;
+    }
+    const block = gameData.questionBlocks[gameState.currentBlock];
+    if (gameState.currentQuestion >= block.questions.length) {
+        gameState.currentQuestion = 0;
+    }
+    return {
+        theme: block.theme || 'Без названия',
+        block: block,
+        questions: block.questions,
+        current: block.questions[gameState.currentQuestion] || { value: 0, text: 'Нет вопроса', answer: '' }
+    };
+}
+
+function getQuestionByIndex(index) {
+    let counter = 0;
+    for (const block of gameData.questionBlocks) {
+        for (const q of block.questions) {
+            if (counter === index) return { ...q, theme: block.theme };
+            counter++;
+        }
+    }
+    return null;
+}
+
+function getPenaltyValue(questionValue) {
+    return gameState.halfMinus ? questionValue / 2 : questionValue;
+}
+
+function formatScore(value) {
+    if (Number.isInteger(value)) return value;
+    return value.toFixed(1);
+}
+
+function updateScoresDisplay() {
+    const scores = document.getElementsByClassName('player_input_score');
+    gameData.players.forEach((_, idx) => {
+        if (scores[idx]) scores[idx].value = gameState.scores[idx];
+    });
+    renderScoreCards();
+}
+
+function renderScoreCards() {
+    const container = document.getElementById('playerScores');
+    if (!container) return;
+    container.innerHTML = '';
+    gameData.players.forEach((player, idx) => {
+        if (!player) return;
+        const score = gameState.scores[idx] || 0;
+        const card = document.createElement('div');
+        card.className = 'player-score-card';
+        card.innerHTML = `
+            <div class="name">${player}</div>
+            <div class="score ${score > 0 ? 'positive' : score < 0 ? 'negative' : ''}">${score > 0 ? '+' : ''}${formatScore(score)}</div>
+        `;
+        container.appendChild(card);
+    });
+}
+
+function refreshTable() {
+    if (gameState.horizontalView) renderHorizontalTable();
+    else renderVerticalTable();
+    updateQuestionHighlight();
+}
+
+function renderVerticalTable() {
+    const table = document.getElementById('scoreTable');
+    if (!table) return;
+    table.className = 'score-table vertical';
+    const headerRow = document.getElementById('headerRow');
+    const tableBody = document.getElementById('tableBody');
+    headerRow.innerHTML = '';
+    tableBody.innerHTML = '';
+
+    const thValue = document.createElement('th');
+    thValue.className = 'theme-header';
+    thValue.textContent = ' ';
+    headerRow.appendChild(thValue);
+
+    gameData.players.forEach((player, idx) => {
+        const th = document.createElement('th');
+        th.className = 'player-header';
+        th.textContent = player || `Игрок ${idx+1}`;
+        headerRow.appendChild(th);
+    });
+
+    let questionIndex = 0;
+    gameData.questionBlocks.forEach((block, blockIdx) => {
+        block.questions.forEach((question, qIdx) => {
+            if (qIdx === 0) {
+                const sep = document.createElement('tr');
+                sep.className = 'block-separator';
+                const td = document.createElement('td');
+                td.colSpan = gameData.players.length + 1;
+                td.textContent = `📌 Тема ${blockIdx + 1}: ${block.theme || 'Без названия'}`;
+                if (block.comment) {
+                    td.textContent += ' ⚠️';
+                    td.title = block.comment;
+                }
+                sep.appendChild(td);
+                tableBody.appendChild(sep);
+            }
+            const row = document.createElement('tr');
+            row.id = `question${questionIndex}`;
+            const tdValue = document.createElement('td');
+            tdValue.className = 'question-value';
+            tdValue.textContent = question.value;
+            row.appendChild(tdValue);
+
+            gameData.players.forEach((_, pIdx) => {
+                const td = document.createElement('td');
+                td.id = `answer${questionIndex}_${pIdx}`;
+                const ans = gameState.answers[questionIndex]?.[pIdx];
+                if (ans !== null && ans !== undefined) {
+                    const penalty = getPenaltyValue(question.value);
+                    if (ans === true) {
+                        td.textContent = `+${question.value}`;
+                        td.className = 'correct';
+                    } else {
+                        td.textContent = `-${formatScore(penalty)}`;
+                        td.className = gameState.halfMinus ? 'half-incorrect' : 'incorrect';
+                    }
+                }
+                row.appendChild(td);
+            });
+            tableBody.appendChild(row);
+            questionIndex++;
+        });
+    });
+
+    if (gameState.editMode) {
+        const cells = document.querySelectorAll('#tableBody td[id^="answer"]');
+        cells.forEach(cell => {
+            cell.style.cursor = 'pointer';
+            cell.onclick = function(e) { handleCellClick(e); };
+        });
+    }
+}
+
+function renderHorizontalTable() {
+    const table = document.getElementById('scoreTable');
+    if (!table) return;
+    table.className = 'score-table horizontal';
+    const headerRow = document.getElementById('headerRow');
+    const tableBody = document.getElementById('tableBody');
+    headerRow.innerHTML = '';
+    tableBody.innerHTML = '';
+
+    const themeRow = document.createElement('tr');
+    const emptyTheme = document.createElement('th');
+    emptyTheme.className = 'theme-header';
+    themeRow.appendChild(emptyTheme);
+    gameData.questionBlocks.forEach(block => {
+        const th = document.createElement('th');
+        th.className = 'theme-block';
+        th.colSpan = block.questions.length;
+        th.textContent = block.theme || 'Тема';
+        if (block.comment) {
+            th.textContent += ' ⚠️';
+            th.title = block.comment;
+        }
+        themeRow.appendChild(th);
+    });
+    tableBody.appendChild(themeRow);
+
+    const valueRow = document.createElement('tr');
+    const emptyVal = document.createElement('th');
+    emptyVal.className = 'theme-header';
+    valueRow.appendChild(emptyVal);
+    gameData.questionBlocks.forEach(block => {
+        block.questions.forEach(q => {
+            const td = document.createElement('td');
+            td.className = 'question-value';
+            td.textContent = q.value;
+            valueRow.appendChild(td);
+        });
+    });
+    tableBody.appendChild(valueRow);
+
+    gameData.players.forEach((player, pIdx) => {
+        const row = document.createElement('tr');
+        const playerCell = document.createElement('th');
+        playerCell.className = 'theme-header';
+        playerCell.textContent = player || `Игрок ${pIdx+1}`;
+        row.appendChild(playerCell);
+
+        let qIdx = 0;
+        gameData.questionBlocks.forEach(block => {
+            block.questions.forEach(q => {
+                const td = document.createElement('td');
+                td.id = `answer${qIdx}_${pIdx}`;
+                const ans = gameState.answers[qIdx]?.[pIdx];
+                if (ans !== null && ans !== undefined) {
+                    const penalty = getPenaltyValue(q.value);
+                    if (ans === true) {
+                        td.textContent = `+${q.value}`;
+                        td.className = 'correct';
+                    } else {
+                        td.textContent = `-${formatScore(penalty)}`;
+                        td.className = gameState.halfMinus ? 'half-incorrect' : 'incorrect';
+                    }
+                }
+                row.appendChild(td);
+                qIdx++;
+            });
+        });
+        tableBody.appendChild(row);
+    });
+
+    if (gameState.editMode) {
+        const cells = document.querySelectorAll('#tableBody td[id^="answer"]');
+        cells.forEach(cell => {
+            cell.style.cursor = 'pointer';
+            cell.onclick = function(e) { handleCellClick(e); };
+        });
+    }
+}
+
+function updateQuestionHighlight() {
+    document.querySelectorAll('.current-question, .current-question-column').forEach(el => {
+        el.classList.remove('current-question', 'current-question-column');
+    });
+    if (gameState.gameFinished) return;
+    const qNum = getAbsoluteQuestionNumber();
+    if (gameState.horizontalView) {
+        const rows = document.querySelectorAll('#tableBody tr');
+        rows.forEach((row, idx) => {
+            if (idx < 2) return;
+            const cells = row.querySelectorAll('td, th');
+            if (cells.length > qNum + 1) cells[qNum + 1].classList.add('current-question-column');
+        });
+    } else {
+        const row = document.getElementById(`question${qNum}`);
+        if (row) row.classList.add('current-question');
+    }
+}
+
+function updateQuestionInfo() {
+    const info = document.getElementById('questionInfo');
+    if (!info) return;
+    if (gameState.gameFinished) {
+        info.innerHTML = `<span>🏁 Игра завершена!</span><span class="progress">✓</span>`;
+        return;
+    }
+    const q = getCurrentQuestion();
+    const total = getTotalQuestions();
+    const current = getAbsoluteQuestionNumber() + 1;
+    const penaltyInfo = gameState.halfMinus ? ' (½ минусы)' : '';
+    info.innerHTML = `
+        <span>📌 Тема ${gameState.currentBlock+1}: ${q.theme || 'Без названия'} — ${q.current.value || 0} очков${penaltyInfo}</span>
+        <span class="progress">${current}/${total}</span>
+    `;
+    updateQuestionHighlight();
+    updateQuestionCard();
+}
+
+function updateQuestionCard() {
+    const q = getCurrentQuestion();
+    const currentQ = q.current || {};
+    const block = q.block || gameData.questionBlocks[gameState.currentBlock] || {};
+
+    const themeComment = block.comment || '';
+    const themeCommentEl = document.getElementById('qThemeComment');
+    const themeCommentTextEl = document.getElementById('qThemeCommentText');
+    if (themeComment) {
+        themeCommentTextEl.textContent = themeComment;
+        themeCommentEl.style.display = 'flex';
+    } else {
+        themeCommentEl.style.display = 'none';
+    }
+
+    document.getElementById('qTheme').textContent = q.theme || 'Без названия';
+    document.getElementById('qValue').textContent = currentQ.value || 0;
+    document.getElementById('qText').textContent = currentQ.text || 'Нет текста вопроса';
+    document.getElementById('qAnswer').textContent = currentQ.answer || '—';
+    document.getElementById('qForm').textContent = currentQ.form || '—';
+    document.getElementById('qAdditional').textContent = currentQ.additional || '—';
+    document.getElementById('qSource').textContent = currentQ.source || '—';
+
+    const commentContainer = document.getElementById('qCommentContainer');
+    const comment = currentQ.comment || '';
+    commentContainer.innerHTML = '';
+
+    if (comment) {
+        const COMMENT_THRESHOLD = 150;
+        if (comment.length > COMMENT_THRESHOLD) {
+            const details = document.createElement('details');
+            details.className = 'q-spoiler';
+            const summary = document.createElement('summary');
+            summary.textContent = '💬 Показать комментарий к вопросу';
+            details.appendChild(summary);
+            const content = document.createElement('div');
+            content.className = 'q-spoiler-content';
+            content.textContent = comment;
+            details.appendChild(content);
+            commentContainer.appendChild(details);
+        } else {
+            const commentDiv = document.createElement('div');
+            commentDiv.className = 'q-comment';
+            commentDiv.textContent = '💬 ' + comment;
+            commentContainer.appendChild(commentDiv);
+        }
+    }
+}
+
+function initControlButtons() {
+    const container = document.getElementById('controlButtons');
+    if (!container) return;
+    container.innerHTML = '';
+    const correctKeys = ['1', '2', '3', '4'];
+    const incorrectKeys = ['Q', 'W', 'E', 'R'];
+
+    gameData.players.forEach((player, idx) => {
+        if (!player) return;
+
+        const group = document.createElement('div');
+        group.className = 'player-answer-group';
+
+        const label = document.createElement('div');
+        label.className = 'player-label';
+        label.textContent = player;
+        group.appendChild(label);
+
+        const correctBtn = document.createElement('button');
+        correctBtn.className = 'answer-btn correct';
+        correctBtn.innerHTML = `✅ Правильно <span class="hotkey">${correctKeys[idx]}</span>`;
+        correctBtn.onclick = () => handleAnswer(idx, true);
+        group.appendChild(correctBtn);
+
+        const incorrectBtn = document.createElement('button');
+        incorrectBtn.className = 'answer-btn incorrect';
+        incorrectBtn.innerHTML = `❌ Неправильно <span class="hotkey">${incorrectKeys[idx]}</span>`;
+        incorrectBtn.onclick = () => handleAnswer(idx, false);
+        group.appendChild(incorrectBtn);
+
+        container.appendChild(group);
+    });
+
+    document.getElementById('nextQuestionBtn').onclick = nextQuestion;
+    document.getElementById('prevQuestionBtn').onclick = prevQuestion;
+    document.getElementById('editModeBtn').onclick = toggleEditMode;
+    document.getElementById('toggleViewBtn').onclick = toggleTableView;
+}
+
+function prevQuestion() {
+    if (gameState.editMode) return;
+    if (gameState.gameFinished) return;
+    const total = getTotalQuestions();
+    if (total === 0) return;
+
+    const absPos = getAbsoluteQuestionNumber();
+    if (absPos > 0) {
+        if (gameState.currentQuestion > 0) {
+            gameState.currentQuestion--;
+        } else if (gameState.currentBlock > 0) {
+            gameState.currentBlock--;
+            gameState.currentQuestion = gameData.questionBlocks[gameState.currentBlock].questions.length - 1;
+        }
+        POINTER = getAbsoluteQuestionNumber();
+        updateQuestionInfo();
+        updateQuestionCard();
+        refreshTable();
+        saveGame();
+    }
+}
+
+function nextQuestion() {
+    if (gameState.editMode) return;
+    if (gameState.gameFinished) return;
+
+    const block = gameData.questionBlocks[gameState.currentBlock];
+    if (!block) return;
+
+    const total = getTotalQuestions();
+    const absPos = getAbsoluteQuestionNumber();
+
+    if (absPos < total - 1) {
+        if (gameState.currentQuestion < block.questions.length - 1) {
+            gameState.currentQuestion++;
+        } else if (gameState.currentBlock < gameData.questionBlocks.length - 1) {
+            gameState.currentBlock++;
+            gameState.currentQuestion = 0;
+        }
+        POINTER = getAbsoluteQuestionNumber();
+        updateQuestionInfo();
+        updateQuestionCard();
+        refreshTable();
+        saveGame();
+    } else {
+        gameState.gameFinished = true;
+        showGameOver();
+        updateQuestionInfo();
+        updateQuestionCard();
+        saveGame();
+    }
+}
+
+function toggleTableView() {
+    gameState.horizontalView = !gameState.horizontalView;
+    document.getElementById('toggleViewBtn').textContent =
+        gameState.horizontalView ? 'Вертикальное' : 'Горизонтальное';
+    refreshTable();
+    updateQuestionHighlight();
+}
+
+function toggleEditMode() {
+    if (gameState.editMode && !validateAnswers()) {
+        return;
+    }
+    gameState.editMode = !gameState.editMode;
+    editModeActive = gameState.editMode;
+    const btn = document.getElementById('editModeBtn');
+    btn.textContent = gameState.editMode ? '✅ Завершить исправление' : '✏️ Режим исправления';
+    btn.className = gameState.editMode ? 'btn btn-warning' : 'btn btn-outline';
+
+    const cells = document.querySelectorAll('#tableBody td[id^="answer"]');
+    cells.forEach(cell => {
+        if (gameState.editMode) {
+            cell.style.cursor = 'pointer';
+            cell.onclick = function(e) { handleCellClick(e); };
+        } else {
+            cell.style.cursor = '';
+            cell.onclick = null;
+        }
+    });
+
+    if (!gameState.editMode) {
+        document.getElementById('warningMessage').style.display = 'none';
+    }
+}
+
+function validateAnswers() {
+    let valid = true;
+    const warn = document.getElementById('warningMessage');
+    warn.style.display = 'none';
+    warn.innerHTML = '';
+    gameState.answers.forEach((qa, idx) => {
+        const correct = qa.filter(a => a === true).length;
+        if (correct > 1) {
+            valid = false;
+            const q = getQuestionByIndex(idx);
+            warn.innerHTML += `⚠️ Вопрос ${q?.value || idx} (${q?.theme || ''}) имеет ${correct} правильных ответа!<br>`;
+        }
+    });
+    if (!valid) warn.style.display = 'block';
+    return valid;
+}
+
+function handleCellClick(e) {
+    if (!gameState.editMode) return;
+    const cell = e.target;
+    if (!cell.id || !cell.id.startsWith('answer')) return;
+
+    const parts = cell.id.split('_');
+    const qIdx = parseInt(parts[0].replace('answer', ''));
+    const pIdx = parseInt(parts[1]);
+
+    if (isNaN(qIdx) || isNaN(pIdx)) return;
+    if (qIdx >= gameState.answers.length || pIdx >= gameState.answers[qIdx].length) return;
+
+    const current = gameState.answers[qIdx][pIdx];
+    let newVal;
+    if (current === null) newVal = true;
+    else if (current === true) newVal = false;
+    else newVal = null;
+
+    const oldVal = current;
+    gameState.answers[qIdx][pIdx] = newVal;
+    const q = getQuestionByIndex(qIdx);
+    if (!q) return;
+
+    const penalty = getPenaltyValue(q.value);
+    if (oldVal === true) gameState.scores[pIdx] -= q.value;
+    else if (oldVal === false) gameState.scores[pIdx] += penalty;
+    if (newVal === true) gameState.scores[pIdx] += q.value;
+    else if (newVal === false) gameState.scores[pIdx] -= penalty;
+
+    updateScoresDisplay();
+    refreshTable();
+    saveGame();
+}
+
+function handleAnswer(playerIdx, isCorrect) {
+    if (gameState.gameFinished || gameState.editMode) return;
+    const qNum = getAbsoluteQuestionNumber();
+
+    const questionAnswers = gameState.answers[qNum];
+    if (!questionAnswers) return;
+    const hasCorrect = questionAnswers.some(ans => ans === true);
+
+    if (isCorrect && hasCorrect) {
+        alert('На вопрос уже дан правильный ответ. Если он указан ошибочно, воспользуйтесь режимом исправления.');
+        return;
+    }
+
+    if (questionAnswers[playerIdx] !== null) {
+        if (questionAnswers[playerIdx] === true) {
+            alert('Этот игрок уже дал правильный ответ на данный вопрос.');
+        } else {
+            alert('Этот игрок уже дал неправильный ответ на данный вопрос.');
+        }
+        return;
+    }
+
+    const q = getCurrentQuestion().current;
+    const penalty = getPenaltyValue(q.value);
+    gameState.answers[qNum][playerIdx] = isCorrect;
+    gameState.scores[playerIdx] += isCorrect ? q.value : -penalty;
+    updateScoresDisplay();
+    refreshTable();
+    saveGame();
+
+    const allAnswered = gameState.answers[qNum].every(ans => ans !== null);
+    const hasCorrectAnswer = gameState.answers[qNum].some(ans => ans === true);
+
+    if (allAnswered && !hasCorrectAnswer) {
+        setTimeout(() => {
+            alert('Никто не дал правильный ответ. Переходим к следующему вопросу.');
+            nextQuestion();
+        }, 300);
+    }
+
+    if (isCorrect) {
+        setTimeout(nextQuestion, 400);
+    }
+}
+
+function showGameOver() {
+    document.getElementById('gameOverMessage').style.display = 'block';
+    document.getElementById('gameOverMessage').textContent = '🏆 Игра завершена! Финальные результаты:';
+    document.getElementById('saveResultsBtn').style.display = 'block';
+    document.getElementById('answerControls').style.display = 'none';
+    document.getElementById('nextQuestionBtn').style.display = 'none';
+    document.getElementById('prevQuestionBtn').style.display = 'none';
+    renderScoreCards();
+}
+
+function showResetGameOver() {
+    document.getElementById('gameOverMessage').style.display = 'none';
+    document.getElementById('saveResultsBtn').style.display = 'none';
+    document.getElementById('answerControls').style.display = 'block';
+    document.getElementById('nextQuestionBtn').style.display = 'inline-flex';
+    document.getElementById('prevQuestionBtn').style.display = 'inline-flex';
+}
+
+function getGameResults() {
+    const results = {
+        players: gameData.players,
+        scores: gameState.scores,
+        answers: [],
+        halfMinus: gameState.halfMinus,
+        date: new Date().toISOString()
+    };
+    let idx = 0;
+    gameData.questionBlocks.forEach(block => {
+        block.questions.forEach(q => {
+            results.answers.push({
+                theme: block.theme,
+                value: q.value,
+                playerAnswers: gameState.answers[idx]
+            });
+            idx++;
+        });
+    });
+    return results;
+}
+
+function toggleHalfMinus() {
+    const checkbox = document.getElementById('halfMinusToggle');
+    gameState.halfMinus = checkbox.checked;
+    recalculateScores();
+    refreshTable();
+    updateScoresDisplay();
+    updateQuestionInfo();
+    saveGame();
+}
+
+function toggleKeyboard() {
+    const checkbox = document.getElementById('keyboardToggle');
+    gameState.keyboardEnabled = checkbox.checked;
+}
+
+function recalculateScores() {
+    gameState.scores = Array(gameData.players.length).fill(0);
+    gameState.answers.forEach((questionAnswers, qIdx) => {
+        const q = getQuestionByIndex(qIdx);
+        if (!q) return;
+        const penalty = getPenaltyValue(q.value);
+        questionAnswers.forEach((answer, pIdx) => {
+            if (answer === true) {
+                gameState.scores[pIdx] += q.value;
+            } else if (answer === false) {
+                gameState.scores[pIdx] -= penalty;
+            }
+        });
+    });
+}
+
+document.addEventListener('keydown', (e) => {
+    if (!gameState.keyboardEnabled) return;
+    if (gameState.gameFinished || gameState.editMode) return;
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+
+    const map = {
+        '1': { p: 0, c: true }, '2': { p: 1, c: true }, '3': { p: 2, c: true }, '4': { p: 3, c: true },
+        'q': { p: 0, c: false }, 'Q': { p: 0, c: false }, 'й': { p: 0, c: false }, 'Й': { p: 0, c: false },
+        'w': { p: 1, c: false }, 'W': { p: 1, c: false }, 'ц': { p: 1, c: false }, 'Ц': { p: 1, c: false },
+        'e': { p: 2, c: false }, 'E': { p: 2, c: false }, 'у': { p: 2, c: false }, 'У': { p: 2, c: false },
+        'r': { p: 3, c: false }, 'R': { p: 3, c: false }, 'к': { p: 3, c: false }, 'К': { p: 3, c: false },
+        '0': () => nextQuestion(), '`': () => nextQuestion(), 'ё': () => nextQuestion(), 'Ё': () => nextQuestion(),
+        '9': () => prevQuestion(), '(': () => prevQuestion()
+    };
+    if (map[e.key]) {
+        e.preventDefault();
+        if (typeof map[e.key] === 'function') map[e.key]();
+        else handleAnswer(map[e.key].p, map[e.key].c);
+    }
+});
+
+// ============================================================
+// БЛОКИ FULLROOM: СБРОС, КОЛИЧЕСТВО ТЕМ, ПАНЕЛИ
+// ============================================================
+function ClearCurrentGameLog(forced = true) {
+    if (forced && !confirm(`Вы уверены, что хотите стереть данные за бой ${GAMEINDEX}?`)) return;
+
+    gameState.scores = Array(gameData.players.length).fill(0);
+    gameState.editMode = false;
+    gameState.currentBlock = 0;
+    gameState.currentQuestion = 0;
+    gameState.gameFinished = false;
+    gameState.halfMinus = false;
+    gameState.keyboardEnabled = true;
+    document.getElementById('halfMinusToggle').checked = false;
+    document.getElementById('keyboardToggle').checked = true;
+    initAnswers();
+    refreshTable();
+    updateScoresDisplay();
+    updateQuestionInfo();
+    updateQuestionCard();
+    saveGame();
+    showResetGameOver();
+    document.getElementById('answerControls').style.display = 'block';
+    document.getElementById('nextQuestionBtn').style.display = 'inline-flex';
+    document.getElementById('prevQuestionBtn').style.display = 'inline-flex';
+}
+
+function resizeThemes(newCount) {
+    const oldBlocks = gameData.questionBlocks;
+    const newBlocks = [];
+    for (let i = 0; i < newCount; i++) {
+        if (i < oldBlocks.length) {
+            newBlocks.push(JSON.parse(JSON.stringify(oldBlocks[i])));
+        } else {
+            newBlocks.push({
+                theme: "",
+                comment: "",
+                questions: [
+                    { value: 10, text: "Вопрос 1", answer: "", comment: "" },
+                    { value: 20, text: "Вопрос 2", answer: "", comment: "" },
+                    { value: 30, text: "Вопрос 3", answer: "", comment: "" },
+                    { value: 40, text: "Вопрос 4", answer: "", comment: "" },
+                    { value: 50, text: "Вопрос 5", answer: "", comment: "" }
+                ]
+            });
+        }
+    }
+    gameData.questionBlocks = newBlocks;
+    gameState.themeSources = [];
+    const totalQ = gameData.questionBlocks.reduce((a, b) => a + b.questions.length, 0);
+    const newAnswers = [];
+    for (let i = 0; i < totalQ; i++) {
+        newAnswers.push(i < gameState.answers.length ? [...gameState.answers[i]] : Array(gameData.players.length).fill(null));
+    }
+    gameState.answers = newAnswers;
+    recalculateScores();
+    updateScoresDisplay();
+    refreshTable();
+    updateQuestionInfo();
+    updateQuestionCard();
+    saveGame();
+}
+
+function togglePanelCollapse(panelId) {
+    const panel = document.getElementById(panelId);
+    if (!panel) return;
+    const body = panel.querySelector('.panel-body');
+    const btn = panel.querySelector('.panel-collapse');
+    if (!body || !btn) return;
+    body.classList.toggle('collapsed');
+    btn.classList.toggle('rotated');
+    let states = JSON.parse(localStorage.getItem('panels_collapsed') || '{}');
+    states[panelId] = body.classList.contains('collapsed');
+    localStorage.setItem('panels_collapsed', JSON.stringify(states));
+}
+
+function restoreCollapseStates() {
+    const states = JSON.parse(localStorage.getItem('panels_collapsed') || '{}');
+    for (const [id, collapsed] of Object.entries(states)) {
+        const panel = document.getElementById(id);
+        if (panel) {
+            const body = panel.querySelector('.panel-body');
+            const btn = panel.querySelector('.panel-collapse');
+            if (body && btn) {
+                if (collapsed) { body.classList.add('collapsed'); btn.classList.add('rotated'); }
+                else { body.classList.remove('collapsed'); btn.classList.remove('rotated'); }
+            }
+        }
+    }
+}
+
+function expandPanel(panelId) {
+    const panel = document.getElementById(panelId);
+    if (!panel || panel.closest('.modal-body')) return;
+    const originalParent = panel.parentNode;
+    const placeholder = document.createElement('div');
+    placeholder.className = 'panel-placeholder';
+    placeholder.style.height = panel.offsetHeight + 'px';
+    placeholder.innerHTML = 'Блок развёрнут в модальном окне';
+    originalParent.replaceChild(placeholder, panel);
+    const expandBtn = panel.querySelector('.panel-expand');
+    if (expandBtn) expandBtn.style.display = 'none';
+    const body = panel.querySelector('.panel-body');
+    if (body && body.classList.contains('collapsed')) {
+        body.classList.remove('collapsed');
+        const cb = panel.querySelector('.panel-collapse');
+        if (cb) cb.classList.remove('rotated');
+    }
+    const modalBody = document.querySelector('#modal-overlay .modal-body');
+    modalBody.innerHTML = '';
+    modalBody.appendChild(panel);
+    document.querySelector('#modal-overlay .modal-title').innerText =
+        panel.querySelector('.panel-title')?.innerText || 'Блок';
+    document.getElementById('modal-overlay').style.display = 'flex';
+    window._modalPlaceholder = placeholder;
+    window._modalOriginalParent = originalParent;
+    window._modalPanel = panel;
+}
+
+function closeModalAndRestore() {
+    const modalBody = document.querySelector('#modal-overlay .modal-body');
+    const panel = modalBody.querySelector('.panel');
+    if (panel && window._modalPlaceholder && window._modalOriginalParent) {
+        const expandBtn = panel.querySelector('.panel-expand');
+        if (expandBtn) expandBtn.style.display = '';
+        window._modalOriginalParent.replaceChild(panel, window._modalPlaceholder);
+    }
+    document.getElementById('modal-overlay').style.display = 'none';
+    window._modalPlaceholder = null;
+    window._modalOriginalParent = null;
+    window._modalPanel = null;
+}
+
+// ============================================================
+// СОХРАНЕНИЕ БОЯ И СВЯЗЬ С ПРОТОКОЛОМ
+// ============================================================
+function saveGame() {
+    syncMarksFromAnswers();
+    POINTER = getAbsoluteQuestionNumber();
+    scheduleSave();
+}
+
+function collect(card) {
+    const slots = [];
+    card.querySelectorAll('.slot-row').forEach((row) => {
+        const select = row.querySelector('.player-select');
+        const input = row.querySelector('.score-input');
+        const raw = input.value.trim();
+        if (!select.value || raw === '') return;
+        const option = select.options[select.selectedIndex];
+        slots.push({
+            playerid: Number(select.value),
+            name: option.textContent.trim(),
+            score: raw
+        });
+    });
+    return slots;
+}
+
+async function post(gameindex, payload) {
+    const response = await fetch('/api/plan/' + ROOMID + '/game/' + gameindex, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+        body: JSON.stringify(payload)
+    });
+    if (response.status === 401) {
+        document.location.href = '/login?next=' + encodeURIComponent(document.location.pathname);
+        return {status: 'error', message: 'Нужно войти'};
+    }
+    return response.json();
+}
+
+async function save(button) {
+    const card = document.querySelector('.console-card');
+    if (!card) return;
+    const gameindex = card.dataset.game;
+    const slots = collect(card);
+    if (slots.length < 2) {
+        alert('Нужно хотя бы два игрока со счётом');
+        return;
+    }
+
+    if (button) button.disabled = true;
+    try {
+        let payload = {scores: slots};
+        let data = await post(gameindex, payload);
+
+        if (data.status === 'warning') {
+            const expected = (data.expected || []).map((item) => item.name).join(', ') || '—';
+            const actual = (data.actual || []).join(', ') || '—';
+            const text = 'Состав не совпадает с тем, что следует из правил.\n\n' +
+                         'Ожидалось: ' + expected + '\n' +
+                         'Введено: ' + actual + '\n\n' +
+                         'Всё равно сохранить? Результат попадёт в журнал как ручной.';
+            if (!confirm(text)) return;
+            payload.override = true;
+            data = await post(gameindex, payload);
+        }
+
+        if (data.status === 'ok') {
+            document.location.reload();
+        } else {
+            alert(data.message || 'Не удалось сохранить бой');
+        }
+    } finally {
+        if (button) button.disabled = false;
+    }
+}
+
+// ============================================================
+// СМЕНА СОСТАВА
+// ============================================================
+function relabel(card) {
+    card.querySelectorAll('.slot-row').forEach((row, index) => {
+        const select = row.querySelector('.player-select');
+        const option = select.options[select.selectedIndex];
+        row.querySelector('.place').textContent = String(index + 1);
+        row.querySelector('.name').textContent = option ? option.textContent : '';
+    });
+}
+
+function move(button, delta) {
+    const row = button.closest('.slot-row');
+    const card = button.closest('.console-card');
+    const target = delta < 0 ? row.previousElementSibling : row.nextElementSibling;
+    if (!target) return;
+    if (delta < 0) {
+        row.parentNode.insertBefore(row, target);
+    } else {
+        row.parentNode.insertBefore(target, row);
+    }
+    relabel(card);
+    rebuildFromRoster();
+}
+
+function toggleRoster(button) {
+    const card = button.closest('.console-card');
+    card.classList.toggle('changing');
+    relabel(card);
+}
+
+// ============================================================
+// СБОРКА СТРАНИЦЫ
+// ============================================================
+function rebuildFromRoster() {
+    const players = roster();
+    PLAYER_IDS = players.map((player) => player.playerid);
+    gameData.players = players.map((player) => player.name);
+    gameData.answers = [];
+    gameState.answers = answersFromMarks();
+    recalculateScores();
+    refreshTable();
+    updateScoresDisplay();
+    updateQuestionInfo();
+    updateQuestionCard();
+    initControlButtons();
+}
+
+function pointerToPosition(pointer) {
+    let left = Number(pointer) || 0;
+    gameState.currentBlock = 0;
+    gameState.currentQuestion = 0;
+    for (let index = 0; index < gameData.questionBlocks.length; index++) {
+        const count = gameData.questionBlocks[index].questions.length;
+        if (left < count) {
+            gameState.currentBlock = index;
+            gameState.currentQuestion = left;
+            return;
+        }
+        left -= count;
+    }
+}
+
+function init_page() {
+    document.getElementById('halfMinusToggle').checked = !!gameState.halfMinus;
+    document.getElementById('keyboardToggle').checked = true;
+
+    gameData.questionBlocks = blocksFromTopics();
+
+    restoreProtocol();
+    rebuildFromRoster();
+    pointerToPosition(POINTER);
+
+    const countSelect = document.getElementById('themeCountSelect');
+    if (countSelect) {
+        countSelect.value = String(gameData.questionBlocks.length);
+    }
+
+    updateQuestionInfo();
+    updateQuestionCard();
+    initControlButtons();
+
+    document.getElementById('applyThemeCountBtn')?.addEventListener('click', () => {
+        const newCount = parseInt(document.getElementById('themeCountSelect').value);
+        if (newCount === gameData.questionBlocks.length) return;
+        if (confirm(`Изменить количество тем с ${gameData.questionBlocks.length} на ${newCount}?`)) {
+            resizeThemes(newCount);
+        }
+    });
+
+    restoreCollapseStates();
+    document.querySelectorAll('.panel-expand').forEach(btn => {
+        btn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            const panel = btn.closest('.panel');
+            if (panel && panel.id) expandPanel(panel.id);
+        });
+    });
+    document.querySelectorAll('.panel-collapse').forEach(btn => {
+        btn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            const panel = btn.closest('.panel');
+            if (panel && panel.id) togglePanelCollapse(panel.id);
+        });
+    });
+
+    const card = document.querySelector('.console-card');
+    if (card) {
+        card.addEventListener('change', (event) => {
+            if (event.target.classList.contains('player-select')) {
+                relabel(card);
+                rebuildFromRoster();
+            }
+        });
+    }
+}
+
+init_page();
+</script>
+</body>
+</html>

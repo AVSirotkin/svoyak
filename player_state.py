@@ -62,6 +62,9 @@ class player_state:
             return player_in_game
     
     def process_one_match(self, player_in_game):
+        # Один игрок не может играть в бою дважды. Раньше повтор имени в данных
+        # (например, задвоенная запись результата) увеличивал счётчики дважды.
+        player_in_game = list(dict.fromkeys(player_in_game))
         self.history.append(player_in_game)
 
         for i in player_in_game:

@@ -1,0 +1,10 @@
+.scratch
+.vscode
+.venv
+__pycache__/
+.secret_key
+
+# локальные базы и черновики
+*.db
+*.db-journal
+*.ipynb
