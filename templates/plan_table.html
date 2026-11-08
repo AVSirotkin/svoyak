@@ -235,6 +235,7 @@
         <div class="panel-header">
             <span class="panel-title"><span class="icon">❓</span> Текущий вопрос</span>
             <div class="panel-controls">
+                <span class="note" id="qProgress">вопрос 1 из 1</span>
                 <button class="panel-collapse" title="Свернуть">▼</button>
                 <button class="panel-expand" title="Развернуть">⛶</button>
             </div>
@@ -247,6 +248,7 @@
                         <span class="comment-text" id="qThemeCommentText"></span>
                     </div>
                     <div class="q-header">
+                        <span class="q-theme-number" id="qThemeNumber">Тема 1 из 1</span>
                         <span class="q-theme" id="qTheme">Тема не загружена</span>
                         <span class="q-value" id="qValue">0</span>
                     </div>
@@ -268,34 +270,14 @@
             <span class="panel-title"><span class="icon">📋</span> Протокол боя</span>
             <div class="panel-controls">
                 <span class="note" id="protocolStatus"></span>
+                <button class="icon-btn" id="toggleViewBtn" title="Сейчас вертикально — переключить на горизонтально">⇅</button>
+                <button class="icon-btn" id="editModeBtn" title="Режим исправления: правка отметок в таблице">✏️</button>
                 <button class="panel-collapse" title="Свернуть">▼</button>
                 <button class="panel-expand" title="Развернуть">⛶</button>
             </div>
         </div>
         <div class="panel-body">
-            <div class="mode-buttons">
-                <button id="toggleViewBtn" class="btn">Горизонтальное</button>
-                <button id="editModeBtn" class="btn btn-outline">✏️ Режим исправления</button>
-            </div>
-            <div class="theme-control">
-                <label>Количество тем:
-                    <select id="themeCountSelect">
-                        <option value="3">3</option>
-                        <option value="4">4</option>
-                        <option value="6" selected>6</option>
-                        <option value="8">8</option>
-                        <option value="10">10</option>
-                    </select>
-                </label>
-                <button id="applyThemeCountBtn" class="btn btn-sm btn-primary">Применить</button>
-            </div>
-
             <div id="playerScores" class="player-scores"></div>
-
-            <div class="question-info" id="questionInfo">
-                <span>Вопрос готов</span>
-                <span class="progress">0/0</span>
-            </div>
 
             <div class="table-container">
                 <table class="score-table vertical" id="scoreTable">
@@ -303,8 +285,6 @@
                     <tbody id="tableBody"></tbody>
                 </table>
             </div>
-
-            <button id="saveResultsBtn" class="btn btn-success" style="display:none;" onclick="save(this)">💾 Внести результат</button>
         </div>
     </div>
 
@@ -447,6 +427,12 @@ let lastSent = '';
 
 function localKey() { return 'protocol:' + ROOMID + ':' + GAMEINDEX; }
 
+function shortStamp(value) {
+    // В шапке панели место дорого: от времени оставляем только часы и минуты.
+    const match = String(value || '').match(/^\d{4}-\d{2}-\d{2}[ T](\d{2}:\d{2})/);
+    return match ? match[1] : String(value || '');
+}
+
 function setStatus(text) {
     const box = document.getElementById('protocolStatus');
     if (box) box.textContent = text;
@@ -483,7 +469,7 @@ function restoreProtocol() {
     if (PROTOCOL && PROTOCOL.marks) {
         Object.assign(MARKS, PROTOCOL.marks);
         POINTER = Number(PROTOCOL.pointer) || 0;
-        setStatus('сохранено ' + (PROTOCOL.updated_at || ''));
+        setStatus('сохранено ' + shortStamp(PROTOCOL.updated_at));
     }
 }
 
@@ -523,7 +509,7 @@ async function saveProtocol() {
         if (data.status === 'ok') {
             lastSent = body;
             themesDirty = false;
-            setStatus('сохранено ' + (data.updated_at || ''));
+            setStatus('сохранено ' + shortStamp(data.updated_at));
         } else {
             setStatus('не сохранилось — отметки в браузере');
         }
@@ -864,20 +850,8 @@ function updateQuestionHighlight() {
 }
 
 function updateQuestionInfo() {
-    const info = document.getElementById('questionInfo');
-    if (!info) return;
-    if (gameState.gameFinished) {
-        info.innerHTML = `<span>🏁 Игра завершена!</span><span class="progress">✓</span>`;
-        return;
-    }
-    const q = getCurrentQuestion();
-    const total = getTotalQuestions();
-    const current = getAbsoluteQuestionNumber() + 1;
-    const penaltyInfo = gameState.halfMinus ? ' (½ минусы)' : '';
-    info.innerHTML = `
-        <span>📌 Тема ${gameState.currentBlock+1}: ${q.theme || 'Без названия'} — ${q.current.value || 0} очков${penaltyInfo}</span>
-        <span class="progress">${current}/${total}</span>
-    `;
+    // Отдельной плашки со счётчиком больше нет: номер темы и прогресс боя
+    // показывает сама карточка вопроса, здесь осталась только перерисовка.
     updateQuestionHighlight();
     updateQuestionCard();
 }
@@ -898,6 +872,21 @@ function updateQuestionCard() {
     }
 
     document.getElementById('qTheme').textContent = q.theme || 'Без названия';
+
+    const themeNumber = document.getElementById('qThemeNumber');
+    if (themeNumber) {
+        const blocksTotal = gameData.questionBlocks.length;
+        themeNumber.textContent = blocksTotal
+            ? `Тема ${gameState.currentBlock + 1} из ${blocksTotal}`
+            : 'нет тем';
+    }
+    const progress = document.getElementById('qProgress');
+    if (progress) {
+        const total = getTotalQuestions();
+        progress.textContent = gameState.gameFinished
+            ? 'игра завершена'
+            : (total ? `вопрос ${getAbsoluteQuestionNumber() + 1} из ${total}` : 'вопросов нет');
+    }
     document.getElementById('qValue').textContent = currentQ.value || 0;
     document.getElementById('qText').textContent = currentQ.text || 'Нет текста вопроса';
     document.getElementById('qAnswer').textContent = currentQ.answer || '—';
@@ -1023,10 +1012,19 @@ function nextQuestion() {
     }
 }
 
+function paintViewButton() {
+    const button = document.getElementById('toggleViewBtn');
+    if (!button) return;
+    button.textContent = gameState.horizontalView ? '⇄' : '⇅';
+    button.classList.toggle('active', gameState.horizontalView);
+    button.title = gameState.horizontalView
+        ? 'Сейчас горизонтально — переключить на вертикально'
+        : 'Сейчас вертикально — переключить на горизонтально';
+}
+
 function toggleTableView() {
     gameState.horizontalView = !gameState.horizontalView;
-    document.getElementById('toggleViewBtn').textContent =
-        gameState.horizontalView ? 'Вертикальное' : 'Горизонтальное';
+    paintViewButton();
     refreshTable();
     updateQuestionHighlight();
 }
@@ -1038,8 +1036,12 @@ function toggleEditMode() {
     gameState.editMode = !gameState.editMode;
     editModeActive = gameState.editMode;
     const btn = document.getElementById('editModeBtn');
-    btn.textContent = gameState.editMode ? '✅ Завершить исправление' : '✏️ Режим исправления';
-    btn.className = gameState.editMode ? 'btn btn-warning' : 'btn btn-outline';
+    if (btn) {
+        btn.classList.toggle('active', gameState.editMode);
+        btn.title = gameState.editMode
+            ? 'Исправление включено — нажмите, чтобы выключить'
+            : 'Режим исправления: правка отметок в таблице';
+    }
 
     const cells = document.querySelectorAll('#tableBody td[id^="answer"]');
     cells.forEach(cell => {
@@ -1156,7 +1158,6 @@ function handleAnswer(playerIdx, isCorrect) {
 function showGameOver() {
     document.getElementById('gameOverMessage').style.display = 'block';
     document.getElementById('gameOverMessage').textContent = '🏆 Игра завершена! Финальные результаты:';
-    document.getElementById('saveResultsBtn').style.display = 'block';
     document.getElementById('answerControls').style.display = 'none';
     document.getElementById('nextQuestionBtn').style.display = 'none';
     document.getElementById('prevQuestionBtn').style.display = 'none';
@@ -1165,7 +1166,6 @@ function showGameOver() {
 
 function showResetGameOver() {
     document.getElementById('gameOverMessage').style.display = 'none';
-    document.getElementById('saveResultsBtn').style.display = 'none';
     document.getElementById('answerControls').style.display = 'block';
     document.getElementById('nextQuestionBtn').style.display = 'inline-flex';
     document.getElementById('prevQuestionBtn').style.display = 'inline-flex';
@@ -1272,41 +1272,6 @@ function ClearCurrentGameLog(forced = true) {
     document.getElementById('prevQuestionBtn').style.display = 'inline-flex';
 }
 
-function resizeThemes(newCount) {
-    const oldBlocks = gameData.questionBlocks;
-    const newBlocks = [];
-    for (let i = 0; i < newCount; i++) {
-        if (i < oldBlocks.length) {
-            newBlocks.push(JSON.parse(JSON.stringify(oldBlocks[i])));
-        } else {
-            newBlocks.push({
-                theme: "",
-                comment: "",
-                questions: [
-                    { value: 10, text: "Вопрос 1", answer: "", comment: "" },
-                    { value: 20, text: "Вопрос 2", answer: "", comment: "" },
-                    { value: 30, text: "Вопрос 3", answer: "", comment: "" },
-                    { value: 40, text: "Вопрос 4", answer: "", comment: "" },
-                    { value: 50, text: "Вопрос 5", answer: "", comment: "" }
-                ]
-            });
-        }
-    }
-    gameData.questionBlocks = newBlocks;
-    gameState.themeSources = [];
-    const totalQ = gameData.questionBlocks.reduce((a, b) => a + b.questions.length, 0);
-    const newAnswers = [];
-    for (let i = 0; i < totalQ; i++) {
-        newAnswers.push(i < gameState.answers.length ? [...gameState.answers[i]] : Array(gameData.players.length).fill(null));
-    }
-    gameState.answers = newAnswers;
-    recalculateScores();
-    updateScoresDisplay();
-    refreshTable();
-    updateQuestionInfo();
-    updateQuestionCard();
-    saveGame();
-}
 
 function togglePanelCollapse(panelId) {
     const panel = document.getElementById(panelId);
@@ -1528,22 +1493,11 @@ function init_page() {
     rebuildFromRoster();
     pointerToPosition(POINTER);
 
-    const countSelect = document.getElementById('themeCountSelect');
-    if (countSelect) {
-        countSelect.value = String(gameData.questionBlocks.length);
-    }
-
     updateQuestionInfo();
     updateQuestionCard();
     initControlButtons();
 
-    document.getElementById('applyThemeCountBtn')?.addEventListener('click', () => {
-        const newCount = parseInt(document.getElementById('themeCountSelect').value);
-        if (newCount === gameData.questionBlocks.length) return;
-        if (confirm(`Изменить количество тем с ${gameData.questionBlocks.length} на ${newCount}?`)) {
-            resizeThemes(newCount);
-        }
-    });
+    paintViewButton();
 
     restoreCollapseStates();
     document.querySelectorAll('.panel-expand').forEach(btn => {

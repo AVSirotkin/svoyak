@@ -171,6 +171,36 @@
             color: var(--gray-700);
         }
 
+        /* Компактные переключатели в шапке панели: 28x28, без подписей.
+           Специфичность выше .panel-controls button, иначе кнопка теряет рамку. */
+        .panel-controls .icon-btn {
+            width: 28px;
+            height: 28px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--gray-200);
+            border-radius: 6px;
+            background: white;
+            color: var(--gray-700);
+            font-size: 14px;
+            line-height: 1;
+            cursor: pointer;
+        }
+
+        .panel-controls .icon-btn:hover {
+            background: var(--gray-50);
+            border-color: var(--gray-300);
+            color: var(--primary);
+        }
+
+        .panel-controls .icon-btn.active {
+            background: var(--primary-light);
+            border-color: var(--primary);
+            color: var(--primary-dark);
+        }
+
         .panel-body {
             padding: 20px;
             max-height: 70vh;
@@ -614,6 +644,18 @@
             font-weight: 600;
             color: var(--primary);
             font-size: 15px;
+            margin-right: auto;
+        }
+
+        .question-card .q-theme-number {
+            flex: none;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: var(--primary-light);
+            color: var(--primary-dark);
+            font-size: 12px;
+            font-weight: 600;
+            white-space: nowrap;
         }
 
         .question-card .q-value {
