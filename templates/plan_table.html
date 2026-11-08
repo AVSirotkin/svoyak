@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Стол {{ table }} — турнир {{ roomid }}</title>
+    <title>Площадка {{ table }} — турнир {{ roomid }}</title>
     <link rel="stylesheet" href="/static/fullroom.css">
     <style>
         /* Только то, чего нет в общем стиле: строки посадки и очередь боёв. */
@@ -116,16 +116,20 @@
 
 <header class="page-header">
     <h1>
-        🎯 Стол {{ table }}
+        🎯 Площадка {{ table }}
         <span class="room-badge">Турнир #{{ roomid }}</span>
     </h1>
     <div class="header-actions">
+        {% if area_host %}<span class="tag ok">ведущий: {{ area_host.name }}</span>{% endif %}
+        {% if can_all_areas %}
         {% for other in plan.queues|sort %}
         <a class="btn btn-sm {{ 'btn-primary' if other == table else 'btn-outline' }}"
-           href="/room/{{ roomid }}/{{ other }}">Стол {{ other }}</a>
+           href="/room/{{ roomid }}/{{ other }}">Площадка {{ other }}</a>
         {% endfor %}
         <a class="btn btn-outline btn-sm" href="/plan/{{ roomid }}">🏆 Пульт турнира</a>
         <a class="btn btn-outline btn-sm" href="/room/{{ roomid }}">🎮 Комната</a>
+        {% endif %}
+        <a class="btn btn-outline btn-sm" href="/my">🎯 Мои площадки</a>
         <a class="btn btn-outline btn-sm" href="/view/{{ roomid }}">📊 Результаты</a>
     </div>
 </header>
@@ -135,7 +139,7 @@
 {% if current is none %}
     <div class="panel wide" id="panel-done">
         <div class="panel-header">
-            <span class="panel-title"><span class="icon">✅</span> Все бои этого стола сыграны</span>
+            <span class="panel-title"><span class="icon">✅</span> Все бои этой площадки сыграны</span>
         </div>
         <div class="panel-body">
             <div class="note">Порядок боёв был: {{ plan.queue(table)|join(' → ') }}.</div>
@@ -335,7 +339,7 @@
     <div class="panel wide" id="panel-queue">
         <div class="panel-header">
             <span class="panel-title">
-                <span class="icon">🗂</span> Бои стола
+                <span class="icon">🗂</span> Бои площадки
                 <span class="note">{{ plan.queue(table)|join(' → ') }}</span>
             </span>
             <div class="panel-controls">

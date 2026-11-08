@@ -991,6 +991,7 @@
 
             <div class="header-actions">
                 {% if current_user %}
+                <a class="auth-link" href="/my">Мои площадки</a>
                 <span class="auth-link">{{ current_user.name }}</span>
                 <form method="post" action="/logout" class="auth-form">
                     <button class="auth-link" type="submit">Выйти</button>

@@ -21,7 +21,7 @@
     <div class="meta-line">
         {{ overview.room.date }}
         {% if venue %} · {{ venue }}{% endif %}
-        · столов: {{ overview.params.get('tables', 1) }}
+        · площадок: {{ overview.params.get('tables', 1) }}
         · игроков: {{ overview.players|length }}
         {% if overview.room.finished %} · <span class="badge bg-secondary">завершён</span>{% endif %}
     </div>
@@ -43,12 +43,12 @@
 
 <div class="card mb-4">
     <div class="card-body">
-        <h5 class="mb-3">Сейчас за столами</h5>
+        <h5 class="mb-3">Сейчас на площадках</h5>
         <div class="row row-cols-1 row-cols-md-3 g-3">
             {% for item in tables_view %}
             <div class="col">
                 <div class="table-tile">
-                    <div class="head">Стол {{ item.table }}</div>
+                    <div class="head">Площадка {{ item.table }}</div>
                     <div class="body">
                         {% if item.current %}
                         <div class="small text-muted mb-1">{{ item.current.name }} · бой {{ item.current.gameindex }}</div>
@@ -112,7 +112,7 @@
                         <div class="head">
                             <span>
                                 <strong>{{ game.name }}</strong>
-                                <span class="text-muted small">· стол {{ game.table }}</span>
+                                <span class="text-muted small">· площадка {{ game.table }}</span>
                             </span>
                             {% if game.done %}
                             <span class="badge bg-success">сыгран</span>

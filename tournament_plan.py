@@ -241,9 +241,9 @@ def assign_tables(schema, tables=1):
     try:
         tables = int(tables)
     except (TypeError, ValueError):
-        raise PlanError('Количество столов должно быть числом')
+        raise PlanError('Количество площадок должно быть числом')
     if tables < 1:
-        raise PlanError('Количество столов должно быть не меньше одного')
+        raise PlanError('Количество площадок должно быть не меньше одного')
 
     result = copy.deepcopy(schema)
     games = [item for item in result['matches'] if item['type'] == MATCH]
@@ -258,9 +258,9 @@ def assign_tables(schema, tables=1):
             try:
                 table = int(item['table'])
             except (TypeError, ValueError):
-                raise PlanError('Стол боя %s должен быть числом' % item['id'])
+                raise PlanError('Площадка боя %s должна быть числом' % item['id'])
             if table < 1:
-                raise PlanError('Стол боя %s должен быть положительным' % item['id'])
+                raise PlanError('Площадка боя %s должна быть положительной' % item['id'])
             item['table'] = (table - 1) % tables + 1
         else:
             index = counters.get(item['round'], 0)

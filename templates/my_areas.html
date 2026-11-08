@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .area-link { font-variant-numeric: tabular-nums; }
+    .area-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        padding: .25rem .6rem;
+        border: 1px solid #dee2e6;
+        border-radius: .5rem;
+        text-decoration: none;
+        color: #212529;
+        background: #fff;
+        margin: 0 .35rem .35rem 0;
+    }
+    .area-chip:hover { background: #f8f9fa; color: #0d6efd; }
+</style>
+
+<div class="mb-3">
+    <div class="text-muted small">Ваш доступ</div>
+    <h2 class="mb-1">Мои площадки</h2>
+    <div class="text-muted small">
+        Ведущему открыт пульт только его площадки. Организатор и администратор видят все.
+    </div>
+</div>
+
+{% if not rooms %}
+<div class="alert alert-secondary">
+    Пока ничего не назначено. Организатор турнира выбирает ведущего площадки в пульте турнира.
+    {% if current_user and current_user.role == 'администратор' %}
+    <div class="mt-2 small">
+        Как администратор вы можете открыть любой турнир: <a href="/">создать или выбрать комнату</a>.
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+{% for room in rooms %}
+<div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span>
+            <strong>Турнир {{ room.roomid }}</strong>
+            {% if room.venue %}<span class="text-muted small">· {{ room.venue }}</span>{% endif %}
+            {% if room.date %}<span class="text-muted small">· {{ room.date }}</span>{% endif %}
+        </span>
+        {% if room.owner %}<span class="badge bg-secondary">вы организатор</span>{% endif %}
+    </div>
+    <div class="card-body">
+        {% if room.owner %}
+        <div class="mb-2">
+            <a class="btn btn-sm btn-outline-primary" href="/plan/{{ room.roomid }}">Пульт турнира</a>
+            <a class="btn btn-sm btn-outline-secondary" href="/plan/{{ room.roomid }}/questions">Вопросы по боям</a>
+        </div>
+        {% endif %}
+        {% if room.areas %}
+        <div class="mb-1 small text-muted">Площадки, которые вы ведёте:</div>
+        <div>
+            {% for area in room.areas %}
+            <a class="area-chip area-link" href="/room/{{ room.roomid }}/{{ area }}">
+                🎯 Площадка {{ area }}
+            </a>
+            {% endfor %}
+        </div>
+        {% elif room.owner %}
+        <div class="text-muted small">Ведущие площадок ещё не назначены — выберите их в пульте турнира.</div>
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function init_page() {}
+</script>
+{% endblock %}

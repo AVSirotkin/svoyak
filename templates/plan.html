@@ -15,7 +15,7 @@
         <h2 class="mb-1">{{ overview.rules.name if overview.rules else 'Без схемы' }}</h2>
         <div class="text-muted small">
             {{ overview.room.date }} ·
-            столов: {{ overview.params.get('tables', 1) }} ·
+            площадок: {{ overview.params.get('tables', 1) }} ·
             игроков в комнате: {{ overview.players|length }}
             {% if overview.owner %} · ведущий: {{ overview.owner }}{% else %} · без владельца{% endif %}
         </div>
@@ -89,10 +89,10 @@
 <div class="card mb-3">
     <div class="card-body d-flex justify-content-between align-items-center">
         <div>
-            <strong>Бои стола идут строго по порядку</strong>
+            <strong>Бои площадки идут строго по порядку</strong>
             <div class="text-muted small">
-                Ведущий играет бои своего стола по очереди. Разрешать играть вне очереди
-                стоит только в исключительных случаях — например, чтобы не ждать чужой стол.
+                Ведущий играет бои своей площадки по очереди. Разрешать играть вне очереди
+                стоит только в исключительных случаях — например, чтобы не ждать чужую площадку.
             </div>
         </div>
         <div class="form-check form-switch mb-0">
@@ -158,7 +158,7 @@
                             {% if game.tie %}<span class="badge bg-warning text-dark">ничья</span>{% endif %}
                         </div>
                         <div class="small text-muted mb-2">
-                            бой {{ game.gameindex }} · стол {{ game.table }} · очередь {{ game.order }}
+                            бой {{ game.gameindex }} · площадка {{ game.table }} · очередь {{ game.order }}
                         </div>
                         <div class="small mb-2">
                             {% for player in game.participants %}
@@ -171,7 +171,7 @@
                         </div>
                         {% endif %}
                         <a class="btn btn-sm btn-outline-primary mt-auto" href="/room/{{ roomid }}/{{ game.table }}">
-                            Пульт стола {{ game.table }}
+                            Пульт площадки {{ game.table }}
                         </a>
                     </div>
                 </div>
@@ -185,17 +185,47 @@
 {% if queues %}
 <div class="card mb-3">
     <div class="card-body">
-        <h5>Очереди столов</h5>
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h5 class="mb-0">Площадки</h5>
+            <span class="text-muted small">ведущий получает доступ только к своей</span>
+        </div>
         <div class="row row-cols-1 row-cols-md-3 g-3">
             {% for queue in queues %}
+            {% set host = area_hosts.get(queue.table) %}
             <div class="col">
-                <a class="text-decoration-none" href="/room/{{ roomid }}/{{ queue.table }}">
-                    <strong>Стол {{ queue.table }}</strong>
-                </a>
-                <div class="small text-muted">бои: {{ queue.games|join(' → ') }}</div>
+                <div class="border rounded p-3 h-100 d-flex flex-column">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <a class="text-decoration-none" href="/room/{{ roomid }}/{{ queue.table }}">
+                            <strong>Площадка {{ queue.table }}</strong>
+                        </a>
+                        <span class="text-muted small">бои: {{ queue.games|join(' → ') }}</span>
+                    </div>
+                    <div class="small text-muted mb-2">
+                        {% if host %}ведущий: {{ host.name }}{% else %}ведущий не назначен{% endif %}
+                    </div>
+                    <label class="form-label small mb-1 mt-auto">Назначить ведущего</label>
+                    <select class="form-select form-select-sm area-host" data-area="{{ queue.table }}">
+                        <option value="">— не назначен —</option>
+                        {% for person in hosts %}
+                        <option value="{{ person.userid }}"
+                                {% if host and host.userid == person.userid %}selected{% endif %}>
+                            {{ person.name }}{% if person.role == 'администратор' %} · админ{% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
             </div>
             {% endfor %}
         </div>
+        <div class="text-muted small mt-2">
+            Администратор и владелец турнира работают на любой площадке. Остальным открыта только назначенная.
+        </div>
+        {% if not overview.owner %}
+        <div class="text-warning-emphasis small mt-1">
+            У комнаты нет владельца, поэтому пульт площадки пока открыт любому вошедшему:
+            назначения начнут ограничивать доступ, когда у турнира появится владелец.
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endif %}
@@ -206,8 +236,7 @@
 <script>
     function init_page() {}
 
-    async function setOrder(allow) {
-        const response = await fetch('/api/plan/{{ roomid }}/order', {
+    async function setOrder(allow) {        const response = await fetch('/api/plan/{{ roomid }}/order', {
             method: 'POST',
             headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
             body: JSON.stringify({allow: allow})
@@ -235,5 +264,22 @@
             alert(data.message || "Не удалось провести жеребьёвку");
         }
     }
+
+    // Назначение ведущего площадки: организатор выбирает человека из списка.
+    document.querySelectorAll('.area-host').forEach((select) => {
+        select.addEventListener('change', async () => {
+            const area = select.dataset.area;
+            const response = await fetch('/api/plan/{{ roomid }}/areas/' + area, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+                body: JSON.stringify({userid: select.value || null})
+            });
+            const data = await response.json();
+            if (data.status !== 'ok') {
+                alert(data.message || 'Не удалось назначить ведущего площадки');
+            }
+            document.location.reload();
+        });
+    });
 </script>
 {% endblock %}

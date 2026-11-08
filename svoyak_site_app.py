@@ -266,6 +266,129 @@ def can_manage_room(roomid, user=None):
     return row["ownerid"] is None or row["ownerid"] == user["userid"]
 
 
+# ---------------------------------------------------------------
+# Площадки: кто какую ведёт
+# ---------------------------------------------------------------
+def room_area_hosts(roomid):
+    """Ведущие площадок комнаты: {номер площадки: {"userid", "name"}}.
+
+    Площадка — это то, что в схеме турнира называется столом (поле table).
+    Внутри данных имя осталось прежним: оно записано в JSON правил и в
+    параметрах комнаты, менять его — ломать старые турниры.
+    """
+    ensure_tournament_tables()
+    ensure_auth_tables()
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT a.area, a.userid, u.name FROM area_hosts a "
+            "LEFT JOIN users u ON u.userid = a.userid WHERE a.roomid = ?",
+            (roomid,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    finally:
+        conn.close()
+    return {
+        int(row["area"]): {"userid": row["userid"], "name": row["name"]}
+        for row in rows
+    }
+
+
+def set_area_host(roomid, area, userid, actor=None):
+    """Назначает ведущего площадки. userid=None снимает назначение."""
+    ensure_tournament_tables()
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        if userid is None:
+            conn.execute(
+                "DELETE FROM area_hosts WHERE roomid = ? AND area = ?", (roomid, area)
+            )
+        else:
+            conn.execute(
+                "INSERT INTO area_hosts (roomid, area, userid, assigned_at) "
+                "VALUES (?, ?, ?, CURRENT_TIMESTAMP) "
+                "ON CONFLICT(roomid, area) DO UPDATE SET "
+                "userid = excluded.userid, assigned_at = CURRENT_TIMESTAMP",
+                (roomid, area, userid),
+            )
+        log_game_events(
+            roomid,
+            "area host",
+            {"area": area, "userid": userid, "by": actor["name"] if actor else None},
+            conn=conn,
+        )
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+
+
+def user_areas(roomid, user=None):
+    """Площадки комнаты, которые назначены этому пользователю."""
+    user = user if user is not None else current_user()
+    if user is None:
+        return []
+    hosts = room_area_hosts(roomid)
+    return sorted(area for area, host in hosts.items() if host["userid"] == user["userid"])
+
+
+def can_manage_area(roomid, area, user=None):
+    """Пульт площадки: администратор, владелец комнаты или её ведущий.
+
+    Комната без владельца остаётся открытой всем вошедшим — так работали
+    старые турниры и так они продолжают работать.
+    """
+    user = user if user is not None else current_user()
+    if user is None:
+        return False
+    if can_manage_room(roomid, user):
+        return True
+    if area is None:
+        return False
+    return int(area) in user_areas(roomid, user)
+
+
+def game_area(roomid, gameindex):
+    """Номер площадки, к которой относится бой. None, если боя нет."""
+    conn = get_db_connection()
+    try:
+        plan = build_room_plan(conn, roomid)
+    finally:
+        conn.close()
+    if plan is None:
+        return None
+    game = plan.game(gameindex)
+    return None if game is None else game.table
+
+
+def area_access_required(view):
+    """Пульт площадки: организатор или назначенный ведущий этой площадки."""
+
+    @functools.wraps(view)
+    def wrapper(*args, **kwargs):
+        user = current_user()
+        roomid = kwargs.get("roomid")
+        area = kwargs.get("area")
+        if user is None:
+            return redirect("/login?next=" + request.path)
+        if can_manage_area(roomid, area, user):
+            return view(*args, **kwargs)
+        own = user_areas(roomid, user)
+        if own:
+            # Ведущий открыл чужую площадку — возвращаем на свою.
+            return redirect(f"/room/{roomid}/{own[0]}", code=302)
+        abort(403)
+
+    return wrapper
+
+
 @app.route('/login', subdomain="svoyak", methods=["GET", "POST"])
 def LoginPage():
     ensure_auth_tables()
@@ -465,6 +588,7 @@ def plan_view(plan):
 @app.route('/plan/<int:roomid>', subdomain="svoyak")
 @room_access_required
 def PlanPage(roomid):
+    ensure_auth_tables()
     conn = get_db_connection()
     try:
         overview = room_overview(conn, roomid)
@@ -472,6 +596,9 @@ def PlanPage(roomid):
             return redirect(f"/init/{roomid}", code=302)
         plan = build_room_plan(conn, roomid)
         seed = room_seed(conn, roomid)
+        hosts = conn.execute(
+            "SELECT userid, name, role FROM users ORDER BY name"
+        ).fetchall()
     finally:
         conn.close()
     return render_template(
@@ -479,13 +606,64 @@ def PlanPage(roomid):
         stages=plan_view(plan) if plan is not None else [],
         queues=[{"table": table, "games": plan.queue(table)} for table in sorted(plan.queues)]
         if plan is not None else [],
+        hosts=hosts,
+        area_hosts=room_area_hosts(roomid),
         title=f"Турнир {roomid}",
     )
 
 
-@app.route('/room/<int:roomid>/<int:table>', subdomain="svoyak")
-@room_access_required
-def PlanTablePage(roomid, table):
+@app.route('/my', subdomain="svoyak")
+@login_required
+def MyAreasPage():
+    """Свои площадки: сюда ведущий приходит за пультом."""
+    user = current_user()
+    ensure_auth_tables()
+    ensure_tournament_tables()
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT a.roomid, a.area, r.date, r.finished, r.ownerid, v.venuename "
+            "FROM area_hosts a "
+            "LEFT JOIN activerooms r ON r.roomid = a.roomid "
+            "LEFT JOIN venues v ON v.venueid = r.venueid "
+            "WHERE a.userid = ? ORDER BY a.roomid DESC, a.area",
+            (user["userid"],),
+        ).fetchall()
+        owned = conn.execute(
+            "SELECT r.roomid, r.date, r.finished, v.venuename FROM activerooms r "
+            "LEFT JOIN venues v ON v.venueid = r.venueid "
+            "WHERE r.ownerid = ? ORDER BY r.roomid DESC",
+            (user["userid"],),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    rooms = {}
+
+    def entry(roomid):
+        if roomid not in rooms:
+            rooms[roomid] = {"roomid": roomid, "date": None, "venue": None, "areas": [], "owner": False}
+        return rooms[roomid]
+
+    for row in owned:
+        item = entry(row["roomid"])
+        item["date"] = row["date"]
+        item["venue"] = row["venuename"]
+        item["owner"] = True
+    for row in rows:
+        item = entry(row["roomid"])
+        item["date"] = item["date"] or row["date"]
+        item["venue"] = item["venue"] or row["venuename"]
+        item["areas"].append(row["area"])
+
+    ordered = sorted(rooms.values(), key=lambda item: item["roomid"], reverse=True)
+    return render_template("my_areas.html", rooms=ordered, title="Мои площадки")
+
+
+@app.route('/room/<int:roomid>/<int:area>', subdomain="svoyak")
+@area_access_required
+def PlanTablePage(roomid, area):
+    table = area
     conn = get_db_connection()
     try:
         overview = room_overview(conn, roomid)
@@ -543,15 +721,61 @@ def PlanTablePage(roomid, table):
         topics=topics, protocol=protocol,
         half_minus=bool(overview["params"].get("half_minus")),
         can_bind=can_manage_room(roomid),
+        can_all_areas=can_manage_room(roomid),
+        area_host=room_area_hosts(roomid).get(table),
         placeholder=placeholder,
-        title=f"Стол {table} — турнир {roomid}",
+        title=f"Площадка {table} — турнир {roomid}",
+    )
+
+
+@app.route('/api/plan/<int:roomid>/areas/<int:area>', subdomain="svoyak", methods=["POST"])
+@api_login_required
+def PlanAreaHost(roomid, area):
+    """Организатор назначает ведущего площадки или снимает назначение."""
+    if not can_manage_room(roomid):
+        return json.dumps(
+            {"status": "error", "message": "Ведущих площадок назначает организатор турнира"},
+            ensure_ascii=False,
+        ), 403
+
+    data = request.get_json(silent=True) or {}
+    raw = data.get("userid")
+    userid = None
+    if raw not in (None, "", 0, "0"):
+        try:
+            userid = int(raw)
+        except (TypeError, ValueError):
+            return json.dumps(
+                {"status": "error", "message": "Некорректный пользователь"}, ensure_ascii=False
+            ), 400
+        ensure_auth_tables()
+        conn = get_db_connection()
+        try:
+            row = conn.execute(
+                "SELECT userid, name FROM users WHERE userid = ?", (userid,)
+            ).fetchone()
+        finally:
+            conn.close()
+        if row is None:
+            return json.dumps(
+                {"status": "error", "message": "Такого пользователя нет"}, ensure_ascii=False
+            ), 404
+
+    set_area_host(roomid, area, userid, current_user())
+    return json.dumps(
+        {
+            "status": "ok",
+            "area": area,
+            "host": room_area_hosts(roomid).get(area),
+        },
+        ensure_ascii=False,
     )
 
 
 @app.route('/api/plan/<int:roomid>/order', subdomain="svoyak", methods=["POST"])
 @api_login_required
 def PlanOrderRule(roomid):
-    """Админ турнира решает, можно ли играть бои стола не по порядку."""
+    """Админ турнира решает, можно ли играть бои площадки не по порядку."""
     if not can_manage_room(roomid):
         return json.dumps(
             {"status": "error", "message": "Нет прав на эту комнату"}, ensure_ascii=False
@@ -994,11 +1218,21 @@ def room_protocol(conn, roomid, gameindex):
 
 @app.route('/api/plan/<int:roomid>/game/<int:gameindex>/protocol', subdomain="svoyak",
            methods=["GET", "POST", "DELETE"])
-@api_room_access_required
+@api_login_required
 def PlanGameProtocol(roomid, gameindex):
     """Протокол боя: чтение, автосохранение по ходу игры и явный сброс."""
     ensure_tournament_tables()
     user = current_user()
+
+    area = game_area(roomid, gameindex)
+    if area is None:
+        return json.dumps(
+            {"status": "error", "message": f"Боя {gameindex} нет в схеме"}, ensure_ascii=False
+        ), 404
+    if not can_manage_area(roomid, area, user):
+        return json.dumps(
+            {"status": "error", "message": "Нет прав на эту площадку"}, ensure_ascii=False
+        ), 403
 
     if request.method == "GET":
         conn = get_db_connection()
@@ -1115,10 +1349,6 @@ def PlanSaveGame(roomid, gameindex):
     """Сохраняет бой. При расхождении состава спрашивает подтверждение."""
     data = request.get_json(silent=True) or {}
     override = bool(data.get("override"))
-    if not can_manage_room(roomid):
-        return json.dumps(
-            {"status": "error", "message": "Нет прав на эту комнату"}, ensure_ascii=False
-        ), 403
 
     parsed = []
     for item in data.get("scores") or []:
@@ -1156,6 +1386,10 @@ def PlanSaveGame(roomid, gameindex):
         return json.dumps(
             {"status": "error", "message": f"Боя {gameindex} нет в схеме"}, ensure_ascii=False
         ), 404
+    if not can_manage_area(roomid, game.table):
+        return json.dumps(
+            {"status": "error", "message": "Нет прав на эту площадку"}, ensure_ascii=False
+        ), 403
 
     expected = [player for player in game.expected if player is not None]
     expected_keys = {player.key for player in expected}
@@ -2204,6 +2438,17 @@ def ensure_tournament_tables():
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 updated_by TEXT,
                 PRIMARY KEY (roomid, gameindex)
+            )
+        ''')
+        # Ведущий площадки: кому из пользователей открыт пульт этой площадки.
+        # Площадка — это бывший «стол»: номер из схемы турнира.
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS area_hosts (
+                roomid      INTEGER NOT NULL,
+                area        INTEGER NOT NULL,
+                userid      INTEGER NOT NULL,
+                assigned_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (roomid, area)
             )
         ''')
         conn.commit()

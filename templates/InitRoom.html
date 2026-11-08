@@ -28,7 +28,7 @@
     </select><br>
 
 <div id="tables_row" style="display:none">
-    Столов: <select id="game_tables" name="game_tables"></select>
+    Площадок: <select id="game_tables" name="game_tables"></select>
     <span id="tables_hint"></span><br>
     <label style="display:inline-block;margin-top:6px">
         <input type="checkbox" id="half_minus" name="half_minus">
@@ -64,7 +64,7 @@ DE на 8 человек<br> -->
         syncTables();
     }
 
-    // Сколько столов допускает выбранная схема. По умолчанию ставим один:
+    // Сколько площадок допускает выбранная схема. По умолчанию ставим один:
     // так играли раньше, а ведущий поднимает число осознанно.
     function syncTables(){
         const format = document.getElementById("game_format");
