@@ -222,8 +222,17 @@
         </div>
         {% if not overview.owner %}
         <div class="text-warning-emphasis small mt-1">
-            У комнаты нет владельца, поэтому пульт площадки пока открыт любому вошедшему:
-            назначения начнут ограничивать доступ, когда у турнира появится владелец.
+            У комнаты нет владельца: пульт площадки открыт любому, у кого есть ссылка,
+            в том числе без входа. Назначения начнут ограничивать доступ, когда у турнира
+            появится владелец.
+            {% if current_user %}
+            <form method="post" action="/api/room/{{ roomid }}/claim" class="d-inline m-0"
+                  onsubmit="claimRoom(this); return false;">
+                <button class="btn btn-outline-warning btn-sm ms-2" type="submit">Закрепить за собой</button>
+            </form>
+            {% else %}
+            <a class="ms-2" href="/login?next={{ request.path }}">Войти и закрепить</a>
+            {% endif %}
         </div>
         {% endif %}
     </div>
@@ -235,6 +244,18 @@
 {% block scripts %}
 <script>
     function init_page() {}
+
+    // Привязка комнаты без владельца к текущему аккаунту.
+    async function claimRoom(form) {
+        const response = await fetch(form.action, { method: 'POST' });
+        const data = await response.json().catch(() => ({}));
+        if (response.ok) {
+            document.location.reload();
+        } else {
+            alert(data.message || 'Не удалось закрепить комнату');
+        }
+        return false;
+    }
 
     async function setOrder(allow) {        const response = await fetch('/api/plan/{{ roomid }}/order', {
             method: 'POST',

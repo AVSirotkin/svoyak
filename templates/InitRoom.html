@@ -7,6 +7,16 @@
 {% else %}
 <h1>Инициализация комнаты {{roomid}} </h1>
 {% endif %}
+
+{% if not current_user %}
+<div class="alert alert-warning" role="alert">
+    <strong>Вы не вошли в систему.</strong>
+    Турнир создастся без владельца: открыть пульт и управлять им сможет любой, у кого есть ссылка.
+    Чтобы закрепить турнир за собой, <a href="/login?next={{ request.path }}">войдите</a>
+    или <a href="/register">зарегистрируйтесь</a> — после создания его можно привязать
+    к аккаунту кнопкой в пульте.
+</div>
+{% endif %}
 <!-- <a href = "/room/{{roomid}}"><h1>Вернуться в комнату</h1></a>  -->
 
 Дата игры: <input type="date" id="game_date" name="game_date" value="2024-09-01" min="2020-01-01" /><br>

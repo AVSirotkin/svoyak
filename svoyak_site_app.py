@@ -189,6 +189,21 @@ def api_login_required(view):
     return wrapper
 
 
+def api_login_or_open_room(view):
+    """JSON-ручка комнаты: гостю можно, если у комнаты нет владельца."""
+
+    @functools.wraps(view)
+    def wrapper(*args, **kwargs):
+        if current_user() is None and not room_is_open(kwargs.get("roomid")):
+            return json.dumps(
+                {"status": "error", "needs_login": True, "message": "Нужно войти в систему"},
+                ensure_ascii=False,
+            ), 401
+        return view(*args, **kwargs)
+
+    return wrapper
+
+
 def room_is_finished(roomid):
     """Завершённая комната — это витрина: её смотрит кто угодно."""
     try:
@@ -204,6 +219,31 @@ def room_is_finished(roomid):
     return row is not None and bool(row["finished"])
 
 
+def room_is_open(roomid):
+    """Комната без владельца: пульт открыт любому, кто знает адрес.
+
+    Такие комнаты можно создавать без регистрации, и это осознанный режим:
+    ведущий предупреждён, что управлять сможет любой. Кнопка «Закрепить за
+    собой» в пульте привязывает комнату к аккаунту, после чего нужен вход.
+    """
+    if roomid is None:
+        return False
+    try:
+        conn = get_db_connection()
+        try:
+            row = conn.execute(
+                "SELECT ownerid, finished FROM activerooms WHERE roomid = ?", (roomid,)
+            ).fetchone()
+        except sqlite3.OperationalError:
+            # Колонки ownerid ещё нет: база старая, все комнаты без владельца.
+            return True
+        finally:
+            conn.close()
+    except sqlite3.OperationalError:
+        return False
+    return row is not None and row["ownerid"] is None and not row["finished"]
+
+
 def room_access_required(view=None, allow_finished=False):
     """К пульту комнаты: владелец, администратор или комната без владельца."""
 
@@ -215,6 +255,8 @@ def room_access_required(view=None, allow_finished=False):
             if user is None:
                 # Старый консольный адрес завершённого турнира уводит на витрину.
                 if allow_finished and roomid is not None and room_is_finished(roomid):
+                    return function(*args, **kwargs)
+                if room_is_open(roomid):
                     return function(*args, **kwargs)
                 return redirect("/login?next=" + request.path)
             if not can_manage_room(roomid, user):
@@ -235,6 +277,8 @@ def api_room_access_required(view):
     def wrapper(*args, **kwargs):
         user = current_user()
         if user is None:
+            if room_is_open(kwargs.get("roomid")):
+                return view(*args, **kwargs)
             return json.dumps(
                 {"status": "error", "needs_login": True, "message": "Нужно войти в систему"},
                 ensure_ascii=False,
@@ -251,7 +295,8 @@ def api_room_access_required(view):
 def can_manage_room(roomid, user=None):
     user = user if user is not None else current_user()
     if user is None:
-        return False
+        # Гость управляет только комнатой без владельца: такие создают без входа.
+        return room_is_open(roomid)
     if user["role"] == ROLE_ADMIN:
         return True
     conn = get_db_connection()
@@ -449,7 +494,8 @@ def can_manage_area(roomid, area, user=None):
     """
     user = user if user is not None else current_user()
     if user is None:
-        return False
+        # Гость работает только с комнатой без владельца.
+        return room_is_open(roomid)
     if can_manage_room(roomid, user):
         return True
     if area is None:
@@ -479,6 +525,8 @@ def area_access_required(view):
         roomid = kwargs.get("roomid")
         area = kwargs.get("area")
         if user is None:
+            if room_is_open(roomid):
+                return view(*args, **kwargs)
             return redirect("/login?next=" + request.path)
         if can_manage_area(roomid, area, user):
             return view(*args, **kwargs)
@@ -995,7 +1043,7 @@ def PlanTablePage(roomid, area):
 
 
 @app.route('/api/plan/<int:roomid>/areas/<int:area>', subdomain="svoyak", methods=["POST"])
-@api_login_required
+@api_login_or_open_room
 def PlanAreaHost(roomid, area):
     """Организатор назначает ведущего площадки или снимает назначение."""
     if not can_manage_room(roomid):
@@ -1039,7 +1087,7 @@ def PlanAreaHost(roomid, area):
 
 
 @app.route('/api/plan/<int:roomid>/order', subdomain="svoyak", methods=["POST"])
-@api_login_required
+@api_login_or_open_room
 def PlanOrderRule(roomid):
     """Админ турнира решает, можно ли играть бои площадки не по порядку."""
     if not can_manage_room(roomid):
@@ -1123,7 +1171,7 @@ def PublicPlanPage(roomid):
 
 
 @app.route('/api/plan/<int:roomid>/draw', subdomain="svoyak", methods=["POST"])
-@api_login_required
+@api_login_or_open_room
 def PlanDraw(roomid):
     """Жеребьёвка: раскладывает активных игроков по местам посева."""
     data = request.get_json(silent=True) or {}
@@ -1319,7 +1367,7 @@ def PlanQuestionsPage(roomid):
 
 
 @app.route('/api/plan/<int:roomid>/questions', subdomain="svoyak", methods=["POST"])
-@api_login_required
+@api_login_or_open_room
 def PlanQuestionsSave(roomid):
     """Привязка тем пакета к бою. Пустой список тем снимает привязку."""
     if not can_manage_room(roomid):
@@ -1484,7 +1532,7 @@ def room_protocol(conn, roomid, gameindex):
 
 @app.route('/api/plan/<int:roomid>/game/<int:gameindex>/protocol', subdomain="svoyak",
            methods=["GET", "POST", "DELETE"])
-@api_login_required
+@api_login_or_open_room
 def PlanGameProtocol(roomid, gameindex):
     """Протокол боя: чтение, автосохранение по ходу игры и явный сброс."""
     ensure_tournament_tables()
@@ -1610,7 +1658,7 @@ def PlanGameProtocol(roomid, gameindex):
 
 
 @app.route('/api/plan/<int:roomid>/game/<int:gameindex>', subdomain="svoyak", methods=["POST"])
-@api_login_required
+@api_login_or_open_room
 def PlanSaveGame(roomid, gameindex):
     """Сохраняет бой. При расхождении состава спрашивает подтверждение."""
     data = request.get_json(silent=True) or {}
@@ -2025,8 +2073,9 @@ def RemoveActivePalayers(roomid):
 
 
 @app.route('/init/<int:roomid>', subdomain = "svoyak")
-@login_required
 def InitRoom(roomid):
+    # Без @login_required: комнату можно создать, не регистрируясь. Она будет
+    # без владельца, и об этом предупреждает шаблон.
     conn = get_db_connection()
     venues = conn.execute(f"SELECT * FROM venues").fetchall()
     # print(venues)
@@ -2723,9 +2772,41 @@ def ensure_tournament_tables():
         conn.close()
 
 
-@app.route('/api/addroom', subdomain = "svoyak", methods = ["POST"])
+@app.route('/api/room/<int:roomid>/claim', subdomain = "svoyak", methods = ["POST"])
 @api_login_required
+def ClaimRoomApi(roomid):
+    """Закрепляет комнату без владельца за вошедшим пользователем."""
+    ensure_auth_tables()
+    user = current_user()
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT ownerid FROM activerooms WHERE roomid = ?", (roomid,)
+        ).fetchone()
+        if row is None:
+            conn.execute("ROLLBACK")
+            return json.dumps(
+                {"status": "error", "message": "Такой комнаты нет"}, ensure_ascii=False
+            ), 404
+        if row["ownerid"] is not None:
+            conn.execute("ROLLBACK")
+            return json.dumps(
+                {"status": "error", "message": "У комнаты уже есть владелец"},
+                ensure_ascii=False,
+            ), 409
+        conn.execute(
+            "UPDATE activerooms SET ownerid = ? WHERE roomid = ?", (user["userid"], roomid)
+        )
+        conn.execute("COMMIT")
+    finally:
+        conn.close()
+    return json.dumps({"status": "ok", "owner": user["name"]}, ensure_ascii=False)
+
+
+@app.route('/api/addroom', subdomain = "svoyak", methods = ["POST"])
 def CreateRoomApi():
+    # Без @api_login_required: гость создаёт комнату без владельца.
     ensure_auth_tables()
     data = request.get_json(silent=True) or {}
     roomdate = datetime.datetime.today().strftime('%Y-%m-%d')
@@ -2818,8 +2899,9 @@ def CreateRoomApi():
             if force_room_overwrite:
                 # Чужую комнату перезаписывать нельзя, даже зная её номер.
                 owner = current_user()
+                actor_id = owner["userid"] if owner else None
                 existing_owner = check_room_id[0]["ownerid"]
-                if existing_owner not in (None, owner["userid"]) and not is_admin(owner):
+                if existing_owner not in (None, actor_id) and not is_admin(owner):
                     conn.close()
                     return json.dumps(
                         {"Status": "Комната принадлежит другому ведущему", "RoomId": new_room_id},
