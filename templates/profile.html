@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="mb-3">
+    <div class="text-muted small">Аккаунт</div>
+    <h2 class="mb-1">{{ current_user.name }}</h2>
+    <div class="text-muted small">
+        Логин <code>{{ current_user.login }}</code> · роль: {{ current_user.role }}
+    </div>
+</div>
+
+{% if start_link %}
+<div class="alert alert-info">
+    <div><strong>Остался один шаг.</strong> Откройте бота и нажмите Start — привязка подтвердится сама.</div>
+    <div class="mt-2">
+        <a class="btn btn-primary btn-sm" href="{{ start_link }}" target="_blank" rel="noopener">
+            Открыть @{{ bot }} в Telegram
+        </a>
+    </div>
+    <div class="small text-muted mt-2">
+        Ссылка одноразовая и действует 15 минут. После Start вернитесь сюда и обновите страницу.
+    </div>
+    <div class="small mt-1"><code>{{ start_link }}</code></div>
+</div>
+{% endif %}
+
+{% if error == 'password' %}
+<div class="alert alert-danger">Пароль не подошёл — привязка не снята.</div>
+{% elif error == 'config' %}
+<div class="alert alert-warning">
+    Бот не настроен: администратору нужно задать переменные окружения
+    <code>SVOYAK_TELEGRAM_TOKEN</code> и <code>SVOYAK_TELEGRAM_BOT</code>.
+</div>
+{% elif ok == 'unlinked' %}
+<div class="alert alert-secondary">Telegram отвязан. Уведомления больше не приходят.</div>
+{% endif %}
+
+<div class="card mb-3">
+    <div class="card-header">🔔 Уведомления в Telegram</div>
+    <div class="card-body">
+        {% if account.linked %}
+        <p class="mb-2">
+            Привязан
+            {% if account.username %}<strong>@{{ account.username }}</strong>{% else %}Telegram{% endif %}
+            {% if account.linked_at %}<span class="text-muted small">· {{ account.linked_at }}</span>{% endif %}
+        </p>
+        <p class="text-muted small">
+            Сюда приходят: назначение на площадку и сохранение боёв на вашей площадке.
+        </p>
+        <form method="post" action="/telegram/unlink" class="row g-2 align-items-end">
+            <div class="col-auto">
+                <label class="form-label small mb-0" for="unlinkPassword">Пароль для подтверждения</label>
+                <input class="form-control form-control-sm" type="password" id="unlinkPassword"
+                       name="password" required autocomplete="current-password">
+            </div>
+            <div class="col-auto">
+                <button class="btn btn-outline-danger btn-sm" type="submit">Отвязать</button>
+            </div>
+        </form>
+        {% elif configured %}
+        <p class="text-muted small">
+            Привяжите Telegram — уведомления о ваших площадках будут приходить в чат,
+            без обновления страницы.
+        </p>
+        <form method="post" action="/telegram/link" class="m-0">
+            <button class="btn btn-primary btn-sm" type="submit">Привязать Telegram</button>
+        </form>
+        {% else %}
+        <p class="text-muted mb-0">
+            Бот ещё не настроен. Администратору нужно задать переменные окружения
+            <code>SVOYAK_TELEGRAM_TOKEN</code> и <code>SVOYAK_TELEGRAM_BOT</code>.
+        </p>
+        {% endif %}
+    </div>
+</div>
+
+{% if messages %}
+<div class="card mb-3">
+    <div class="card-header">Последние уведомления</div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+            <thead>
+                <tr>
+                    <th class="text-muted small">Когда</th>
+                    <th class="text-muted small">Текст</th>
+                    <th class="text-muted small">Статус</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for message in messages %}
+                <tr>
+                    <td class="text-muted small text-nowrap">{{ message.created_at }}</td>
+                    <td class="small">{{ message.text }}</td>
+                    <td class="small">
+                        {% if message.status == 'sent' %}
+                        <span class="badge bg-success">отправлено</span>
+                        {% elif message.status == 'error' %}
+                        <span class="badge bg-danger">ошибка</span>
+                        <div class="text-muted">{{ message.error }}</div>
+                        {% else %}
+                        <span class="badge bg-secondary">в очереди</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<div class="text-muted small">
+    Пароль от аккаунта здесь не меняется — попросите администратора турнира.
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function init_page() {}
+</script>
+{% endblock %}

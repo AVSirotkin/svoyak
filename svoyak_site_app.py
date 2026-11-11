@@ -9,6 +9,8 @@ import random
 from shuffle import * 
 from player_state import player_state
 import tournament_plan
+import telegram_link
+import secrets
 import pandas as pd
 from statistics import median
 from collections import defaultdict
@@ -123,6 +125,7 @@ def ensure_auth_tables():
         columns = [row["name"] for row in conn.execute("PRAGMA table_info(activerooms)")]
         if "ownerid" not in columns:
             conn.execute("ALTER TABLE activerooms ADD COLUMN ownerid INTEGER")
+        telegram_link.ensure_tables(conn)
         conn.commit()
     finally:
         conn.close()
@@ -328,6 +331,105 @@ def set_area_host(roomid, area, userid, actor=None):
         raise
     finally:
         conn.close()
+    notify_area_assigned(roomid, area, userid)
+
+
+# ---------------------------------------------------------------
+# Уведомления в Telegram
+# ---------------------------------------------------------------
+def notify_user(userid, text):
+    """Шлёт уведомление, если аккаунт привязан к Telegram.
+
+    Сеть и база не должны ломать сохранение боя, поэтому всё глушится.
+    """
+    if not userid:
+        return None
+    try:
+        conn = get_db_connection()
+        try:
+            return telegram_link.notify(conn, userid, text)
+        finally:
+            conn.close()
+    except Exception as exc:
+        print("WARNING: telegram notify failed:", exc)
+        return False
+
+
+def room_label(roomid):
+    """«Турнир #8801 (Azart-12, 2026-11-08)» — начало текста уведомления."""
+    parts = ["Турнир #%s" % roomid]
+    try:
+        conn = get_db_connection()
+        try:
+            row = conn.execute(
+                "SELECT r.date, v.venuename FROM activerooms r "
+                "LEFT JOIN venues v ON v.venueid = r.venueid WHERE r.roomid = ?",
+                (roomid,),
+            ).fetchone()
+        finally:
+            conn.close()
+    except sqlite3.OperationalError:
+        row = None
+    if row is not None:
+        extras = [str(value) for value in (row["venuename"], row["date"]) if value]
+        if extras:
+            parts.append("(%s)" % ", ".join(extras))
+    return " ".join(parts)
+
+
+def telegram_footer():
+    """Хвост уведомления со ссылкой на сайт, если она задана в окружении."""
+    site = telegram_link.config()["site"]
+    return "\n\n" + site if site else ""
+
+
+def notify_area_assigned(roomid, area, userid):
+    """Ведущему: его назначили на площадку."""
+    if not userid:
+        return
+    notify_user(
+        userid,
+        "🎯 %s: вы ведущий площадки %s. Ваши бои — в разделе «Мои площадки».%s"
+        % (room_label(roomid), area, telegram_footer()),
+    )
+
+
+def notify_game_saved(roomid, gameindex, area, plan):
+    """Организатору и ведущему площадки: бой сохранён и что дальше на площадке."""
+    actor = (current_user() or {}).get("userid")
+    recipients = []
+    owner = None
+    try:
+        conn = get_db_connection()
+        try:
+            row = conn.execute(
+                "SELECT ownerid FROM activerooms WHERE roomid = ?", (roomid,)
+            ).fetchone()
+        finally:
+            conn.close()
+        owner = row["ownerid"] if row is not None else None
+    except sqlite3.OperationalError:
+        owner = None
+    if owner:
+        recipients.append(owner)
+    host = room_area_hosts(roomid).get(area, {}).get("userid")
+    if host:
+        recipients.append(host)
+
+    following = None
+    if plan is not None:
+        queue = list(plan.queue(area))
+        try:
+            following = queue[queue.index(gameindex) + 1]
+        except (ValueError, IndexError):
+            following = None
+    tail = "Следующий бой: %s." % following if following else "Площадка закрыта."
+    text = "✅ %s, площадка %s: бой %s сохранён. %s%s" % (
+        room_label(roomid), area, gameindex, tail, telegram_footer()
+    )
+    for recipient in dict.fromkeys(recipients):
+        if recipient and recipient != actor:
+            notify_user(recipient, text)
 
 
 def user_areas(roomid, user=None):
@@ -466,6 +568,161 @@ def RegisterPage():
                 return redirect("/")
 
     return render_template("register.html", error=error, form=form, title="Регистрация")
+
+
+@app.route('/profile', subdomain="svoyak")
+@login_required
+def ProfilePage():
+    """Профиль: аккаунт, привязка Telegram и журнал уведомлений."""
+    ensure_auth_tables()
+    user = current_user()
+    cfg = telegram_link.config()
+    link_token = request.args.get("link_token") or ""
+    conn = get_db_connection()
+    try:
+        account = telegram_link.account(conn, user["userid"])
+        messages = telegram_link.recent_messages(conn, user["userid"])
+    finally:
+        conn.close()
+    return render_template(
+        "profile.html",
+        account=account,
+        messages=messages,
+        configured=telegram_link.is_configured(cfg),
+        bot=cfg["bot"],
+        start_link=telegram_link.start_url(cfg, link_token) if link_token else None,
+        ok=request.args.get("ok"),
+        error=request.args.get("error"),
+        title="Профиль",
+    )
+
+
+@app.route('/telegram/link', subdomain="svoyak", methods=["POST"])
+@login_required
+def TelegramLinkStart():
+    """Выдаёт одноразовую ссылку привязки и показывает её в профиле."""
+    ensure_auth_tables()
+    user = current_user()
+    cfg = telegram_link.config()
+    if not telegram_link.is_configured(cfg):
+        return redirect("/profile?error=config")
+
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        token = telegram_link.issue_token(conn, user["userid"], "link")
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+    return redirect("/profile?link_token=" + token)
+
+
+@app.route('/telegram/unlink', subdomain="svoyak", methods=["POST"])
+@login_required
+def TelegramUnlink():
+    """Снимает привязку. Telegram — ключ к аккаунту, поэтому нужен пароль."""
+    ensure_auth_tables()
+    user = current_user()
+    password = str(request.form.get("password") or "")
+
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT password_hash FROM users WHERE userid = ?", (user["userid"],)
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None or not check_password(row["password_hash"], password):
+        return redirect("/profile?error=password")
+
+    conn = get_db_connection()
+    try:
+        telegram_link.unlink_account(conn, user["userid"])
+        conn.commit()
+    finally:
+        conn.close()
+    log_game_events(0, "telegram unlink", {"userid": user["userid"], "by": user["name"]})
+    return redirect("/profile?ok=unlinked")
+
+
+@app.route('/telegram/webhook/<secret>', subdomain="svoyak", methods=["POST"])
+def TelegramWebhook(secret):
+    """Вебхук бота: сюда Telegram присылает /start link_<токен>.
+
+    Секрет в пути и заголовке — единственная защита этого адреса:
+    авторизации тут нет и быть не может.
+    """
+    cfg = telegram_link.config()
+    if not cfg["secret"] or not secrets.compare_digest(secret, cfg["secret"]):
+        abort(404)
+    header = request.headers.get("X-Telegram-Bot-Api-Secret-Token") or ""
+    if header and not secrets.compare_digest(header, cfg["secret"]):
+        abort(403)
+
+    payload = request.get_json(silent=True) or {}
+    message = payload.get("message") or {}
+    chat = message.get("chat") or {}
+    sender = message.get("from") or {}
+    chat_id = chat.get("id")
+    text = message.get("text") or ""
+    if not chat_id:
+        return json.dumps({"ok": True})
+
+    def reply(answer):
+        telegram_link.send_message(cfg, chat_id, answer)
+        return json.dumps({"ok": True})
+
+    token = telegram_link.parse_start(text)
+    if token is None:
+        return json.dumps({"ok": True})
+    if chat.get("type") not in (None, "private"):
+        return reply("Привязка работает только в личном чате с ботом.")
+    if not token:
+        return reply(
+            "Чтобы привязать аккаунт: откройте на сайте раздел «Профиль» "
+            "и нажмите «Привязать Telegram»."
+        )
+
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = telegram_link.find_token(conn, token, "link")
+        if row is None:
+            conn.execute("ROLLBACK")
+            return reply(
+                "Ссылка привязки устарела или уже использована. "
+                "Получите новую в «Профиле» на сайте."
+            )
+        status, login = telegram_link.link_account(
+            conn, row, sender.get("id") or chat_id, sender.get("username"), chat_id
+        )
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+
+    if status == "busy":
+        return reply(
+            "Этот Telegram уже привязан к аккаунту %s. Сначала отвяжите его там." % login
+        )
+    if status == "gone":
+        return reply("Аккаунт не найден — возможно, его удалили.")
+    log_game_events(0, "telegram link", {"login": login, "chat": chat_id})
+    return reply(
+        "Готово: аккаунт %s привязан. Сюда будут приходить уведомления "
+        "о ваших площадках." % login
+    )
 
 
 @app.route('/logout', subdomain="svoyak", methods=["POST", "GET"])
@@ -657,7 +914,16 @@ def MyAreasPage():
         item["areas"].append(row["area"])
 
     ordered = sorted(rooms.values(), key=lambda item: item["roomid"], reverse=True)
-    return render_template("my_areas.html", rooms=ordered, title="Мои площадки")
+    conn = get_db_connection()
+    try:
+        telegram = telegram_link.account(conn, user["userid"])
+    finally:
+        conn.close()
+    return render_template(
+        "my_areas.html", rooms=ordered,
+        telegram=telegram, telegram_configured=telegram_link.is_configured(),
+        title="Мои площадки",
+    )
 
 
 @app.route('/room/<int:roomid>/<int:area>', subdomain="svoyak")
@@ -1449,6 +1715,7 @@ def PlanSaveGame(roomid, gameindex):
         conn.close()
 
     game_states.pop(roomid, None)
+    notify_game_saved(roomid, gameindex, game.table, plan)
     return json.dumps({
         "status": "ok",
         "gameindex": gameindex,
