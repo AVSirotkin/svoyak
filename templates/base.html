@@ -5,6 +5,9 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.1/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-+0n0xVW2eSR5OomGNYDnhzAbDsOXxcvSN1TPprVMTNDbiYZCxYbOOl7+AMvyTG2x" crossorigin="anonymous">
   </head>
   <body onload="init_page()">
+    {% if banner %}
+    <div class="alert alert-warning text-center py-1 mb-0 rounded-0 small" role="status">{{ banner }}</div>
+    {% endif %}
     <div class="container">
       <div class="d-flex justify-content-end align-items-center gap-2 small text-muted pt-2">
         {% if current_user %}

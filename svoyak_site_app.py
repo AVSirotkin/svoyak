@@ -26,6 +26,8 @@ except AttributeError:
 # Путь к базе можно переопределить переменной окружения (удобно для тестов
 # на копии базы, не трогая рабочую).
 DB_PATH = os.environ.get("SVOYAK_DB", "./svoyak.db")
+# Полоса вверху страниц: «это тестовая база». Пусто — полосы нет.
+BANNER = os.environ.get("SVOYAK_BANNER", "").strip()
 
 game_states = {}
 
@@ -163,7 +165,7 @@ def is_admin(user=None):
 
 @app.context_processor
 def inject_user():
-    return {"current_user": current_user()}
+    return {"current_user": current_user(), "banner": BANNER}
 
 
 def login_required(view):
@@ -3628,7 +3630,13 @@ if __name__ == "__main__":
     ensure_schema()
     ensure_auth_tables()
     debug = os.environ.get("SVOYAK_DEBUG", "").lower() in ("1", "true", "yes")
+    try:
+        port = int(os.environ.get("SVOYAK_PORT") or port)
+    except ValueError:
+        print("WARNING: SVOYAK_PORT не число, беру порт из site.cfg")
     print(f"svoyak on {app.config['SERVER_NAME']}:{port}, debug={debug}, db={DB_PATH}")
+    if BANNER:
+        print(f"banner: {BANNER}")
     if (app.config['SERVER_NAME'] or '').split('.')[0] == 'svoyak':
         print("WARNING: SERVER_NAME должен быть родительским доменом (chgk.fun), "
               "а не адресом сайта (svoyak.chgk.fun): иначе поддомен не разберётся")

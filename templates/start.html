@@ -968,6 +968,9 @@
     </style>
 </head>
 <body>
+    {% if banner %}
+    <div style="background:#fff3cd;color:#664d03;padding:6px 12px;text-align:center;font:14px/1.4 system-ui,sans-serif;border-bottom:1px solid #ffe69c">{{ banner }}</div>
+    {% endif %}
     <svg class="icon-sprite" width="0" height="0" aria-hidden="true" focusable="false">
         <symbol id="icon-trophy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M7 4h10v5a5 5 0 0 1-10 0V4Z"/>
