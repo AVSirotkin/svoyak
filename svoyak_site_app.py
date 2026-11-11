@@ -3518,6 +3518,11 @@ def read_cfg():
 # до первого запроса, а не только при запуске через __main__.
 website_url, port = read_cfg()
 app.config['SERVER_NAME'] = os.environ.get("SVOYAK_SERVER_NAME", website_url)
+# Все маршруты объявлены с subdomain="svoyak", а Flask по умолчанию поддомены не
+# разбирает: без этой строки он подставляет пустой поддомен и отдаёт 404 на всё.
+# SERVER_NAME — родительский домен, поэтому на нестандартном порту его нужно
+# указывать вместе с портом: SVOYAK_SERVER_NAME=localhost:8099.
+app.subdomain_matching = True
 
 
 @app.route('/static/<path:filename>', subdomain="svoyak")
@@ -3542,4 +3547,7 @@ if __name__ == "__main__":
     ensure_auth_tables()
     debug = os.environ.get("SVOYAK_DEBUG", "").lower() in ("1", "true", "yes")
     print(f"svoyak on {app.config['SERVER_NAME']}:{port}, debug={debug}, db={DB_PATH}")
+    if (app.config['SERVER_NAME'] or '').split('.')[0] == 'svoyak':
+        print("WARNING: SERVER_NAME должен быть родительским доменом (chgk.fun), "
+              "а не адресом сайта (svoyak.chgk.fun): иначе поддомен не разберётся")
     app.run(debug=debug, port=port, threaded=True)
