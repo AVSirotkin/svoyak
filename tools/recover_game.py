@@ -98,6 +98,39 @@ def print_scores(scores, indent='   '):
         print(indent + '  %-28s %s' % (str(item.get('name'))[:28], item.get('score')))
 
 
+def print_answer_grid(detailed, scores, indent='   '):
+    """Расплюсовка: кто что взял, по вопросам, с итогом и сверкой."""
+    answers = (detailed or {}).get('answers') or []
+    players = (detailed or {}).get('players') or []
+    if not answers or not players:
+        print(indent + 'сетки ответов в записи нет')
+        return
+    short = [name.split()[0][:5] for name in players]
+    header = indent + '%-3s %-26s %-5s ' % ('#', 'тема', 'ном.') + ' '.join('%-6s' % s for s in short)
+    print(header)
+    print(indent + '-' * (len(header) - len(indent)))
+    totals = [0] * len(players)
+    for index, item in enumerate(answers):
+        value = item.get('value') or 0
+        cells = []
+        for position, mark in enumerate(item.get('playerAnswers') or []):
+            if mark is True:
+                cells.append('+%-5d' % value)
+                totals[position] += value
+            elif mark is False:
+                cells.append('-%-5d' % value)
+                totals[position] -= value
+            else:
+                cells.append('·     ')
+        print(indent + '%-3d %-26s %-5s ' % (index + 1, str(item.get('theme'))[:26], value) + ' '.join(cells))
+    print(indent + '-' * (len(header) - len(indent)))
+    print(indent + '%-3s %-26s %-5s ' % ('', 'итого по сетке', '') + ' '.join('%-6d' % t for t in totals))
+    stored = [int(item.get('score') or 0) for item in (scores or [])]
+    if stored:
+        print(indent + '%-3s %-26s %-5s ' % ('', 'в записи', '') + ' '.join('%-6d' % s for s in stored))
+        print(indent + 'сходится: %s' % ('да' if totals == stored else 'НЕТ — проверьте вручную'))
+
+
 def log_entries(conn, roomid, gameindex):
     """События лога по этому бою, старые сверху."""
     rows = conn.execute(
@@ -196,7 +229,7 @@ def show_recent(conn, days=None):
                 row['roomid'], row['gameindex'], row['size'], row['updated_at'], row['updated_by'] or ''))
 
 
-def report(path, roomid, gameindex, scan):
+def report(path, roomid, gameindex, scan, marks=False):
     conn = connect(path)
     players = room_players(conn, roomid)
     room = conn.execute("SELECT * FROM activerooms WHERE roomid = ?", (roomid,)).fetchone()
@@ -255,10 +288,19 @@ def report(path, roomid, gameindex, scan):
 
     entries = log_entries(conn, roomid, gameindex)
     print('\nЛог по бою: %d записей' % len(entries))
+    last_grid = None
     for rowid, date, event, data in entries:
         print('   [%s] %s  %s' % (rowid, date, event))
         if event == 'save game result' and data.get('scores'):
             print_scores(data['scores'], indent='      ')
+            if data.get('detailed'):
+                last_grid = (rowid, data['detailed'], data['scores'])
+                if marks:
+                    print('      расплюсовка:')
+                    print_answer_grid(data['detailed'], data['scores'], indent='      ')
+    if last_grid and not marks:
+        print('\nЕсть сетка ответов (поле detailed) в записи [%s]: '
+              'добавьте --marks, чтобы увидеть расплюсовку' % last_grid[0])
 
     # Ищем подозрительное: сохранение, где все очки нулевые, после ненулевых.
     previous = None
@@ -414,6 +456,7 @@ def main():
     parser.add_argument('--since', type=int, metavar='ДНЕЙ',
                         help='только события за последние N дней (вместе с --recent)')
     parser.add_argument('--scan', action='store_true', help='искать прежние версии протокола в файле')
+    parser.add_argument('--marks', action='store_true', help='показать сетку ответов (расплюсовку)')
     parser.add_argument('--apply-marks', help='history:ID или scan:ID')
     parser.add_argument('--apply-scores', help='rowid записи лога с нужными очками')
     parser.add_argument('--yes', action='store_true', help='подтвердить запись в базу')
@@ -446,7 +489,7 @@ def main():
         return apply_marks(args.db, args.room, args.game, args.apply_marks, players)
     if args.apply_scores:
         return apply_scores(args.db, args.room, args.game, int(args.apply_scores))
-    return report(args.db, args.room, args.game, args.scan)
+    return report(args.db, args.room, args.game, args.scan, bool(args.marks))
 
 
 if __name__ == '__main__':
