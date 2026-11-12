@@ -19,6 +19,7 @@
 """
 
 import argparse
+import datetime
 import json
 import os
 import sqlite3
@@ -149,12 +150,33 @@ def scan_file(path, players, roomid, gameindex, limit=40):
     return found
 
 
-def show_recent(conn, days=10):
+def parse_log_date(raw):
+    """Дата в логе записана текстом: 'Wed Nov 12 18:16:10 2026'."""
+    for fmt in ('%a %b %d %H:%M:%S %Y', '%Y-%m-%d %H:%M:%S'):
+        try:
+            return datetime.datetime.strptime(str(raw).strip(), fmt)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def show_recent(conn, days=None):
     """Что менялось недавно: чтобы найти нужный бой, не помня номер."""
-    print('Последние события по комнатам:')
+    limit = 2000 if days else 400
     rows = conn.execute(
-        "SELECT rowid, date, roomid, event, data FROM log ORDER BY rowid DESC LIMIT 400"
+        "SELECT rowid, date, roomid, event, data FROM log ORDER BY rowid DESC LIMIT %d" % limit
     ).fetchall()
+    if days:
+        border = datetime.datetime.now() - datetime.timedelta(days=days)
+        filtered = []
+        for row in rows:
+            moment = parse_log_date(row['date'])
+            if moment is None or moment >= border:
+                filtered.append(row)
+        rows = filtered
+        print('События за последние %d дн.:' % days)
+    else:
+        print('Последние события по комнатам:')
     seen = {}
     for row in rows:
         key = (row['roomid'], row['event'])
@@ -366,7 +388,10 @@ def apply_scores(path, roomid, gameindex, log_rowid):
             for item in scores
         ])
         site._write_game_results(conn, roomid, gameindex, rows)
-        site.recompute_gamenumbers(conn, roomid)
+        # На старой версии сайта этой функции может не быть.
+        recompute = getattr(site, 'recompute_gamenumbers', None)
+        if recompute is not None:
+            recompute(conn, roomid)
         conn.execute(
             "INSERT INTO log (date, roomid, event, data) VALUES (datetime('now'), ?, ?, ?)",
             (roomid, 'save game result',
@@ -386,6 +411,8 @@ def main():
     parser.add_argument('--room', type=int, help='номер комнаты')
     parser.add_argument('--game', type=int, help='номер боя')
     parser.add_argument('--recent', action='store_true', help='что менялось недавно')
+    parser.add_argument('--since', type=int, metavar='ДНЕЙ',
+                        help='только события за последние N дней (вместе с --recent)')
     parser.add_argument('--scan', action='store_true', help='искать прежние версии протокола в файле')
     parser.add_argument('--apply-marks', help='history:ID или scan:ID')
     parser.add_argument('--apply-scores', help='rowid записи лога с нужными очками')
@@ -396,9 +423,9 @@ def main():
         print('Нет такого файла: %s' % args.db)
         return 2
 
-    if args.recent:
+    if args.recent or args.since:
         conn = connect(args.db)
-        show_recent(conn)
+        show_recent(conn, args.since)
         conn.close()
         return 0
 
