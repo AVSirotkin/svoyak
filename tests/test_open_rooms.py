@@ -24,6 +24,9 @@ os.environ.pop('SVOYAK_TELEGRAM_TOKEN', None)
 import svoyak_site_app as site  # noqa: E402
 
 site.app.subdomain_matching = True
+# Модуль приложения один на процесс: если тесты запускают несколько файлов
+# сразу, база берётся из первого импорта. Переключаем её явно.
+site.DB_PATH = WORK_DB
 BASE = 'http://svoyak.localhost'
 
 
@@ -37,6 +40,8 @@ class GuestTests(unittest.TestCase):
     """Что доступно тому, кто не входил."""
 
     def setUp(self):
+        # Приложение одно на процесс: направляем его в свою базу.
+        site.DB_PATH = WORK_DB
         self.guest = site.app.test_client()
 
     def test_init_page_is_open(self):
@@ -119,6 +124,8 @@ class ClaimTests(unittest.TestCase):
     """Комната без владельца привязывается к аккаунту."""
 
     def setUp(self):
+        # Приложение одно на процесс: направляем его в свою базу.
+        site.DB_PATH = WORK_DB
         # Логин свой у каждого теста: база общая на весь модуль.
         self.login = 'open_' + uuid.uuid4().hex[:8]
         self.host = site.app.test_client()

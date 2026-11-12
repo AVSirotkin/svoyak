@@ -1532,6 +1532,118 @@ def room_protocol(conn, roomid, gameindex):
     return protocol
 
 
+def _protocol_access(roomid, gameindex):
+    """Общая проверка прав для ручек протокола. None — можно работать."""
+    area = game_area(roomid, gameindex)
+    if area is None:
+        return json.dumps(
+            {"status": "error", "message": f"Боя {gameindex} нет в схеме"}, ensure_ascii=False
+        ), 404
+    if not can_manage_area(roomid, area):
+        return json.dumps(
+            {"status": "error", "message": "Нет прав на эту площадку"}, ensure_ascii=False
+        ), 403
+    return None
+
+
+@app.route('/api/plan/<int:roomid>/game/<int:gameindex>/protocol/history',
+           subdomain="svoyak", methods=["GET"])
+@api_login_or_open_room
+def PlanProtocolHistory(roomid, gameindex):
+    """Снимки протокола, которые были затёрты: чтобы вернуть расплюсовку."""
+    ensure_tournament_tables()
+    denied = _protocol_access(roomid, gameindex)
+    if denied is not None:
+        return denied
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, payload, saved_at, saved_by FROM game_protocol_history "
+            "WHERE roomid = ? AND gameindex = ? ORDER BY id DESC LIMIT 20",
+            (roomid, gameindex),
+        ).fetchall()
+    finally:
+        conn.close()
+    items = []
+    for row in rows:
+        try:
+            payload = json.loads(row["payload"]) or {}
+        except (TypeError, ValueError):
+            payload = {}
+        marks = payload.get("marks") or {}
+        items.append({
+            "id": row["id"],
+            "saved_at": row["saved_at"],
+            "saved_by": row["saved_by"],
+            "marks": len(marks),
+            "plus": sum(1 for value in marks.values() if value == "plus"),
+            "pointer": payload.get("pointer"),
+        })
+    return json.dumps({"status": "ok", "history": items}, ensure_ascii=False)
+
+
+@app.route('/api/plan/<int:roomid>/game/<int:gameindex>/protocol/restore',
+           subdomain="svoyak", methods=["POST"])
+@api_login_or_open_room
+def PlanProtocolRestore(roomid, gameindex):
+    """Возвращает протокол из истории (снимок текущего тоже сохраняется)."""
+    ensure_tournament_tables()
+    denied = _protocol_access(roomid, gameindex)
+    if denied is not None:
+        return denied
+    data = request.get_json(silent=True) or {}
+    try:
+        snapshot_id = int(data.get("id"))
+    except (TypeError, ValueError):
+        return json.dumps(
+            {"status": "error", "message": "Нужен id снимка"}, ensure_ascii=False
+        ), 400
+    user = current_user()
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        snapshot = conn.execute(
+            "SELECT payload FROM game_protocol_history WHERE id = ? AND roomid = ? AND gameindex = ?",
+            (snapshot_id, roomid, gameindex),
+        ).fetchone()
+        if snapshot is None:
+            conn.execute("ROLLBACK")
+            return json.dumps(
+                {"status": "error", "message": "Снимок не найден"}, ensure_ascii=False
+            ), 404
+        current = conn.execute(
+            "SELECT payload FROM game_protocols WHERE roomid = ? AND gameindex = ?",
+            (roomid, gameindex),
+        ).fetchone()
+        if current is not None and current["payload"] != snapshot["payload"]:
+            conn.execute(
+                "INSERT INTO game_protocol_history (roomid, gameindex, payload, saved_by) "
+                "VALUES (?, ?, ?, ?)",
+                (roomid, gameindex, current["payload"], user["name"] if user else None),
+            )
+        conn.execute(
+            "INSERT OR REPLACE INTO game_protocols (roomid, gameindex, payload, updated_at, updated_by) "
+            "VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)",
+            (roomid, gameindex, snapshot["payload"], user["name"] if user else None),
+        )
+        log_game_events(
+            roomid, "protocol restored",
+            {"gameindex": gameindex, "snapshot": snapshot_id,
+             "by": user["name"] if user else None},
+            conn=conn,
+        )
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+    return json.dumps({"status": "ok"}, ensure_ascii=False)
+
+
 @app.route('/api/plan/<int:roomid>/game/<int:gameindex>/protocol', subdomain="svoyak",
            methods=["GET", "POST", "DELETE"])
 @api_login_or_open_room
@@ -1637,6 +1749,24 @@ def PlanGameProtocol(roomid, gameindex):
                 {"status": "error", "message": "Протокол слишком большой"}, ensure_ascii=False
             ), 413
 
+        previous = conn.execute(
+            "SELECT payload FROM game_protocols WHERE roomid = ? AND gameindex = ?",
+            (roomid, gameindex),
+        ).fetchone()
+        if previous is not None and previous["payload"] != raw:
+            # Снимок «до»: если новая запись окажется пустой (сброс), старая
+            # расплюсовка останется здесь и её можно будет вернуть.
+            conn.execute(
+                "INSERT INTO game_protocol_history (roomid, gameindex, payload, saved_by) "
+                "VALUES (?, ?, ?, ?)",
+                (roomid, gameindex, previous["payload"], user["name"] if user else None),
+            )
+            conn.execute(
+                "DELETE FROM game_protocol_history WHERE roomid = ? AND gameindex = ? "
+                "AND id NOT IN (SELECT id FROM game_protocol_history "
+                "WHERE roomid = ? AND gameindex = ? ORDER BY id DESC LIMIT 20)",
+                (roomid, gameindex, roomid, gameindex),
+            )
         conn.execute(
             "INSERT OR REPLACE INTO game_protocols (roomid, gameindex, payload, updated_at, updated_by) "
             "VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)",
@@ -2758,6 +2888,22 @@ def ensure_tournament_tables():
                 PRIMARY KEY (roomid, gameindex)
             )
         ''')
+        # История протокола: снимок, который затирается следующей записью.
+        # Нужна, чтобы случайный сброс отметок можно было откатить.
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS game_protocol_history (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                roomid    INTEGER NOT NULL,
+                gameindex INTEGER NOT NULL,
+                payload   TEXT NOT NULL,
+                saved_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+                saved_by  TEXT
+            )
+        ''')
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_protocol_history "
+            "ON game_protocol_history(roomid, gameindex, id)"
+        )
         # Ведущий площадки: кому из пользователей открыт пульт этой площадки.
         # Площадка — это бывший «стол»: номер из схемы турнира.
         conn.execute('''

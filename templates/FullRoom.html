@@ -3564,7 +3564,13 @@ function FinalizeRoom() {
 }
 
 function ClearCurrentGameLog(forced = true) {
-    if (forced && !confirm(`Вы уверены, что хотите стереть данные за бой ${gameindex}?`)) return;
+    // Сброс обнуляет счёт и введённые ответы: спрашиваем всегда, а не только
+    // при удалении из базы.
+    const question = forced
+        ? `Стереть результаты боя ${gameindex} из базы? Это необратимо.`
+        : `Сбросить бой ${gameindex}?\n\nБудут стёрты введённые ответы и счёт на экране. ` +
+          `Сохранённые результаты в базе останутся.`;
+    if (!confirm(question)) return;
 
     const savedIndex = Number(gameindex);
     if (forced) {

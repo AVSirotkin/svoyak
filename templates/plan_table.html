@@ -270,6 +270,7 @@
             <span class="panel-title"><span class="icon">📋</span> Протокол боя</span>
             <div class="panel-controls">
                 <span class="note" id="protocolStatus"></span>
+                <button class="icon-btn" id="protocolHistoryBtn" title="История протокола: вернуть затёртые отметки" onclick="showProtocolHistory()">🕘</button>
                 <button class="icon-btn" id="toggleViewBtn" title="Сейчас вертикально — переключить на горизонтально">⇅</button>
                 <button class="icon-btn" id="editModeBtn" title="Режим исправления: правка отметок в таблице">✏️</button>
                 <button class="panel-collapse" title="Свернуть">▼</button>
@@ -277,6 +278,12 @@
             </div>
         </div>
         <div class="panel-body">
+            <div id="protocolHistory" class="protocol-history" style="display:none">
+                <span class="note">Затёртые версии:</span>
+                <select id="protocolHistorySelect"></select>
+                <button class="btn btn-outline btn-sm" onclick="restoreProtocolSnapshot()">Вернуть</button>
+                <button class="btn btn-link btn-sm" onclick="hideProtocolHistory()">Отмена</button>
+            </div>
             <div id="playerScores" class="player-scores"></div>
 
             <div class="table-container">
@@ -477,6 +484,57 @@ function scheduleSave(delay) {
     rememberLocally();
     clearTimeout(saveTimer);
     saveTimer = setTimeout(saveProtocol, delay === undefined ? 1200 : delay);
+}
+
+async function showProtocolHistory() {
+    const box = document.getElementById('protocolHistory');
+    const select = document.getElementById('protocolHistorySelect');
+    try {
+        const response = await fetch('/api/plan/' + ROOMID + '/game/' + GAMEINDEX + '/protocol/history');
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            alert(data.message || 'Не удалось получить историю протокола');
+            return;
+        }
+        if (!data.history || !data.history.length) {
+            alert('Затёртых версий пока нет: снимок появится после первой перезаписи протокола.');
+            return;
+        }
+        select.innerHTML = '';
+        data.history.forEach((item) => {
+            const option = document.createElement('option');
+            option.value = item.id;
+            const author = item.saved_by ? ' · ' + item.saved_by : '';
+            option.textContent = item.saved_at + author + ' · отметок: ' + item.marks +
+                                 ' (плюсов ' + item.plus + ')';
+            select.appendChild(option);
+        });
+        box.style.display = 'flex';
+    } catch (error) {
+        alert('Сеть недоступна: история протокола не получена');
+    }
+}
+
+function hideProtocolHistory() {
+    document.getElementById('protocolHistory').style.display = 'none';
+}
+
+async function restoreProtocolSnapshot() {
+    const select = document.getElementById('protocolHistorySelect');
+    const id = select.value;
+    if (!id) return;
+    if (!confirm('Вернуть протокол из выбранного снимка? Текущие отметки останутся в истории.')) return;
+    const response = await fetch('/api/plan/' + ROOMID + '/game/' + GAMEINDEX + '/protocol/restore', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+        body: JSON.stringify({id: Number(id)})
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        alert(data.message || 'Не удалось вернуть протокол');
+        return;
+    }
+    document.location.reload();
 }
 
 async function saveProtocol() {
@@ -1249,7 +1307,15 @@ document.addEventListener('keydown', (e) => {
 // БЛОКИ FULLROOM: СБРОС, КОЛИЧЕСТВО ТЕМ, ПАНЕЛИ
 // ============================================================
 function ClearCurrentGameLog(forced = true) {
-    if (forced && !confirm(`Вы уверены, что хотите стереть данные за бой ${GAMEINDEX}?`)) return;
+    // Сброс стирает не только введённые ответы, но и отметки в протоколе:
+    // без подтверждения это слишком легко нажать случайно.
+    const question = forced
+        ? `Стереть результаты боя ${GAMEINDEX} из базы? Это необратимо.`
+        : `Сбросить бой ${GAMEINDEX}?\n\n` +
+          `Будут стёрты введённые ответы и отметки в протоколе (расплюсовка). ` +
+          `Сохранённые результаты в базе останутся.\n\n` +
+          `Вернуть затёртые отметки можно кнопкой «История» в панели протокола.`;
+    if (!confirm(question)) return;
 
     gameState.scores = Array(gameData.players.length).fill(0);
     gameState.editMode = false;
