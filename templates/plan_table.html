@@ -57,6 +57,33 @@
         .tag.ok { background: var(--success-bg); color: var(--success); border-color: var(--success); }
         .tag.wait { background: var(--warning-bg); color: var(--warning); border-color: var(--warning); }
         .note { color: var(--gray-600); font-size: 14px; }
+        /* Место под статус синхронизации отведено заранее: иначе его текст
+           менял ширину и подрагивал вместе с соседними кнопками. */
+        #protocolStatus {
+            display: inline-block;
+            min-width: 15rem;
+            max-width: 22rem;
+            text-align: right;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            vertical-align: middle;
+        }
+        #protocolStatus.is-warn { color: var(--warning); }
+        #protocolStatus.is-bad { color: var(--danger); }
+        .sync-mode {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .sync-mode select {
+            padding: 4px 8px;
+            border: 1px solid var(--gray-300);
+            border-radius: 8px;
+            font: inherit;
+            font-size: 13px;
+            background: white;
+        }
         .queue-row {
             display: flex;
             justify-content: space-between;
@@ -120,6 +147,14 @@
         <span class="room-badge">Турнир #{{ roomid }}</span>
     </h1>
     <div class="header-actions">
+        <label class="sync-mode" title="Как часто пульт отправляет состояние боя на сервер">
+            <span class="note">Синхронизация</span>
+            <select id="syncModeSelect">
+                <option value="sync">синхронная</option>
+                <option value="limited">ограниченная</option>
+                <option value="autonomous">автономная</option>
+            </select>
+        </label>
         {% if area_host %}<span class="tag ok">ведущий: {{ area_host.name }}</span>{% endif %}
         {% if can_all_areas %}
         {% for other in plan.queues|sort %}
@@ -270,6 +305,9 @@
             <span class="panel-title"><span class="icon">📋</span> Протокол боя</span>
             <div class="panel-controls">
                 <span class="note" id="protocolStatus"></span>
+                <button class="icon-btn" id="protocolSendBtn"
+                        title="Отправить протокол на сервер сейчас"
+                        onclick="sendProtocolNow()">📤</button>
                 <button class="icon-btn" id="protocolHistoryBtn" title="История протокола: вернуть затёртые отметки" onclick="showProtocolHistory()">🕘</button>
                 <button class="icon-btn" id="toggleViewBtn" title="Сейчас вертикально — переключить на горизонтально">⇅</button>
                 <button class="icon-btn" id="editModeBtn" title="Режим исправления: правка отметок в таблице">✏️</button>
@@ -387,11 +425,13 @@
     </div>
 </div>
 
+<script src="/static/js/sync.js"></script>
 <script>
 // ============================================================
 // ДАННЫЕ СТРАНИЦЫ
 // ============================================================
 const ROOMID = {{ roomid }};
+const AREA = {{ table }};
 const GAMEINDEX = {{ current.gameindex if current else 0 }};
 const TOPICS = {{ topics|tojson }};
 const HALF_MINUS = {{ 'true' if half_minus else 'false' }};
@@ -424,13 +464,14 @@ const gameState = {
 };
 
 // ============================================================
-// ПРОТОКОЛ: ОТМЕТКИ И АВТОСОХРАНЕНИЕ
+// ПРОТОКОЛ: ОТМЕТКИ И СИНХРОНИЗАЦИЯ
 // ============================================================
 const MARKS = {};
 let POINTER = 0;
-let saveTimer = null;
 let themesDirty = !PROTOCOL;
-let lastSent = '';
+let REVISION = PROTOCOL && PROTOCOL.revision ? Number(PROTOCOL.revision) : 0;
+let scoresManual = !!(PROTOCOL && PROTOCOL.scoresSource === 'manual');
+let conflictNote = '';
 
 function localKey() { return 'protocol:' + ROOMID + ':' + GAMEINDEX; }
 
@@ -440,9 +481,12 @@ function shortStamp(value) {
     return match ? match[1] : String(value || '');
 }
 
-function setStatus(text) {
+function setStatus(text, tone) {
     const box = document.getElementById('protocolStatus');
-    if (box) box.textContent = text;
+    if (!box) return;
+    box.textContent = text;
+    box.classList.toggle('is-warn', tone === 'warn');
+    box.classList.toggle('is-bad', tone === 'bad');
 }
 
 function rememberLocally() {
@@ -453,6 +497,116 @@ function rememberLocally() {
     } catch (error) {
         console.warn('[protocol] локальная копия недоступна', error);
     }
+}
+
+// ============================================================
+// ОЧЕРЕДЬ СИНХРОНИЗАЦИИ: РЕЖИМ, ПОВТОРЫ, СООБЩЕНИЯ
+// ============================================================
+const sync = SvoyakSync.createQueue({
+    roomid: ROOMID,
+    area: AREA,
+    senders: {
+        protocol: async function (payload) {
+            const response = await fetch(
+                '/api/plan/' + ROOMID + '/game/' + payload.gameindex + '/protocol',
+                {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+                    body: JSON.stringify(payload),
+                    keepalive: true
+                }
+            );
+            const data = await response.json().catch(() => ({}));
+            return {ok: response.ok, status: response.status, data: data};
+        }
+    },
+    onStatus: renderSyncStatus,
+    onSent: function (op, data) {
+        if (op.type !== 'protocol') return;
+        if (data && data.revision) REVISION = Number(data.revision);
+        themesDirty = false;
+    },
+    onConflict: function (data) {
+        // Версия разошлась: наша сохранена отдельно, решает организатор.
+        // Автосохранение останавливаем, чтобы не затирать чужую версию.
+        conflictNote = 'конфликт версий — изменения сохранены, ждёт организатора';
+        renderSyncStatus(sync.status());
+        const server = data && data.protocol ? data.protocol : null;
+        const text = 'Версия протокола разошлась с сервером — этот бой правили\n' +
+            'с другого устройства.\n\n' +
+            'Ваши изменения сохранены отдельно, организатор выберет нужную версию.\n\n' +
+            'Загрузить версию, которая сейчас на сервере?';
+        if (confirm(text) && server) {
+            Object.keys(MARKS).forEach(function (key) { delete MARKS[key]; });
+            Object.assign(MARKS, server.marks || {});
+            POINTER = Number(server.pointer) || 0;
+            REVISION = Number(server.revision) || 0;
+            conflictNote = '';
+            try { localStorage.removeItem(localKey()); } catch (error) { /* ignore */ }
+            rebuildFromRoster();
+            pointerToPosition(POINTER);
+            updateQuestionCard();
+            renderSyncStatus(sync.status());
+        }
+    }
+});
+
+function timeOf(milliseconds) {
+    const moment = new Date(milliseconds);
+    return String(moment.getHours()).padStart(2, '0') + ':' +
+        String(moment.getMinutes()).padStart(2, '0');
+}
+
+function changes(count) {
+    const mod10 = count % 10;
+    const mod100 = count % 100;
+    if (mod10 === 1 && mod100 !== 11) return 'изменение';
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'изменения';
+    return 'изменений';
+}
+
+function renderSyncStatus(state) {
+    if (conflictNote) {
+        setStatus(conflictNote, 'bad');
+        return;
+    }
+    if (!state.online) {
+        setStatus('нет связи · ' + state.pending + ' в очереди', 'bad');
+        return;
+    }
+    if (state.mode === 'autonomous') {
+        setStatus('автономно · ' + state.pending + ' ' + changes(state.pending), 'warn');
+        return;
+    }
+    if (state.pending) {
+        setStatus('не отправлено: ' + state.pending + ' · ' + state.modeTitle, 'warn');
+        return;
+    }
+    const stamp = state.lastSync
+        ? timeOf(state.lastSync)
+        : shortStamp(PROTOCOL && PROTOCOL.updated_at);
+    setStatus((stamp ? 'сохранено ' + stamp : 'синхронизация включена') +
+        ' · ' + state.modeTitle, '');
+}
+
+// Отправить протокол сейчас: страховка от «а вдруг не ушло» и ручной
+// выход из автономного режима.
+function sendProtocolNow() {
+    saveProtocol();
+    sync.flush(true);
+}
+
+// Режим синхронизации: синхронный, ограниченный или автономный.
+function initSyncMode() {
+    const select = document.getElementById('syncModeSelect');
+    if (!select) return;
+    select.value = sync.mode();
+    select.addEventListener('change', function () {
+        sync.setMode(select.value);
+        // Смена режима — событие: сообщаем серверу сразу, даже уходя в автономный.
+        saveProtocol();
+        sync.flush(true);
+    });
 }
 
 function restoreProtocol() {
@@ -470,20 +624,18 @@ function restoreProtocol() {
         Object.assign(MARKS, local.marks || {});
         POINTER = Number(local.pointer) || 0;
         setStatus('восстановлено из браузера, сохраняю…');
-        scheduleSave();
+        setTimeout(saveProtocol, 0);
         return;
     }
     if (PROTOCOL && PROTOCOL.marks) {
         Object.assign(MARKS, PROTOCOL.marks);
         POINTER = Number(PROTOCOL.pointer) || 0;
-        setStatus('сохранено ' + shortStamp(PROTOCOL.updated_at));
     }
 }
 
 function scheduleSave(delay) {
     rememberLocally();
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(saveProtocol, delay === undefined ? 1200 : delay);
+    saveProtocol();
 }
 
 async function showProtocolHistory() {
@@ -537,43 +689,46 @@ async function restoreProtocolSnapshot() {
     document.location.reload();
 }
 
-async function saveProtocol() {
-    if (!GAMEINDEX) return;
-    rememberLocally();
-    const payload = {themes: TOPICS, marks: MARKS, pointer: POINTER};
+function scoresMap() {
+    const map = {};
+    PLAYER_IDS.forEach((playerid, index) => {
+        if (!playerid) return;
+        map[String(playerid)] = Number(gameState.scores[index]) || 0;
+    });
+    return map;
+}
+
+// Полное состояние боя: по нему бой можно поднять на другом устройстве
+// и показать организатору, что происходит на площадке.
+function protocolPayload() {
+    const payload = {
+        gameindex: GAMEINDEX,
+        marks: MARKS,
+        pointer: POINTER,
+        players: roster().map(function (player, index) {
+            return {playerid: player.playerid, name: player.name, place: index + 1};
+        }),
+        scores: scoresMap(),
+        scoresSource: scoresManual ? 'manual' : 'marks',
+        halfMinus: !!gameState.halfMinus,
+        finished: !!gameState.gameFinished,
+        base_revision: REVISION,
+        mode: sync.mode(),
+        client: SvoyakSync.clientId()
+    };
     if (PLACEHOLDER) {
         // Заглушка: настоящих тем нет, храним только отметки.
         payload.placeholder = true;
-        delete payload.themes;
     } else if (themesDirty) {
         payload.themes = TOPICS;
-    } else {
-        delete payload.themes;
     }
-    const body = JSON.stringify(payload);
-    if (body === lastSent) return;
-    setStatus('сохраняю…');
-    try {
-        const response = await fetch('/api/plan/' + ROOMID + '/game/' + GAMEINDEX + '/protocol', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
-            body: body
-        });
-        if (response.status === 401) {
-            setStatus('нужно войти — отметки пока в браузере');
-            return;
-        }
-        const data = await response.json();
-        if (data.status === 'ok') {
-            lastSent = body;
-            themesDirty = false;
-            setStatus('сохранено ' + shortStamp(data.updated_at));
-        } else {
-            setStatus('не сохранилось — отметки в браузере');
-        }
-    } catch (error) {
-        setStatus('нет связи — отметки в браузере');
-    }
+    return payload;
+}
+
+function saveProtocol() {
+    if (!GAMEINDEX || conflictNote) return;
+    rememberLocally();
+    sync.enqueue('protocol', protocolPayload());
 }
 
 // ============================================================
@@ -1267,6 +1422,8 @@ function toggleKeyboard() {
 }
 
 function recalculateScores() {
+    // Очки снова считаются из отметок: ручная правка перестаёт быть главной.
+    scoresManual = false;
     gameState.scores = Array(gameData.players.length).fill(0);
     gameState.answers.forEach((questionAnswers, qIdx) => {
         const q = getQuestionByIndex(qIdx);
@@ -1550,6 +1707,11 @@ function pointerToPosition(pointer) {
 }
 
 function init_page() {
+    // Половинные минусы и ручные очки живут в протоколе: после перезагрузки
+    // бой продолжается с тем же счётом, а не с настройками комнаты.
+    if (PROTOCOL && typeof PROTOCOL.halfMinus === 'boolean') {
+        gameState.halfMinus = PROTOCOL.halfMinus;
+    }
     document.getElementById('halfMinusToggle').checked = !!gameState.halfMinus;
     document.getElementById('keyboardToggle').checked = true;
 
@@ -1559,11 +1721,24 @@ function init_page() {
     rebuildFromRoster();
     pointerToPosition(POINTER);
 
+    if (scoresManual && PROTOCOL && PROTOCOL.scores) {
+        PLAYER_IDS.forEach((playerid, index) => {
+            const value = PROTOCOL.scores[String(playerid)];
+            if (value !== undefined && value !== null) {
+                gameState.scores[index] = Number(value) || 0;
+            }
+        });
+        updateScoresDisplay();
+    }
+
     updateQuestionInfo();
     updateQuestionCard();
     initControlButtons();
 
     paintViewButton();
+
+    initSyncMode();
+    sync.init();
 
     restoreCollapseStates();
     document.querySelectorAll('.panel-expand').forEach(btn => {
@@ -1590,6 +1765,17 @@ function init_page() {
             }
         });
     }
+
+    // Ручная правка очков: запоминаем, что они больше не из отметок.
+    document.querySelectorAll('.score-input').forEach((input, index) => {
+        input.addEventListener('change', () => {
+            const value = Number(String(input.value).replace(',', '.'));
+            if (!Number.isFinite(value)) return;
+            gameState.scores[index] = value;
+            scoresManual = true;
+            saveGame();
+        });
+    });
 }
 
 init_page();

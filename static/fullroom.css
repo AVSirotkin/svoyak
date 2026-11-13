@@ -299,7 +299,8 @@
         .player-tag.is-blocked .block-btn { color: var(--danger); }
         .player-tag.is-blocked .block-btn::after { height: 2px; }
 
-        /* Баннер автономной работы */
+        /* Строка статуса синхронизации. Видна всегда: раньше плашка
+           появлялась и исчезала, сдвигая вёрстку на каждой отправке. */
         .offline-banner {
             position: sticky;
             top: 0;
@@ -309,19 +310,36 @@
             justify-content: center;
             gap: 12px;
             flex-wrap: wrap;
+            min-height: 37px;
             padding: 8px 16px;
             font-size: 14px;
-            font-weight: 500;
-            background: var(--warning-bg);
-            color: #92400e;
-            border-bottom: 1px solid var(--warning);
-            box-shadow: 0 2px 8px rgba(15, 23, 42, .08);
+            font-weight: 400;
+            background: var(--gray-50);
+            color: var(--gray-500);
+            border-bottom: 1px solid var(--gray-200);
+            box-shadow: 0 1px 3px rgba(15, 23, 42, .05);
         }
         .offline-banner[hidden] { display: none; }
+        .offline-banner.is-ok {
+            background: var(--gray-50);
+            color: var(--gray-500);
+            border-bottom-color: var(--gray-200);
+        }
+        .offline-banner.is-pending {
+            background: var(--warning-bg);
+            color: #92400e;
+            border-bottom-color: var(--warning);
+        }
+        .offline-banner.is-autonomous {
+            background: var(--gray-100);
+            color: var(--gray-700);
+            border-bottom-color: var(--gray-300);
+        }
         .offline-banner.is-offline {
             background: var(--danger-bg);
             color: #991b1b;
             border-bottom-color: var(--danger);
+            font-weight: 500;
         }
         .offline-banner .btn {
             padding: 4px 10px;

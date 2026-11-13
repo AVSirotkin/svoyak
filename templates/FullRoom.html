@@ -8,9 +8,10 @@
 </head>
 <body>
 
-<div id="offline-banner" class="offline-banner" hidden>
-    <span id="offline-banner-text"></span>
-    <button id="offline-retry" class="btn btn-sm" onclick="Offline.retry()">Повторить</button>
+<div id="offline-banner" class="offline-banner is-ok">
+    <span id="offline-banner-text">Синхронизация включена</span>
+    <button id="offline-retry" class="btn btn-sm" onclick="Offline.retry()"
+            style="visibility:hidden">Повторить</button>
 </div>
 
 <header class="page-header">
@@ -19,6 +20,14 @@
         <span class="room-badge">Комната #{{roomid}}</span>
     </h1>
     <div class="header-actions">
+        <label class="sync-mode" title="Как часто пульт отправляет состояние боя на сервер">
+            <span class="note">Синхронизация</span>
+            <select id="syncModeSelect">
+                <option value="sync">синхронная</option>
+                <option value="limited">ограниченная</option>
+                <option value="autonomous">автономная</option>
+            </select>
+        </label>
         {% if rules and rules.get('brackets') %}
         <a href="/plan/{{roomid}}" class="btn btn-outline btn-sm">🗂 Пульт турнира</a>
         {% endif %}
@@ -426,6 +435,7 @@
 <!-- Выпадающий список подсказок имён (см. NameSuggest в скрипте) -->
 <div id="name-suggest" class="name-suggest" role="listbox" aria-label="Подсказки имён" hidden></div>
 
+<script src="/static/js/sync.js"></script>
 <script>
 // ============================================================
 // 1. ПАНЕЛИ: Drag & Drop
@@ -2508,6 +2518,199 @@ function getCurrentMatchId() {
 function saveGame() {
     const mid = getCurrentMatchId();
     matchStorage.saveMatchState(gameState.roomId, mid, gameState, gameData);
+    // То же состояние уходит в протокол: по нему организатор видит, что
+    // происходит на площадке, а бой можно продолжить на другом устройстве.
+    queueProtocol(mid);
+}
+
+// Какие игры уже отправили темы: текст вопросов гоняем один раз за сеанс.
+const protocolThemesSent = {};
+
+function absoluteQuestionIndex() {
+    let abs = 0;
+    for (let i = 0; i < gameState.currentBlock; i++) {
+        if (i < gameData.questionBlocks.length) {
+            abs += gameData.questionBlocks[i].questions.length;
+        }
+    }
+    return abs + gameState.currentQuestion;
+}
+
+function protocolPayload(mid) {
+    // Имена игроков в старом пульте — единственный ключ; id подтягиваем
+    // из списка активных, чтобы отметки совпали с протоколом нового пульта.
+    const idsByName = {};
+    Offline.getActivePlayers().forEach((player) => {
+        if (player.playerid != null && player.name) idsByName[player.name] = player.playerid;
+    });
+    const players = gameData.players.map((name, index) => ({
+        playerid: idsByName[name] != null ? idsByName[name] : null,
+        name: name,
+        place: index + 1
+    }));
+
+    const marks = {};
+    (gameState.answers || []).forEach((row, qIndex) => {
+        (row || []).forEach((answer, pIndex) => {
+            if (answer !== true && answer !== false) return;
+            const playerid = players[pIndex] && players[pIndex].playerid;
+            if (playerid == null) return;   // без id отметку не к чему привязать
+            marks[qIndex + ':' + playerid] = answer ? 'plus' : 'minus';
+        });
+    });
+
+    const scores = {};
+    players.forEach((player, index) => {
+        if (player.playerid == null) return;
+        scores[String(player.playerid)] = Number(gameState.scores[index]) || 0;
+    });
+
+    const payload = {
+        gameindex: Number(mid),
+        marks: marks,
+        pointer: absoluteQuestionIndex(),
+        players: players,
+        scores: scores,
+        scoresSource: 'marks',
+        halfMinus: !!gameState.halfMinus,
+        finished: !!gameState.gameFinished,
+        mode: Offline.mode(),
+        client: SvoyakSync.clientId()
+    };
+    if (protocolRevision[Number(mid)] != null) {
+        payload.base_revision = protocolRevision[Number(mid)];
+    }
+    if (!protocolThemesSent[Number(mid)] && (gameData.questionBlocks || []).length) {
+        payload.themes = gameData.questionBlocks.map((block) => ({
+            topic: block.theme || '',
+            comment: block.comment || '',
+            questions: (block.questions || []).map((question) => ({
+                value: Number(question.value) || 0,
+                text: question.text || '',
+                answer: question.answer || '',
+                form: question.form || '',
+                additional: question.additional || '',
+                source: question.source || '',
+                comment: question.comment || ''
+            }))
+        }));
+    }
+    return payload;
+}
+
+function queueProtocol(mid) {
+    if (!mid) return;
+    Offline.enqueue('protocol', protocolPayload(mid));
+}
+
+// Перенос боя на другое устройство: серверный протокол новее локального —
+// значит, бой вели не здесь. Берём серверную версию.
+async function loadProtocolFromServer() {
+    const mid = getCurrentMatchId();
+    try {
+        const response = await Offline.fetchWithTimeout(
+            '/api/plan/' + gameState.roomId + '/game/' + mid + '/protocol',
+            { cache: 'no-store' }
+        );
+        if (!response.ok) return;
+        const data = await response.json();
+        const protocol = data && data.protocol;
+        if (!protocol) return;
+        protocolRevision[Number(mid)] = Number(protocol.revision) || 0;
+        const local = matchStorage.getMatchState(gameState.roomId, mid);
+        const serverStamp = Date.parse(String(protocol.updated_at || '').replace(' ', 'T') + 'Z') || 0;
+        const localStamp = local && local.timestamp ? Date.parse(local.timestamp) : 0;
+        if (local && localStamp >= serverStamp) return;
+        if (Offline.pending()) return;   // свои неотправленные правки важнее
+        applyProtocol(protocol);
+    } catch (error) {
+        // Нет связи — работаем локально, это и есть обычный режим пульта.
+    }
+}
+
+function applyProtocol(protocol) {
+    const players = (protocol.players || [])
+        .map((item) => String(item && item.name || '').trim())
+        .filter(Boolean);
+    if (players.length) {
+        gameData.players = players;
+        updatePlayerInputs();
+    }
+
+    // Вопросы тоже приходят в протоколе: на новом устройстве пакета может
+    // не быть, а бой нужно продолжить.
+    if ((protocol.themes || []).length &&
+        !gameData.questionBlocks.some((block) => (block.questions || []).length)) {
+        gameData.questionBlocks = protocol.themes.map((theme) => ({
+            theme: theme.topic || '',
+            comment: theme.comment || '',
+            questions: (theme.questions || []).map((question) => ({
+                value: Number(question.value) || 0,
+                text: question.text || '',
+                answer: question.answer || '',
+                form: question.form || '',
+                additional: question.additional || '',
+                source: question.source || '',
+                comment: question.comment || ''
+            }))
+        }));
+        protocolThemesSent[Number(getCurrentMatchId())] = true;
+    }
+
+    const indexById = {};
+    const indexByName = {};
+    (protocol.players || []).forEach((item) => {
+        if (item && item.playerid != null) indexById[String(item.playerid)] = item.name;
+    });
+    gameData.players.forEach((name, index) => { indexByName[name] = index; });
+
+    initAnswers();
+    Object.keys(protocol.marks || {}).forEach((key) => {
+        const parts = String(key).split(':');
+        const qIndex = Number(parts[0]);
+        const playerid = parts[1];
+        const name = indexById[playerid];
+        const pIndex = name != null ? indexByName[name] : undefined;
+        if (pIndex === undefined || !gameState.answers[qIndex]) return;
+        gameState.answers[qIndex][pIndex] = protocol.marks[key] === 'plus';
+    });
+
+    gameState.halfMinus = !!protocol.halfMinus;
+    gameState.gameFinished = !!protocol.finished;
+    const checkbox = document.getElementById('halfMinusToggle');
+    if (checkbox) checkbox.checked = gameState.halfMinus;
+
+    if (protocol.scoresSource === 'manual' && protocol.scores) {
+        gameData.players.forEach((name, index) => {
+            const playerid = (protocol.players || [])[index] && protocol.players[index].playerid;
+            const value = playerid != null ? protocol.scores[String(playerid)] : undefined;
+            if (value !== undefined && value !== null) gameState.scores[index] = Number(value) || 0;
+        });
+    } else {
+        recalculateScores();
+    }
+
+    const pointer = Number(protocol.pointer) || 0;
+    let left = pointer;
+    gameState.currentBlock = 0;
+    gameState.currentQuestion = 0;
+    for (let index = 0; index < gameData.questionBlocks.length; index++) {
+        const count = gameData.questionBlocks[index].questions.length;
+        if (left < count) {
+            gameState.currentBlock = index;
+            gameState.currentQuestion = left;
+            break;
+        }
+        left -= count;
+    }
+
+    refreshTable();
+    updateScoresDisplay();
+    updateQuestionInfo();
+    updateQuestionCard();
+    renderScoreCards();
+    if (gameState.gameFinished) showGameOver(); else showResetGameOver();
+    saveGame();
 }
 
 function switchMatch(newMatchId) {
@@ -2524,6 +2727,7 @@ function switchMatch(newMatchId) {
     gameState.scores = Array(gameData.players.length).fill(0);
 
     loadGame(gameindex);
+    loadProtocolFromServer();
 
     update_weight();
     redrawBrackets();
@@ -3635,6 +3839,18 @@ function init_page() {
     // Игроки, история и очередь отправки берутся из локального состояния;
     // если сервер доступен, оно обновится в фоне.
     Offline.init();
+    loadProtocolFromServer();
+
+    // Режим синхронизации: переключатель в шапке, выбор живёт на устройстве.
+    const modeSelect = document.getElementById('syncModeSelect');
+    if (modeSelect) {
+        modeSelect.value = Offline.mode();
+        modeSelect.addEventListener('change', () => {
+            SvoyakSync.setMode(Number({{roomid}}), 0, modeSelect.value);
+            saveGame();             // новый режим уйдёт вместе с протоколом
+            Offline.flush(true);    // и сразу, даже если выбрали автономный
+        });
+    }
     update_weight();
     initControlButtons();
     updatePackageInfo();
@@ -4116,6 +4332,10 @@ const SelectionModel = (() => {
     return { fill, forecast, weights, info: () => model };
 })();
 
+// Ревизии протоколов по играм: по ним видно, что бой правят с другого
+// устройства, и сервер не затирает чужую версию молча.
+const protocolRevision = {};
+
 const Offline = (() => {
     const roomId = Number({{roomid}});
     const STATE_KEY = 'svoyak_room_' + roomId + '_state_v1';
@@ -4126,6 +4346,8 @@ const Offline = (() => {
     let flushing = false;
     let checking = false;
     let timer = null;
+    let flushTimer = null;
+    let lastFlush = null;
     let lastError = '';
 
     function loadState() {
@@ -4177,25 +4399,52 @@ const Offline = (() => {
         return many;
     }
 
+    function clockText(stamp) {
+        if (!stamp) return '';
+        const moment = new Date(stamp);
+        if (isNaN(moment.getTime())) return '';
+        return String(moment.getHours()).padStart(2, '0') + ':' +
+            String(moment.getMinutes()).padStart(2, '0');
+    }
+
+    // Строка статуса не скрывается никогда: мигающая плашка сдвигала вёрстку
+    // на каждой отправке. Меняются только цвет и текст.
     function updateBanner() {
         const banner = document.getElementById('offline-banner');
         if (!banner) return;
         const text = document.getElementById('offline-banner-text');
         const retry = document.getElementById('offline-retry');
         const pending = outbox.length;
-        banner.hidden = online && pending === 0;
+        const current = mode();
+        const title = SvoyakSync.MODES[current].title;
+        banner.hidden = false;
         banner.classList.toggle('is-offline', !online);
+        banner.classList.toggle('is-pending', online && pending > 0);
+        banner.classList.toggle('is-autonomous', online && pending === 0 && current === 'autonomous');
+        banner.classList.toggle('is-ok', online && pending === 0 && current !== 'autonomous');
+        // Кнопка не исчезает, а прячется: иначе строка меняла бы высоту.
+        retry.style.visibility = online && pending === 0 ? 'hidden' : 'visible';
+        retry.textContent = current === 'autonomous' ? 'Отправить' : 'Повторить';
         if (!online) {
             text.textContent = pending
                 ? 'Нет связи с сервером. Работаем локально, ' + pending + ' ' +
                   plural(pending, 'изменение', 'изменения', 'изменений') + ' в очереди.'
                 : 'Нет связи с сервером. Работаем локально — данные сохраняются на этом устройстве.';
-            retry.hidden = false;
-        } else if (pending) {
-            text.textContent = (flushing ? 'Синхронизация… ' : 'Не отправлено: ') +
-                pending + (lastError ? '. ' + lastError : '');
-            retry.hidden = false;
+            return;
         }
+        if (pending) {
+            text.textContent = (flushing ? 'Отправляю: ' : 'Не отправлено: ') + pending +
+                ' · ' + title + ' режим' + (lastError ? ' · ' + lastError : '');
+            return;
+        }
+        if (current === 'autonomous') {
+            text.textContent = 'Автономный режим · изменения остаются на этом устройстве';
+            return;
+        }
+        const when = clockText(lastFlush);
+        text.textContent = when
+            ? 'Сохранено в ' + when + ' · ' + title + ' режим'
+            : 'Синхронизация включена · ' + title + ' режим';
     }
 
     function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
@@ -4228,6 +4477,36 @@ const Offline = (() => {
 
     function noteFailure() {
         setOnline(false);
+    }
+
+    // Режим синхронизации хранится на устройстве: синхронный — сразу,
+    // ограниченный — не чаще раза в минуту, автономный — только по кнопке.
+    function mode() {
+        return SvoyakSync.getMode(roomId, 0);
+    }
+
+    function schedule(delay) {
+        clearTimeout(flushTimer);
+        if (!outbox.length) {
+            updateBanner();
+            return;
+        }
+        const current = mode();
+        if (current === 'autonomous') {
+            updateBanner();
+            return;
+        }
+        let wait = delay;
+        if (wait === undefined) {
+            if (current === 'sync') {
+                wait = 1200;
+            } else {
+                const since = lastFlush ? Date.now() - lastFlush : Infinity;
+                wait = Math.max(0, 60000 - since);
+            }
+        }
+        flushTimer = setTimeout(() => flush(), wait);
+        updateBanner();
     }
 
     async function check() {
@@ -4321,16 +4600,23 @@ const Offline = (() => {
     }
 
     function enqueue(type, payload) {
-        outbox.push({
-            id: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
-            type,
-            payload,
-            createdAt: new Date().toISOString(),
-            attempts: 0
-        });
+        const last = outbox[outbox.length - 1];
+        // Протокол — снимок состояния боя: держим в очереди только свежий.
+        if (type === 'protocol' && last && last.type === 'protocol' &&
+            Number(last.payload.gameindex) === Number(payload.gameindex)) {
+            last.payload = payload;
+            last.updatedAt = new Date().toISOString();
+        } else {
+            outbox.push({
+                id: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+                type,
+                payload,
+                createdAt: new Date().toISOString(),
+                attempts: 0
+            });
+        }
         saveOutbox();
-        updateBanner();
-        flush();
+        schedule();
     }
 
     function send(op) {
@@ -4355,6 +4641,9 @@ const Offline = (() => {
             url = '/gameresult/' + roomId + '/' + Number(op.payload.gameindex);
             options.method = 'DELETE';
             delete options.headers;
+        } else if (op.type === 'protocol') {
+            url = '/api/plan/' + roomId + '/game/' + Number(op.payload.gameindex) + '/protocol';
+            body = op.payload;
         } else {
             throw new Error('Неизвестная операция ' + op.type);
         }
@@ -4362,8 +4651,9 @@ const Offline = (() => {
         return fetchWithTimeout(url, options);
     }
 
-    async function flush() {
+    async function flush(force) {
         if (flushing || !outbox.length) { updateBanner(); return; }
+        if (mode() === 'autonomous' && !force) { updateBanner(); return; }
         flushing = true;
         lastError = '';
         updateBanner();
@@ -4379,6 +4669,7 @@ const Offline = (() => {
             if (response.ok) {
                 outbox.shift();
                 saveOutbox();
+                lastFlush = Date.now();
                 if (op.type === 'saveGame') {
                     try {
                         const rows = await response.json();
@@ -4387,11 +4678,20 @@ const Offline = (() => {
                             saveState();
                         }
                     } catch (error) { /* тело ответа не обязательно */ }
+                } else if (op.type === 'protocol') {
+                    try {
+                        const data = await response.json();
+                        if (data && data.revision) {
+                            protocolRevision[Number(op.payload.gameindex)] = Number(data.revision);
+                        }
+                    } catch (error) { /* ревизия обновится следующим ответом */ }
                 }
                 continue;
             }
             if (response.status === 409) {
-                lastError = 'комната уже завершена на сервере';
+                lastError = op.type === 'protocol'
+                    ? 'конфликт версий протокола — решает организатор'
+                    : 'комната уже завершена на сервере';
                 outbox.shift();
                 saveOutbox();
                 continue;
@@ -4455,11 +4755,11 @@ const Offline = (() => {
 
     function retry() {
         check();
-        if (online) flush();
+        if (online) flush(true);
     }
 
     return {
-        init, retry, flush, check,
+        init, retry, flush, check, schedule, mode,
         isOnline: () => online,
         isFlushing: () => flushing,
         pending: () => outbox.length,

@@ -505,17 +505,27 @@ def can_manage_area(roomid, area, user=None):
     return int(area) in user_areas(roomid, user)
 
 
-def game_area(roomid, gameindex):
-    """Номер площадки, к которой относится бой. None, если боя нет."""
+def room_plan_area(roomid, gameindex):
+    """Площадка боя и признак того, что у комнаты вообще есть схема.
+
+    Свободная посадка схемы не создаёт: бои нумерует сам пульт, площадок
+    нет. Второе значение и отличает такую комнату от комнаты, где бой
+    просто не из этой схемы.
+    """
     conn = get_db_connection()
     try:
         plan = build_room_plan(conn, roomid)
     finally:
         conn.close()
     if plan is None:
-        return None
+        return None, False
     game = plan.game(gameindex)
-    return None if game is None else game.table
+    return (None if game is None else game.table), True
+
+
+def game_area(roomid, gameindex):
+    """Номер площадки, к которой относится бой. None, если боя нет."""
+    return room_plan_area(roomid, gameindex)[0]
 
 
 def area_access_required(view):
@@ -903,6 +913,7 @@ def PlanPage(roomid):
             return redirect(f"/init/{roomid}", code=302)
         plan = build_room_plan(conn, roomid)
         seed = room_seed(conn, roomid)
+        activity = room_activity(conn, roomid, plan)
         hosts = conn.execute(
             "SELECT userid, name, role FROM users ORDER BY name"
         ).fetchall()
@@ -915,6 +926,7 @@ def PlanPage(roomid):
         if plan is not None else [],
         hosts=hosts,
         area_hosts=room_area_hosts(roomid),
+        activity=activity,
         title=f"Турнир {roomid}",
     )
 
@@ -1513,12 +1525,22 @@ def room_protocol(conn, roomid, gameindex):
     """Текущее состояние протокола боя. None, если протокол ещё не сохраняли."""
     try:
         row = conn.execute(
-            "SELECT payload, updated_at, updated_by FROM game_protocols "
+            "SELECT payload, updated_at, updated_by, revision, mode FROM game_protocols "
             "WHERE roomid = ? AND gameindex = ?",
             (roomid, gameindex),
         ).fetchone()
     except sqlite3.OperationalError:
-        return None
+        # База старой версии: колонок ревизии и режима ещё нет.
+        try:
+            row = conn.execute(
+                "SELECT payload, updated_at, updated_by FROM game_protocols "
+                "WHERE roomid = ? AND gameindex = ?",
+                (roomid, gameindex),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return None
+        if row is not None:
+            row = dict(row, revision=0, mode=None)
     if row is None:
         return None
     try:
@@ -1529,19 +1551,79 @@ def room_protocol(conn, roomid, gameindex):
         return None
     protocol["updated_at"] = row["updated_at"]
     protocol["updated_by"] = row["updated_by"]
+    protocol["revision"] = row["revision"] or 0
+    protocol["mode"] = row["mode"]
     return protocol
+
+
+def room_activity(conn, roomid, plan):
+    """Последняя синхронизация площадки: кто, когда и в каком режиме.
+
+    Отдельного механизма присутствия нет: сигналом служит сам протокол,
+    который площадка записывает с той частотой, что задаёт режим. Молчащая
+    площадка видна организатору по старому времени синхронизации.
+    """
+    activity = {}
+    if plan is None:
+        return activity
+    for table in sorted(plan.queues):
+        current = plan.current_game(table)
+        if current is None:
+            continue
+        protocol = room_protocol(conn, roomid, current.gameindex)
+        if protocol is None:
+            continue
+        moment = None
+        stamp = protocol.get("updated_at")
+        if stamp:
+            try:
+                moment = datetime.datetime.strptime(
+                    str(stamp)[:19], "%Y-%m-%d %H:%M:%S"
+                ).replace(tzinfo=datetime.timezone.utc).astimezone()
+            except ValueError:
+                moment = None
+        activity[table] = {
+            "gameindex": current.gameindex,
+            "at": moment.isoformat() if moment else None,
+            "time": moment.strftime("%H:%M") if moment else "",
+            "by": protocol.get("updated_by"),
+            "mode": protocol.get("mode") or "",
+            "marks": len(protocol.get("marks") or {}),
+            "conflicts": _open_conflicts(conn, roomid, current.gameindex),
+        }
+    return activity
+
+
+def _open_conflicts(conn, roomid, gameindex):
+    """Сколько спорных версий протокола ждут решения организатора."""
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) AS total FROM game_protocol_conflicts "
+            "WHERE roomid = ? AND gameindex = ? AND status = 'open'",
+            (roomid, gameindex),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return 0
+    return int(row["total"] or 0) if row is not None else 0
 
 
 def _protocol_access(roomid, gameindex):
     """Общая проверка прав для ручек протокола. None — можно работать."""
-    area = game_area(roomid, gameindex)
-    if area is None:
+    area, has_plan = room_plan_area(roomid, gameindex)
+    if has_plan and area is None:
         return json.dumps(
             {"status": "error", "message": f"Боя {gameindex} нет в схеме"}, ensure_ascii=False
         ), 404
-    if not can_manage_area(roomid, area):
+    if has_plan:
+        allowed = can_manage_area(roomid, area)
+        message = "Нет прав на эту площадку"
+    else:
+        # Свободная посадка: площадок нет, бой ведёт тот, кому доступна комната.
+        allowed = can_manage_room(roomid)
+        message = "Нет прав на этот бой"
+    if not allowed:
         return json.dumps(
-            {"status": "error", "message": "Нет прав на эту площадку"}, ensure_ascii=False
+            {"status": "error", "message": message}, ensure_ascii=False
         ), 403
     return None
 
@@ -1612,7 +1694,7 @@ def PlanProtocolRestore(roomid, gameindex):
                 {"status": "error", "message": "Снимок не найден"}, ensure_ascii=False
             ), 404
         current = conn.execute(
-            "SELECT payload FROM game_protocols WHERE roomid = ? AND gameindex = ?",
+            "SELECT payload, revision FROM game_protocols WHERE roomid = ? AND gameindex = ?",
             (roomid, gameindex),
         ).fetchone()
         if current is not None and current["payload"] != snapshot["payload"]:
@@ -1621,15 +1703,191 @@ def PlanProtocolRestore(roomid, gameindex):
                 "VALUES (?, ?, ?, ?)",
                 (roomid, gameindex, current["payload"], user["name"] if user else None),
             )
-        conn.execute(
-            "INSERT OR REPLACE INTO game_protocols (roomid, gameindex, payload, updated_at, updated_by) "
-            "VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)",
-            (roomid, gameindex, snapshot["payload"], user["name"] if user else None),
-        )
+        if current is None:
+            conn.execute(
+                "INSERT INTO game_protocols "
+                "(roomid, gameindex, payload, updated_at, updated_by, revision) "
+                "VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, 1)",
+                (roomid, gameindex, snapshot["payload"], user["name"] if user else None),
+            )
+        else:
+            conn.execute(
+                "UPDATE game_protocols SET payload = ?, updated_at = CURRENT_TIMESTAMP, "
+                "updated_by = ?, revision = ? WHERE roomid = ? AND gameindex = ?",
+                (snapshot["payload"], user["name"] if user else None,
+                 (current["revision"] or 0) + 1, roomid, gameindex),
+            )
         log_game_events(
             roomid, "protocol restored",
             {"gameindex": gameindex, "snapshot": snapshot_id,
              "by": user["name"] if user else None},
+            conn=conn,
+        )
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+    return json.dumps({"status": "ok"}, ensure_ascii=False)
+
+
+def _protocol_summary(payload):
+    """Короткая сводка версии протокола: по ней организатор сравнивает спорные."""
+    payload = payload or {}
+    marks = payload.get("marks") or {}
+    return {
+        "marks": len(marks),
+        "plus": sum(1 for value in marks.values() if value == "plus"),
+        "pointer": payload.get("pointer"),
+        "scores": payload.get("scores") or {},
+        "scoresSource": payload.get("scoresSource"),
+        "finished": bool(payload.get("finished")),
+        "players": [
+            item.get("name") for item in (payload.get("players") or [])
+            if isinstance(item, dict)
+        ],
+    }
+
+
+@app.route('/api/plan/<int:roomid>/game/<int:gameindex>/protocol/conflicts',
+           subdomain="svoyak", methods=["GET"])
+@api_login_required
+def PlanProtocolConflicts(roomid, gameindex):
+    """Спорные версии протокола: обе сохранены, выбирает организатор."""
+    ensure_tournament_tables()
+    area, has_plan = room_plan_area(roomid, gameindex)
+    if has_plan and area is None:
+        return json.dumps(
+            {"status": "error", "message": f"Боя {gameindex} нет в схеме"}, ensure_ascii=False
+        ), 404
+    if not can_manage_room(roomid):
+        return json.dumps(
+            {"status": "error", "message": "Спорные версии разбирает организатор"},
+            ensure_ascii=False,
+        ), 403
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, payload, revision, author, client, created_at, status "
+            "FROM game_protocol_conflicts WHERE roomid = ? AND gameindex = ? "
+            "ORDER BY id DESC LIMIT 20",
+            (roomid, gameindex),
+        ).fetchall()
+        current = room_protocol(conn, roomid, gameindex)
+    finally:
+        conn.close()
+    conflicts = []
+    for row in rows:
+        try:
+            payload = json.loads(row["payload"]) or {}
+        except (TypeError, ValueError):
+            payload = {}
+        item = _protocol_summary(payload)
+        item.update({
+            "id": row["id"],
+            "created_at": row["created_at"],
+            "author": row["author"],
+            "client": row["client"],
+            "revision": row["revision"],
+            "status": row["status"],
+        })
+        conflicts.append(item)
+    return json.dumps({
+        "status": "ok",
+        "conflicts": conflicts,
+        "current": _protocol_summary(current) if current else None,
+    }, ensure_ascii=False)
+
+
+@app.route('/api/plan/<int:roomid>/game/<int:gameindex>/protocol/conflicts/<int:conflict_id>',
+           subdomain="svoyak", methods=["POST"])
+@api_login_required
+def PlanProtocolConflictChoose(roomid, gameindex, conflict_id):
+    """Организатор выбирает, какая версия протокола верна. Вторая остаётся в истории."""
+    ensure_tournament_tables()
+    area, has_plan = room_plan_area(roomid, gameindex)
+    if has_plan and area is None:
+        return json.dumps(
+            {"status": "error", "message": f"Боя {gameindex} нет в схеме"}, ensure_ascii=False
+        ), 404
+    if not can_manage_room(roomid):
+        return json.dumps(
+            {"status": "error", "message": "Спорные версии разбирает организатор"},
+            ensure_ascii=False,
+        ), 403
+    data = request.get_json(silent=True) or {}
+    action = data.get("action") or "choose"
+    if action not in ("choose", "reject"):
+        return json.dumps(
+            {"status": "error", "message": "action: choose или reject"}, ensure_ascii=False
+        ), 400
+    user = current_user()
+    author = user["name"] if user else None
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT payload, status FROM game_protocol_conflicts "
+            "WHERE id = ? AND roomid = ? AND gameindex = ?",
+            (conflict_id, roomid, gameindex),
+        ).fetchone()
+        if row is None:
+            conn.execute("ROLLBACK")
+            return json.dumps(
+                {"status": "error", "message": "Спорная версия не найдена"}, ensure_ascii=False
+            ), 404
+        if row["status"] != "open":
+            conn.execute("ROLLBACK")
+            return json.dumps(
+                {"status": "error", "message": "Эта версия уже разобрана"}, ensure_ascii=False
+            ), 409
+        if action == "choose":
+            current = conn.execute(
+                "SELECT payload, revision FROM game_protocols "
+                "WHERE roomid = ? AND gameindex = ?",
+                (roomid, gameindex),
+            ).fetchone()
+            if current is not None and current["payload"] != row["payload"]:
+                conn.execute(
+                    "INSERT INTO game_protocol_history (roomid, gameindex, payload, saved_by) "
+                    "VALUES (?, ?, ?, ?)",
+                    (roomid, gameindex, current["payload"], author),
+                )
+            if current is None:
+                conn.execute(
+                    "INSERT INTO game_protocols "
+                    "(roomid, gameindex, payload, updated_at, updated_by, revision) "
+                    "VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, 1)",
+                    (roomid, gameindex, row["payload"], author),
+                )
+            else:
+                conn.execute(
+                    "UPDATE game_protocols SET payload = ?, updated_at = CURRENT_TIMESTAMP, "
+                    "updated_by = ?, revision = ? WHERE roomid = ? AND gameindex = ?",
+                    (row["payload"], author, (current["revision"] or 0) + 1,
+                     roomid, gameindex),
+                )
+        conn.execute(
+            "UPDATE game_protocol_conflicts SET status = ?, resolved_at = CURRENT_TIMESTAMP, "
+            "resolved_by = ? WHERE id = ?",
+            ("chosen" if action == "choose" else "rejected", author, conflict_id),
+        )
+        if action == "choose":
+            # Остальные открытые версии этого боя считаем отклонёнными: выбор сделан.
+            conn.execute(
+                "UPDATE game_protocol_conflicts SET status = 'rejected', "
+                "resolved_at = CURRENT_TIMESTAMP, resolved_by = ? "
+                "WHERE roomid = ? AND gameindex = ? AND status = 'open'",
+                (author, roomid, gameindex),
+            )
+        log_game_events(
+            roomid, "protocol conflict resolved",
+            {"gameindex": gameindex, "conflict": conflict_id, "action": action,
+             "by": author},
             conn=conn,
         )
         conn.execute("COMMIT")
@@ -1652,14 +1910,15 @@ def PlanGameProtocol(roomid, gameindex):
     ensure_tournament_tables()
     user = current_user()
 
-    area = game_area(roomid, gameindex)
-    if area is None:
+    area, has_plan = room_plan_area(roomid, gameindex)
+    if has_plan and area is None:
         return json.dumps(
             {"status": "error", "message": f"Боя {gameindex} нет в схеме"}, ensure_ascii=False
         ), 404
-    if not can_manage_area(roomid, area, user):
+    allowed = can_manage_area(roomid, area, user) if has_plan else can_manage_room(roomid, user)
+    if not allowed:
         return json.dumps(
-            {"status": "error", "message": "Нет прав на эту площадку"}, ensure_ascii=False
+            {"status": "error", "message": "Нет прав на этот бой"}, ensure_ascii=False
         ), 403
 
     if request.method == "GET":
@@ -1704,6 +1963,58 @@ def PlanGameProtocol(roomid, gameindex):
     marks = data.get("marks")
     # Бой на заглушке: настоящих тем нет, но отметки сохранять уже можно.
     placeholder = bool(data.get("placeholder"))
+    # Режим синхронизации площадки: по нему организатор видит, как часто
+    # ведущий выходит на связь. Неизвестное значение просто не записываем.
+    mode = data.get("mode")
+    if mode not in ("sync", "limited", "autonomous"):
+        mode = None
+    client = str(data.get("client") or "")[:64] or None
+    try:
+        base_revision = int(data.get("base_revision"))
+    except (TypeError, ValueError):
+        base_revision = None
+    author = user["name"] if user else None
+
+    # Указатель двигает чтец: ревизию не трогаем, чтобы не мешать тому, кто
+    # ведёт счёт. Это единственная запись протокола, не создающая конфликтов.
+    if data.get("pointer_only"):
+        conn = get_tx_connection()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT payload, revision FROM game_protocols "
+                "WHERE roomid = ? AND gameindex = ?",
+                (roomid, gameindex),
+            ).fetchone()
+            if row is None:
+                conn.execute("ROLLBACK")
+                return json.dumps(
+                    {"status": "error", "message": "Протокол ещё не начат"},
+                    ensure_ascii=False,
+                ), 409
+            try:
+                payload = json.loads(row["payload"]) or {}
+            except (TypeError, ValueError):
+                payload = {}
+            payload["pointer"] = int(data.get("pointer") or 0)
+            conn.execute(
+                "UPDATE game_protocols SET payload = ?, updated_at = CURRENT_TIMESTAMP, "
+                "updated_by = ?, mode = COALESCE(?, mode) "
+                "WHERE roomid = ? AND gameindex = ?",
+                (json.dumps(payload, ensure_ascii=False), author, mode, roomid, gameindex),
+            )
+            conn.execute("COMMIT")
+            revision = row["revision"] or 0
+        except Exception:
+            try:
+                conn.execute("ROLLBACK")
+            except sqlite3.Error:
+                pass
+            raise
+        finally:
+            conn.close()
+        return json.dumps({"status": "ok", "revision": revision}, ensure_ascii=False)
+
     if not isinstance(marks, dict):
         return json.dumps(
             {"status": "error", "message": "Нужны marks"}, ensure_ascii=False
@@ -1716,31 +2027,48 @@ def PlanGameProtocol(roomid, gameindex):
     conn = get_tx_connection()
     try:
         conn.execute("BEGIN IMMEDIATE")
+        existing = conn.execute(
+            "SELECT payload, revision FROM game_protocols "
+            "WHERE roomid = ? AND gameindex = ?",
+            (roomid, gameindex),
+        ).fetchone()
+        previous_payload = {}
+        if existing is not None:
+            try:
+                previous_payload = json.loads(existing["payload"]) or {}
+            except (TypeError, ValueError):
+                previous_payload = {}
+        current_revision = (existing["revision"] or 0) if existing is not None else 0
+
         # Темы шлём один раз: дальше меняются только отметки, и гонять
         # вместе с ними весь текст вопросов незачем.
         if themes is None:
-            existing = conn.execute(
-                "SELECT payload FROM game_protocols WHERE roomid = ? AND gameindex = ?",
-                (roomid, gameindex),
-            ).fetchone()
-            if existing is None:
-                if not placeholder:
-                    conn.execute("ROLLBACK")
-                    return json.dumps(
-                        {"status": "error", "message": "Нужны themes"}, ensure_ascii=False
-                    ), 400
-                themes = []
-            try:
-                themes = (json.loads(existing["payload"]) or {}).get("themes") or []
-            except (TypeError, ValueError):
-                themes = []
+            if existing is None and not placeholder:
+                conn.execute("ROLLBACK")
+                return json.dumps(
+                    {"status": "error", "message": "Нужны themes"}, ensure_ascii=False
+                ), 400
+            themes = previous_payload.get("themes") or []
 
         payload = {
+            "v": 2,
             "themes": themes,
             "marks": marks,
             "pointer": int(data.get("pointer") or 0),
         }
-        if placeholder:
+        # Поля, которых может не быть у старого клиента, берём из прежней
+        # версии: иначе автосохранение из старого пульта стёрло бы состав.
+        for key, default in (
+            ("players", []), ("scores", {}), ("scoresSource", "marks"),
+            ("halfMinus", False), ("finished", False),
+        ):
+            if key in data:
+                payload[key] = data[key]
+            elif key in previous_payload:
+                payload[key] = previous_payload[key]
+            else:
+                payload[key] = default
+        if placeholder or previous_payload.get("placeholder"):
             payload["placeholder"] = True
         raw = json.dumps(payload, ensure_ascii=False)
         if len(raw) > 4 * 1024 * 1024:
@@ -1749,29 +2077,67 @@ def PlanGameProtocol(roomid, gameindex):
                 {"status": "error", "message": "Протокол слишком большой"}, ensure_ascii=False
             ), 413
 
-        previous = conn.execute(
-            "SELECT payload FROM game_protocols WHERE roomid = ? AND gameindex = ?",
-            (roomid, gameindex),
-        ).fetchone()
-        if previous is not None and previous["payload"] != raw:
-            # Снимок «до»: если новая запись окажется пустой (сброс), старая
-            # расплюсовка останется здесь и её можно будет вернуть.
-            conn.execute(
-                "INSERT INTO game_protocol_history (roomid, gameindex, payload, saved_by) "
-                "VALUES (?, ?, ?, ?)",
-                (roomid, gameindex, previous["payload"], user["name"] if user else None),
+        # Версии разошлись: присланную сохраняем отдельно, текущую не трогаем.
+        # Организатор увидит обе и выберет, какая верна.
+        if (base_revision is not None and existing is not None
+                and base_revision != current_revision):
+            cursor = conn.execute(
+                "INSERT INTO game_protocol_conflicts "
+                "(roomid, gameindex, payload, revision, author, client) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (roomid, gameindex, raw, current_revision, author, client),
             )
-            conn.execute(
-                "DELETE FROM game_protocol_history WHERE roomid = ? AND gameindex = ? "
-                "AND id NOT IN (SELECT id FROM game_protocol_history "
-                "WHERE roomid = ? AND gameindex = ? ORDER BY id DESC LIMIT 20)",
-                (roomid, gameindex, roomid, gameindex),
+            conflict_id = cursor.lastrowid
+            log_game_events(
+                roomid, "protocol conflict",
+                {"gameindex": gameindex, "conflict": conflict_id,
+                 "base_revision": base_revision, "revision": current_revision,
+                 "by": author},
+                conn=conn,
             )
-        conn.execute(
-            "INSERT OR REPLACE INTO game_protocols (roomid, gameindex, payload, updated_at, updated_by) "
-            "VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)",
-            (roomid, gameindex, raw, user["name"] if user else None),
-        )
+            conn.execute("COMMIT")
+            current = room_protocol(conn, roomid, gameindex)
+            return json.dumps({
+                "status": "conflict",
+                "message": "Версия разошлась с сервером: сохранена отдельно, "
+                           "ждёт решения организатора",
+                "conflict_id": conflict_id,
+                "revision": current_revision,
+                "protocol": current,
+            }, ensure_ascii=False), 409
+
+        if existing is not None and existing["payload"] != raw:
+            previous_marks = previous_payload.get("marks") or {}
+            # Снимок делаем, когда отметок стало меньше: именно так выглядит
+            # случайный сброс. Обычные правки историю не засоряют.
+            if len(marks) < len(previous_marks):
+                conn.execute(
+                    "INSERT INTO game_protocol_history (roomid, gameindex, payload, saved_by) "
+                    "VALUES (?, ?, ?, ?)",
+                    (roomid, gameindex, existing["payload"], author),
+                )
+                conn.execute(
+                    "DELETE FROM game_protocol_history WHERE roomid = ? AND gameindex = ? "
+                    "AND id NOT IN (SELECT id FROM game_protocol_history "
+                    "WHERE roomid = ? AND gameindex = ? ORDER BY id DESC LIMIT 20)",
+                    (roomid, gameindex, roomid, gameindex),
+                )
+        if existing is None:
+            new_revision = 1
+            conn.execute(
+                "INSERT INTO game_protocols "
+                "(roomid, gameindex, payload, updated_at, updated_by, revision, mode) "
+                "VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)",
+                (roomid, gameindex, raw, author, new_revision, mode),
+            )
+        else:
+            new_revision = current_revision + 1
+            conn.execute(
+                "UPDATE game_protocols SET payload = ?, updated_at = CURRENT_TIMESTAMP, "
+                "updated_by = ?, revision = ?, mode = COALESCE(?, mode) "
+                "WHERE roomid = ? AND gameindex = ?",
+                (raw, author, new_revision, mode, roomid, gameindex),
+            )
         conn.execute("COMMIT")
         saved_at = conn.execute(
             "SELECT updated_at FROM game_protocols WHERE roomid = ? AND gameindex = ?",
@@ -1786,7 +2152,10 @@ def PlanGameProtocol(roomid, gameindex):
     finally:
         conn.close()
 
-    return json.dumps({"status": "ok", "updated_at": saved_at}, ensure_ascii=False)
+    return json.dumps(
+        {"status": "ok", "updated_at": saved_at, "revision": new_revision},
+        ensure_ascii=False,
+    )
 
 
 @app.route('/api/plan/<int:roomid>/game/<int:gameindex>', subdomain="svoyak", methods=["POST"])
@@ -2840,6 +3209,13 @@ def PingApi():
     return response
 
 
+def _ensure_column(conn, table, column, ddl):
+    """Добавляет колонку, если её ещё нет: база на сервере живёт своей жизнью."""
+    existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
+
+
 def ensure_tournament_tables():
     """Таблицы турнирного плана: жеребьёвка и отклонения от правил."""
     conn = get_db_connection()
@@ -2888,6 +3264,31 @@ def ensure_tournament_tables():
                 PRIMARY KEY (roomid, gameindex)
             )
         ''')
+        # Ревизия и режим синхронизации: по ревизии видно, что два устройства
+        # правят один протокол, по режиму — как часто площадка выходит на связь.
+        _ensure_column(conn, "game_protocols", "revision",
+                       "revision INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "game_protocols", "mode", "mode TEXT")
+        # Спорные версии протокола: обе сохраняются, выбирает организатор.
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS game_protocol_conflicts (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                roomid      INTEGER NOT NULL,
+                gameindex   INTEGER NOT NULL,
+                payload     TEXT NOT NULL,
+                revision    INTEGER NOT NULL DEFAULT 0,
+                author      TEXT,
+                client      TEXT,
+                created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+                status      TEXT NOT NULL DEFAULT 'open',
+                resolved_at TEXT,
+                resolved_by TEXT
+            )
+        ''')
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_protocol_conflicts "
+            "ON game_protocol_conflicts(roomid, gameindex, status)"
+        )
         # История протокола: снимок, который затирается следующей записью.
         # Нужна, чтобы случайный сброс отметок можно было откатить.
         conn.execute('''
@@ -3769,6 +4170,10 @@ def _no_store_html(response):
     """HTML не кэшируем: правки должны быть видны сразу после перезагрузки."""
     if response.mimetype == 'text/html':
         response.headers['Cache-Control'] = 'no-store, max-age=0'
+    elif request.path.startswith('/static/') and request.path.endswith(('.js', '.css')):
+        # Скрипты и стили пультов обновляются вместе с сайтом: браузер должен
+        # переспросить сервер, иначе после выкладки останется старая версия.
+        response.headers['Cache-Control'] = 'no-cache'
     return response
 app.jinja_env.filters['zip'] = zip
 

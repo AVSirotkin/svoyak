@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 
+{% set MODES = {'sync': 'синхронный', 'limited': 'ограниченный', 'autonomous': 'автономный'} %}
+
 {% block content %}
 <style>
     .stage-card .card-header { background: #f8f9fa; }
@@ -203,6 +205,28 @@
                     <div class="small text-muted mb-2">
                         {% if host %}ведущий: {{ host.name }}{% else %}ведущий не назначен{% endif %}
                     </div>
+                    {% set act = activity.get(queue.table) %}
+                    <div class="small mb-2 act-row"
+                         {% if act and act.at %}data-synced="{{ act.at }}" data-time="{{ act.time }}"{% endif %}>
+                        {% if not act %}
+                        <span class="text-muted">синхронизации ещё не было</span>
+                        {% else %}
+                        <span class="text-muted">бой {{ act.gameindex }} ·</span>
+                        <span class="act-time">{{ act.time }}</span>
+                        <span class="text-muted">· {{ act.by or 'гость' }}</span>
+                        {% if act.mode %}
+                        <span class="badge bg-light text-dark border">{{ MODES.get(act.mode, act.mode) }}</span>
+                        {% endif %}
+                        {% endif %}
+                    </div>
+                    {% if act and act.conflicts %}
+                    <div class="small mb-2">
+                        <span class="badge bg-warning text-dark">спорных версий: {{ act.conflicts }}</span>
+                        <button type="button" class="btn btn-link btn-sm p-0 ms-1"
+                                onclick="showConflicts({{ queue.table }}, {{ act.gameindex }})">разобрать</button>
+                    </div>
+                    {% endif %}
+                    <div class="conflict-box" data-area="{{ queue.table }}" hidden></div>
                     <label class="form-label small mb-1 mt-auto">Назначить ведущего</label>
                     <select class="form-select form-select-sm area-host" data-area="{{ queue.table }}">
                         <option value="">— не назначен —</option>
@@ -244,6 +268,22 @@
 {% block scripts %}
 <script>
     function init_page() {}
+
+    // Сколько прошло с последней синхронизации площадки: молчание видно сразу.
+    function refreshActivity() {
+        const now = Date.now();
+        document.querySelectorAll('.act-row[data-synced]').forEach((row) => {
+            const at = Date.parse(row.dataset.synced);
+            if (Number.isNaN(at)) return;
+            const minutes = Math.max(0, Math.round((now - at) / 60000));
+            const ago = minutes < 1 ? 'только что' : minutes + ' мин назад';
+            const cell = row.querySelector('.act-time');
+            if (cell) cell.textContent = row.dataset.time + ' · ' + ago;
+            row.classList.toggle('text-warning-emphasis', minutes >= 10);
+        });
+    }
+    refreshActivity();
+    setInterval(refreshActivity, 30000);
 
     // Привязка комнаты без владельца к текущему аккаунту.
     async function claimRoom(form) {
@@ -302,5 +342,76 @@
             document.location.reload();
         });
     });
+
+    // Спорные версии протокола: обе сохранены, организатор выбирает нужную.
+    function versionText(item) {
+        const scores = Object.values(item.scores || {}).join(' / ') || '—';
+        return 'отметок: ' + item.marks + ' (плюсов ' + item.plus + ') · очки: ' + scores;
+    }
+
+    async function showConflicts(area, gameindex) {
+        const box = document.querySelector('.conflict-box[data-area="' + area + '"]');
+        if (!box) return;
+        const response = await fetch('/api/plan/{{ roomid }}/game/' + gameindex + '/protocol/conflicts');
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            alert(data.message || 'Не удалось получить спорные версии');
+            return;
+        }
+        const items = (data.conflicts || []).filter((item) => item.status === 'open');
+        box.innerHTML = '';
+        box.hidden = false;
+        const current = document.createElement('div');
+        current.className = 'small text-muted';
+        current.textContent = 'Сейчас на сервере: ' + versionText(data.current || {marks: 0, plus: 0, scores: {}});
+        box.appendChild(current);
+        if (!items.length) {
+            const empty = document.createElement('div');
+            empty.className = 'small text-muted';
+            empty.textContent = 'Открытых спорных версий нет.';
+            box.appendChild(empty);
+            return;
+        }
+        items.forEach((item) => {
+            const row = document.createElement('div');
+            row.className = 'border rounded p-2 mt-2 small';
+            const title = document.createElement('div');
+            title.className = 'fw-semibold';
+            title.textContent = 'Версия #' + item.id + ' · ' + (item.author || 'гость') +
+                ' · ' + item.created_at;
+            const detail = document.createElement('div');
+            detail.className = 'text-muted';
+            detail.textContent = versionText(item);
+            const choose = document.createElement('button');
+            choose.type = 'button';
+            choose.className = 'btn btn-sm btn-primary mt-2';
+            choose.textContent = 'Выбрать эту версию';
+            choose.addEventListener('click', () => chooseConflict(gameindex, item.id));
+            row.appendChild(title);
+            row.appendChild(detail);
+            row.appendChild(choose);
+            box.appendChild(row);
+        });
+    }
+
+    async function chooseConflict(gameindex, conflictId) {
+        if (!confirm('Сделать эту версию протокола текущей? Вторая версия останется в истории.')) {
+            return;
+        }
+        const response = await fetch(
+            '/api/plan/{{ roomid }}/game/' + gameindex + '/protocol/conflicts/' + conflictId,
+            {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+                body: JSON.stringify({action: 'choose'})
+            }
+        );
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            alert(data.message || 'Не удалось выбрать версию');
+            return;
+        }
+        document.location.reload();
+    }
 </script>
 {% endblock %}
