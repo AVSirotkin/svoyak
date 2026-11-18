@@ -10,6 +10,7 @@
 администратору как кандидатов: подтвердить, что это один пакет, может он.
 """
 
+import datetime
 import hashlib
 import json
 import sqlite3
@@ -19,6 +20,11 @@ import time as _time
 EXPOSURE_HALL = "hall"
 EXPOSURE_GAME = "game"
 EXPOSURE_MODES = (EXPOSURE_HALL, EXPOSURE_GAME)
+
+# Насколько поздно ведущий может внести пришедшего: отметка в пределах этого
+# времени после конца боя относится к тому бою. Дольше — считаем, что это уже
+# другая партия (например, следующий день турнира).
+LATE_ENTRY_HOURS = 12
 
 MONTHS = {
     "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
@@ -367,16 +373,47 @@ def game_players(conn, roomid, gameindex):
     return names
 
 
+def moment_seconds(moment):
+    """Время из журнала в секундах — чтобы считать разницу."""
+    if not moment:
+        return None
+    return datetime.datetime(*moment).timestamp()
+
+
+def previous_game_end(moment, ends):
+    """Конец последнего боя, который закончился не позже этого момента."""
+    earlier = [end for end in ends.values() if end is not None and end <= moment]
+    return max(earlier) if earlier else None
+
+
+def effective_arrival(moment, ends, limit_hours=LATE_ENTRY_HOURS):
+    """Когда человек на самом деле мог прийти.
+
+    Ведущий обычно сначала доигрывает бой и только потом вносит тех, кто пришёл
+    во время боя. Поэтому отметку, поставленную вскоре после конца боя,
+    относим к концу этого боя: считается, что человек слышал его.
+    """
+    finished = previous_game_end(moment, ends)
+    if finished is None:
+        return moment
+    gap = moment_seconds(moment) - moment_seconds(finished)
+    if gap is not None and 0 <= gap <= limit_hours * 3600:
+        return finished
+    return moment
+
+
 def game_listeners(conn, roomid, gameindex, mode=EXPOSURE_HALL, times=None,
                    timeline=None):
     """Кто мог слышать вопросы этого боя.
 
     В режиме «зал» — все, кто был в комнате, пока шёл бой: пришёл до его конца и
-    не ушёл до его начала. Участники боя попадают в список всегда.
+    не ушёл до его начала. Отметка игрока, внесённого после боя (ведущий вносит
+    опоздавших, уже сохранив результаты), относится к концу этого боя.
+    Участники боя попадают в список всегда.
     """
     players = game_players(conn, roomid, gameindex)
     if mode == EXPOSURE_GAME:
-        return [{"name": name, "played": True} for name in players]
+        return [{"name": name, "played": True, "late": False} for name in players]
     if timeline is None:
         timeline = room_timeline(conn, roomid)
     arrivals, departures, ends = timeline
@@ -387,20 +424,25 @@ def game_listeners(conn, roomid, gameindex, mode=EXPOSURE_HALL, times=None,
     start = max(earlier) if earlier else None
 
     heard = []
+    late = set()
     for name, moments in arrivals.items():
         spans = presence(moments, departures.get(name, []))
         for opened, closed in spans:
-            if finish is not None and opened > finish:
+            arrived = effective_arrival(opened, times)
+            if finish is not None and arrived > finish:
                 continue
             if start is not None and closed is not None and closed < start:
                 continue
             heard.append(name)
+            if arrived != opened:
+                late.add(name)
             break
     for name in players:
         if name not in heard:
             heard.append(name)
     heard.sort()
-    return [{"name": name, "played": name in players} for name in heard]
+    return [{"name": name, "played": name in players, "late": name in late}
+            for name in heard]
 
 
 def library_usage(conn, libraryid, mode=EXPOSURE_HALL):
@@ -445,6 +487,7 @@ def library_usage(conn, libraryid, mode=EXPOSURE_HALL):
             "owner": room[1] if room else None,
             "venue": room[2] if room else None,
             "listeners": [item["name"] for item in listeners],
+            "late": [item["name"] for item in listeners if item["late"]],
         })
     return usage
 
@@ -476,13 +519,16 @@ def theme_usage(conn, libraryid):
 def library_listeners(conn, libraryid, mode=EXPOSURE_HALL):
     """Все, кто мог слышать хоть что-то из пакета: имя → где слышал."""
     seen = {}
+    late = set()
     for item in library_usage(conn, libraryid, mode):
         for name in item["listeners"]:
             place = seen.setdefault(name, [])
             key = "комната %s, бой %s" % (item["roomid"], item["gameindex"])
             if key not in place:
                 place.append(key)
-    return [{"name": name, "places": places} for name, places in sorted(seen.items())]
+        late.update(item.get("late") or [])
+    return [{"name": name, "places": places, "late": name in late}
+            for name, places in sorted(seen.items())]
 
 
 def package_themes(conn, libraryid):

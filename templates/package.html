@@ -36,6 +36,14 @@
     {% if similar %}<span class="badge bg-warning text-dark">похожих пакетов: {{ similar | length }}</span>{% endif %}
 </div>
 
+{% if mode == 'hall' %}
+<div class="alert alert-light border py-2 small">
+    Режим «весь зал» учитывает, что ведущий обычно сначала доигрывает бой и только потом
+    вносит тех, кто пришёл во время боя. Поэтому игрок, внесённый вскоре после конца боя,
+    считается слышавшим этот бой — в списке он помечен «по отметке».
+</div>
+{% endif %}
+
 <div class="card mb-3">
     <div class="card-header fw-semibold">Где лежит пакет</div>
     <div class="table-responsive">
@@ -151,6 +159,10 @@
                 <ol class="mb-0 small">
                     {% for person in listeners %}
                     <li>{{ person.name }}
+                        {% if person.late %}
+                        <span class="badge bg-light text-dark"
+                              title="внесён после конца боя — ведущий так и вносит опоздавших">по отметке</span>
+                        {% endif %}
                         <span class="text-muted">— {{ person.places | join('; ') }}</span></li>
                     {% endfor %}
                 </ol>

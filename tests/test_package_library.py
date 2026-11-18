@@ -147,10 +147,30 @@ class ListenerTests(unittest.TestCase):
     def test_hall_mode_counts_those_who_were_present(self):
         first = package_library.game_listeners(
             self.conn, 9200, 1, package_library.EXPOSURE_HALL, self.times, self.timeline)
-        self.assertEqual([item["name"] for item in first], ["Аня", "Вася"])
+        # Петя внесён после конца первого боя: ведущий так и вносит опоздавших,
+        # поэтому считаем, что Петя его слышал.
+        self.assertEqual([item["name"] for item in first], ["Аня", "Вася", "Петя"])
+        petya = [item for item in first if item["name"] == "Петя"][0]
+        vasya = [item for item in first if item["name"] == "Вася"][0]
+        self.assertTrue(petya["late"])
+        self.assertFalse(vasya["late"])
         second = package_library.game_listeners(
             self.conn, 9200, 2, package_library.EXPOSURE_HALL, self.times, self.timeline)
         self.assertEqual([item["name"] for item in second], ["Аня", "Вася", "Петя"])
+
+    def test_effective_arrival_shifts_to_previous_game_end(self):
+        ends = {1: (2026, 11, 14, 20, 30, 0)}
+        self.assertEqual(
+            package_library.effective_arrival((2026, 11, 14, 20, 35, 0), ends),
+            (2026, 11, 14, 20, 30, 0))
+        # Наутро отметка к вчерашнему бою уже не относится.
+        self.assertEqual(
+            package_library.effective_arrival((2026, 11, 15, 11, 0, 0), ends),
+            (2026, 11, 15, 11, 0, 0))
+        # До первого боя сдвигать некуда.
+        self.assertEqual(
+            package_library.effective_arrival((2026, 11, 14, 18, 0, 0), ends),
+            (2026, 11, 14, 18, 0, 0))
 
     def test_game_mode_counts_only_players(self):
         first = package_library.game_listeners(
