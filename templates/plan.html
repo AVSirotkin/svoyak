@@ -301,6 +301,75 @@
 </div>
 {% endif %}
 {% endif %}
+
+{% if manage %}
+<div class="card mb-3" id="settings">
+    <div class="card-body">
+        <h5 class="mb-3">Настройки комнаты</h5>
+        <form class="row g-2 align-items-end" onsubmit="saveSettings(event)">
+            <div class="col-12 col-sm-4">
+                <label class="form-label small mb-1" for="roomDate">Дата игры</label>
+                <input type="date" class="form-control form-control-sm" id="roomDate"
+                       value="{{ overview.room.date }}">
+            </div>
+            <div class="col-12 col-sm-5">
+                <label class="form-label small mb-1" for="roomVenue">Площадка</label>
+                <select class="form-select form-select-sm" id="roomVenue">
+                    <option value="0" {% if not overview.room.venueid %}selected{% endif %}>без площадки</option>
+                    {% for venue in venues %}
+                    <option value="{{ venue.venueid }}"
+                            {% if venue.venueid == overview.room.venueid %}selected{% endif %}>
+                        {{ venue.venuename }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 col-sm-3">
+                <button class="btn btn-primary btn-sm w-100" type="submit">Сохранить</button>
+            </div>
+        </form>
+        {% if not overview.room.finished %}
+        <hr>
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div class="small text-muted">
+                Завершение закрывает комнату: она уезжает в витрину, менять её станет нельзя.
+            </div>
+            <button class="btn btn-outline-danger btn-sm" type="button" onclick="finishRoom()">
+                🏁 Завершить комнату
+            </button>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<details class="card mb-3" id="log">
+    <summary class="card-body d-flex justify-content-between align-items-center gap-2">
+        <span class="fw-semibold">Журнал комнаты</span>
+        <span class="text-muted small">
+            событий: {{ room_log_total }}{% if room_log_total > room_log|length %},
+            показаны последние {{ room_log|length }}{% endif %}
+        </span>
+    </summary>
+    <div class="card-body pt-0">
+        {% if room_log %}
+        <ul class="list-unstyled small mb-0">
+            {% for item in room_log %}
+            <li class="d-flex justify-content-between align-items-start gap-2 border-top py-1">
+                <span><span class="text-muted">{{ item.date }}</span> · {{ item.text }}</span>
+                <button class="btn btn-link btn-sm text-danger p-0 js-drop-event" type="button"
+                        data-row="{{ item.id }}" data-text="{{ item.text }}">удалить</button>
+            </li>
+            {% endfor %}
+        </ul>
+        <div class="text-muted small mt-2">
+            Удаление события «сохранён бой» заодно убирает результат этого боя.
+        </div>
+        {% else %}
+        <div class="text-muted small">Записей нет.</div>
+        {% endif %}
+    </div>
+</details>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
@@ -451,5 +520,58 @@
         }
         document.location.reload();
     }
+
+    // Дата и площадка комнаты: раньше их можно было задать только при создании.
+    async function saveSettings(event) {
+        event.preventDefault();
+        const response = await fetch('/api/plan/{{ roomid }}/settings', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+            body: JSON.stringify({
+                date: document.getElementById('roomDate').value,
+                venueid: document.getElementById('roomVenue').value,
+            }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            alert(data.message || 'Не удалось сохранить настройки');
+            return;
+        }
+        document.location.reload();
+    }
+
+    async function finishRoom() {
+        if (!confirm('Завершить комнату? Она уедет в витрину, менять её станет нельзя.')) {
+            return;
+        }
+        const response = await fetch('/api/finalizeroom/{{ roomid }}', { method: 'POST' });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.status !== 'Ok') {
+            alert(data.status || data.message || 'Не удалось завершить комнату');
+            return;
+        }
+        document.location.href = '/view/{{ roomid }}';
+    }
+
+    async function dropEvent(rowid, text) {
+        if (!confirm('Удалить событие «' + text + '»?')) {
+            return;
+        }
+        const response = await fetch('/removegamelog/{{ roomid }}', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+            body: JSON.stringify({roomid: {{ roomid }}, rowid: Number(rowid)}),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            alert(data.message || 'Не удалось удалить событие');
+            return;
+        }
+        document.location.reload();
+    }
+
+    document.querySelectorAll('.js-drop-event').forEach((button) => {
+        button.addEventListener('click', () => dropEvent(button.dataset.row, button.dataset.text));
+    });
 </script>
 {% endblock %}

@@ -966,6 +966,70 @@ def free_seating_view(rules, params, played):
     }
 
 
+def log_text(event, payload):
+    """Событие журнала комнаты человеческим языком."""
+    data = payload if isinstance(payload, dict) else {}
+    name = data.get("name")
+    index = data.get("gameindex")
+    if event == "add active player":
+        return f"добавлен игрок {name}" if name else "добавлен игрок"
+    if event == "remove active player":
+        return f"убран игрок {name}" if name else "убран игрок"
+    if event == "save game result":
+        return f"сохранён бой {index}" if index is not None else "сохранён бой"
+    if event == "area host":
+        area = data.get("area")
+        who = data.get("by") or "гость"
+        return f"ведущий площадки {area} — {who}" if area is not None else f"ведущий — {who}"
+    if event == "draw":
+        places = data.get("places") or []
+        return f"жеребьёвка, мест: {len(places)}" if places else "жеребьёвка"
+    if event == "plan order rule":
+        return ("порядок боёв можно менять" if data.get("allow_any_order")
+                else "порядок боёв закреплён")
+    if event == "questions assigned":
+        themes = data.get("themes") or []
+        if index is None:
+            return "вопросы назначены"
+        return f"бою {index} назначено тем: {len(themes)}"
+    if event == "questions cleared":
+        return f"у боя {index} сняты вопросы" if index is not None else "вопросы сняты"
+    if event == "room settings":
+        parts = []
+        if data.get("date"):
+            parts.append(f"дата {data['date']}")
+        if data.get("venue"):
+            parts.append(f"площадка «{data['venue']}»")
+        by = data.get("by") or "гость"
+        return "настройки комнаты: " + (", ".join(parts) or "без изменений") + f" — {by}"
+    return event
+
+
+def log_date(value):
+    """Время события: в базе ctime(), в журнале — 13.11.2026 23:06."""
+    try:
+        return time.strftime("%d.%m.%Y %H:%M", time.strptime(str(value), "%a %b %d %H:%M:%S %Y"))
+    except (TypeError, ValueError):
+        return value
+
+
+def room_log_view(rows):
+    """Журнал комнаты для пульта турнира: свежие события сверху."""
+    items = []
+    for row in rows:
+        try:
+            payload = json.loads(row["data"]) if row["data"] else {}
+        except (TypeError, ValueError):
+            payload = {}
+        items.append({
+            "id": row["id"],
+            "date": log_date(row["date"]),
+            "event": row["event"],
+            "text": log_text(row["event"], payload),
+        })
+    return items
+
+
 @app.route('/plan/<int:roomid>', subdomain="svoyak")
 @room_access_required
 def PlanPage(roomid):
@@ -988,6 +1052,20 @@ def PlanPage(roomid):
         hosts = conn.execute(
             "SELECT userid, name, role FROM users ORDER BY name"
         ).fetchall()
+        venues = conn.execute(
+            "SELECT venueid, venuename FROM venues ORDER BY venuename"
+        ).fetchall()
+        manage = can_manage_room(roomid)
+        room_log = []
+        room_log_total = 0
+        if manage:
+            room_log_total = conn.execute(
+                "SELECT COUNT(*) AS total FROM log WHERE roomid = ?", (roomid,)
+            ).fetchone()["total"]
+            room_log = room_log_view(conn.execute(
+                "SELECT rowid AS id, date, event, data FROM log "
+                "WHERE roomid = ? ORDER BY rowid DESC LIMIT 50", (roomid,)
+            ).fetchall())
     finally:
         conn.close()
     return render_template(
@@ -999,6 +1077,10 @@ def PlanPage(roomid):
         area_hosts=room_area_hosts(roomid),
         activity=activity,
         free=free,
+        manage=manage,
+        room_log=room_log,
+        room_log_total=room_log_total,
+        venues=venues,
         title=f"Турнир {roomid}",
     )
 
@@ -1350,6 +1432,95 @@ def PlanDraw(roomid):
         "seed": seed_value,
         "places": [player["name"] for player in ordered],
     }, ensure_ascii=False)
+
+
+@app.route('/api/plan/<int:roomid>/settings', subdomain="svoyak", methods=["POST"])
+@api_room_access_required
+def PlanRoomSettings(roomid):
+    """Дата и площадка комнаты.
+
+    Раньше их задавали только при создании, а /init занятую комнату не
+    настраивает — он её перезаписывает. Здесь меняем ровно эти поля.
+    """
+    data = request.get_json(silent=True) or {}
+    updates = {}
+    if "date" in data:
+        try:
+            updates["date"] = datetime.datetime.strptime(
+                str(data["date"]).strip(), "%Y-%m-%d"
+            ).strftime("%Y-%m-%d")
+        except (TypeError, ValueError):
+            return json.dumps(
+                {"status": "error", "message": "Дата нужна в виде ГГГГ-ММ-ДД"},
+                ensure_ascii=False,
+            ), 400
+    venue_name = None
+    if "venueid" in data:
+        try:
+            venueid = int(data["venueid"])
+        except (TypeError, ValueError):
+            return json.dumps(
+                {"status": "error", "message": "Площадка должна быть числом"},
+                ensure_ascii=False,
+            ), 400
+        conn = get_db_connection()
+        try:
+            venue = conn.execute(
+                "SELECT venuename FROM venues WHERE venueid = ?", (venueid,)
+            ).fetchone() if venueid else None
+        finally:
+            conn.close()
+        if venueid and venue is None:
+            return json.dumps(
+                {"status": "error", "message": f"Площадки {venueid} нет"}, ensure_ascii=False
+            ), 400
+        updates["venueid"] = venueid
+        venue_name = venue["venuename"] if venue is not None else "без площадки"
+
+    if not updates:
+        return json.dumps(
+            {"status": "error", "message": "Нечего менять"}, ensure_ascii=False
+        ), 400
+
+    user = current_user()
+    by = user["name"] if user else "гость"
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        room = conn.execute(
+            "SELECT roomid FROM activerooms WHERE roomid = ?", (roomid,)
+        ).fetchone()
+        if room is None:
+            conn.execute("ROLLBACK")
+            return json.dumps(
+                {"status": "error", "message": f"Комнаты {roomid} нет"}, ensure_ascii=False
+            ), 404
+        assignments = ", ".join(f"{key} = ?" for key in updates)
+        conn.execute(
+            f"UPDATE activerooms SET {assignments} WHERE roomid = ?",
+            (*updates.values(), roomid),
+        )
+        if "date" in updates:
+            # Архив комнаты хранит свою копию даты — держим их вместе.
+            conn.execute(
+                "UPDATE roomhistory SET date = ? WHERE roomid = ?",
+                (updates["date"], roomid),
+            )
+        log_game_events(
+            roomid, "room settings",
+            {"date": updates.get("date"), "venue": venue_name, "by": by},
+            conn=conn,
+        )
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+    return json.dumps({"status": "ok"}, ensure_ascii=False)
 
 
 def room_questions(conn, roomid, gameindex):
@@ -2685,12 +2856,8 @@ def InitRoom(roomid):
 @app.route('/admin/<int:roomid>', subdomain = "svoyak")
 @room_access_required
 def AdminLogView(roomid):
-    conn = get_db_connection()
-    log_info = conn.execute(f"SELECT rowid as id, date, roomid as room, event as name, data as json FROM log WHERE roomid = {roomid}").fetchall()
-    venues = conn.execute(f"SELECT * FROM venues").fetchall()
-    # print(venues)
-    return render_template("RoomAdmin.html", roomid = roomid, gamelog = log_info,
-                           venues = venues, title = f"Лог комнаты {roomid}")
+    """Журнал комнаты переехал в пульт турнира; старые ссылки ведут туда."""
+    return redirect(f"/plan/{roomid}#log", code=302)
 
 
 @app.route('/removegamelog/<int:roomid>', subdomain = "svoyak", methods = ["POST"])

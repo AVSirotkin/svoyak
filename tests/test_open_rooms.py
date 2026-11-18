@@ -245,5 +245,110 @@ class FreeSeatingPlanTests(unittest.TestCase):
         self.assertEqual(site.plural_filter(21, 'игру', 'игры', 'игр'), 'игру')
 
 
+class RoomConsoleTests(unittest.TestCase):
+    """Настройки и журнал комнаты живут в пульте турнира, /admin ведёт туда же."""
+
+    def setUp(self):
+        site.DB_PATH = WORK_DB
+        self.login = 'own_' + uuid.uuid4().hex[:8]
+        self.owner = site.app.test_client()
+        response = self.owner.post(
+            BASE + '/register',
+            data={'login': self.login, 'name': 'Организатор',
+                  'password': 'secret123', 'password2': 'secret123'},
+        )
+        self.assertEqual(response.status_code, 302, response.get_data(as_text=True))
+        conn = db()
+        self.userid = conn.execute(
+            "SELECT userid FROM users WHERE login = ?", (self.login,)
+        ).fetchone()['userid']
+        conn.execute("UPDATE activerooms SET ownerid = ? WHERE roomid = 2030", (self.userid,))
+        conn.execute("UPDATE activerooms SET date = '2026-11-13', venueid = 0 WHERE roomid = 2030")
+        conn.commit()
+        conn.close()
+        self.guest = site.app.test_client()
+
+    def tearDown(self):
+        conn = db()
+        conn.execute("UPDATE activerooms SET date = '2026-11-13', venueid = 0 WHERE roomid = 2030")
+        conn.execute("DELETE FROM log WHERE roomid = 2030 AND event = 'room settings'")
+        conn.commit()
+        conn.close()
+
+    def page(self, client):
+        response = client.get(BASE + '/plan/2030')
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        return re.sub(r'\s+', ' ', response.get_data(as_text=True))
+
+    def test_admin_redirects_to_journal(self):
+        response = self.owner.get(BASE + '/admin/2030')
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/plan/2030#log', response.headers['Location'])
+
+    def test_owner_sees_settings_and_journal(self):
+        html = self.page(self.owner)
+        self.assertIn('Настройки комнаты', html)
+        self.assertIn('Журнал комнаты', html)
+        self.assertIn('Завершить комнату', html)
+
+    def test_guest_does_not_get_into_closed_room(self):
+        response = self.guest.get(BASE + '/plan/2030')
+        self.assertEqual(response.status_code, 302)
+
+    def test_settings_save_date(self):
+        response = self.owner.post(
+            BASE + '/api/plan/2030/settings', json={'date': '2026-11-20', 'venueid': 0}
+        )
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        conn = db()
+        room = conn.execute(
+            "SELECT date, venueid FROM activerooms WHERE roomid = 2030"
+        ).fetchone()
+        history = conn.execute(
+            "SELECT date FROM roomhistory WHERE roomid = 2030"
+        ).fetchone()
+        events = conn.execute(
+            "SELECT data FROM log WHERE roomid = 2030 AND event = 'room settings' "
+            "ORDER BY rowid DESC"
+        ).fetchall()
+        conn.close()
+        self.assertEqual(room['date'], '2026-11-20')
+        self.assertEqual(room['venueid'], 0)
+        self.assertEqual(history['date'], '2026-11-20')
+        self.assertIn('2026-11-20', events[0]['data'])
+        self.assertIn('дата 2026-11-20', site.room_log_view([
+            {'id': 1, 'date': 'сегодня', 'event': 'room settings', 'data': events[0]['data']},
+        ])[0]['text'])
+
+    def test_settings_reject_bad_date(self):
+        response = self.owner.post(
+            BASE + '/api/plan/2030/settings', json={'date': '20.11.2026'}
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_settings_other_room_is_forbidden(self):
+        other = site.app.test_client()
+        other.post(
+            BASE + '/register',
+            data={'login': 'other_' + uuid.uuid4().hex[:8], 'name': 'Чужой',
+                  'password': 'secret123', 'password2': 'secret123'},
+        )
+        response = other.post(
+            BASE + '/api/plan/2030/settings', json={'date': '2026-11-20', 'venueid': 0}
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_log_text(self):
+        self.assertEqual(site.log_text('save game result', {'gameindex': 3}), 'сохранён бой 3')
+        self.assertEqual(site.log_text('add active player', {'name': 'Иванов'}),
+                         'добавлен игрок Иванов')
+        self.assertEqual(site.log_text('area host', {'area': 2, 'by': 'Петров'}),
+                         'ведущий площадки 2 — Петров')
+        self.assertEqual(site.log_text('draw', {'places': ['а', 'б']}), 'жеребьёвка, мест: 2')
+        self.assertEqual(site.log_text('plan order rule', {'allow_any_order': True}),
+                         'порядок боёв можно менять')
+        self.assertEqual(site.log_text('какое-то событие', {}), 'какое-то событие')
+
+
 if __name__ == '__main__':
     unittest.main()

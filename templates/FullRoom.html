@@ -28,14 +28,8 @@
                 <option value="autonomous">автономная</option>
             </select>
         </label>
-        {% if rules and rules.get('brackets') %}
         <a href="/plan/{{roomid}}" class="btn btn-outline btn-sm">🗂 Пульт турнира</a>
-        {% else %}
-        <a href="/plan/{{roomid}}" class="btn btn-outline btn-sm"
-           title="Сетки у комнаты нет: пульт турнира откроется на настройке турнира">🗂 Пульт турнира</a>
-        {% endif %}
         <a href="/oldroom/{{roomid}}" class="btn btn-outline btn-sm">Старая версия</a>
-        <a href="/admin/{{roomid}}" class="btn btn-outline btn-sm">⚙️ Админка</a>
         <a href="/view/{{roomid}}" class="btn btn-outline btn-sm">📊 Результаты</a>
         <button onclick="exportState()" class="btn btn-primary btn-sm">💾 Сохранить</button>
         <button onclick="document.getElementById('importFileInput').click()" class="btn btn-outline btn-sm">📂 Восстановить</button>
