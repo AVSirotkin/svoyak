@@ -505,19 +505,40 @@ def can_manage_area(roomid, area, user=None):
     return int(area) in user_areas(roomid, user)
 
 
+def room_exists(roomid):
+    """Есть ли такая комната. Без неё писать протокол некуда.
+
+    У свободной посадки схемы нет, но сама комната быть обязана: иначе
+    опечатка в адресе тихо создавала бы протоколы для несуществующего боя.
+    """
+    try:
+        conn = get_db_connection()
+        try:
+            row = conn.execute(
+                "SELECT 1 FROM activerooms WHERE roomid = ?", (roomid,)
+            ).fetchone()
+        finally:
+            conn.close()
+    except sqlite3.OperationalError:
+        # База старой версии: мешать работе не будем.
+        return True
+    return row is not None
+
+
 def room_plan_area(roomid, gameindex):
     """Площадка боя и признак того, что у комнаты вообще есть схема.
 
     Свободная посадка схемы не создаёт: бои нумерует сам пульт, площадок
     нет. Второе значение и отличает такую комнату от комнаты, где бой
-    просто не из этой схемы.
+    просто не из этой схемы. Пустая схема без единого боя — та же свободная
+    посадка: сетку ещё не составили.
     """
     conn = get_db_connection()
     try:
         plan = build_room_plan(conn, roomid)
     finally:
         conn.close()
-    if plan is None:
+    if plan is None or not plan.games:
         return None, False
     game = plan.game(gameindex)
     return (None if game is None else game.table), True
@@ -1609,8 +1630,15 @@ def _open_conflicts(conn, roomid, gameindex):
 
 def _protocol_access(roomid, gameindex):
     """Общая проверка прав для ручек протокола. None — можно работать."""
+    if not room_exists(roomid):
+        app.logger.info("протокол: комнаты %s нет", roomid)
+        return json.dumps(
+            {"status": "error", "message": f"Комнаты {roomid} нет"}, ensure_ascii=False
+        ), 404
     area, has_plan = room_plan_area(roomid, gameindex)
     if has_plan and area is None:
+        # Причину отказа пишем в лог: по одному коду 404 её не разглядеть.
+        app.logger.info("протокол: боя %s нет в схеме комнаты %s", gameindex, roomid)
         return json.dumps(
             {"status": "error", "message": f"Боя {gameindex} нет в схеме"}, ensure_ascii=False
         ), 404
@@ -1622,6 +1650,7 @@ def _protocol_access(roomid, gameindex):
         allowed = can_manage_room(roomid)
         message = "Нет прав на этот бой"
     if not allowed:
+        app.logger.info("протокол: нет прав на бой %s комнаты %s", gameindex, roomid)
         return json.dumps(
             {"status": "error", "message": message}, ensure_ascii=False
         ), 403
@@ -1910,13 +1939,20 @@ def PlanGameProtocol(roomid, gameindex):
     ensure_tournament_tables()
     user = current_user()
 
+    if not room_exists(roomid):
+        app.logger.info("протокол: комнаты %s нет", roomid)
+        return json.dumps(
+            {"status": "error", "message": f"Комнаты {roomid} нет"}, ensure_ascii=False
+        ), 404
     area, has_plan = room_plan_area(roomid, gameindex)
     if has_plan and area is None:
+        app.logger.info("протокол: боя %s нет в схеме комнаты %s", gameindex, roomid)
         return json.dumps(
             {"status": "error", "message": f"Боя {gameindex} нет в схеме"}, ensure_ascii=False
         ), 404
     allowed = can_manage_area(roomid, area, user) if has_plan else can_manage_room(roomid, user)
     if not allowed:
+        app.logger.info("протокол: нет прав на бой %s комнаты %s", gameindex, roomid)
         return json.dumps(
             {"status": "error", "message": "Нет прав на этот бой"}, ensure_ascii=False
         ), 403

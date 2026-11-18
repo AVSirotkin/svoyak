@@ -207,6 +207,11 @@ class ProtocolRevisionTests(unittest.TestCase):
         self.assertEqual(self.protocol()['marks'], stale)
         self.assertEqual(self.conflicts()['conflicts'][0]['status'], 'chosen')
 
+    def test_missing_room_is_404(self):
+        # Свободная посадка обходится без схемы, но не без комнаты.
+        response = self.host.get(BASE + '/api/plan/999999/game/1/protocol')
+        self.assertEqual(response.status_code, 404, response.get_data(as_text=True))
+
     def test_pointer_only_keeps_revision(self):
         self.save({'0:256': 'plus'})
         before = self.protocol()
@@ -335,6 +340,26 @@ class FreeSeatingTests(unittest.TestCase):
         page = self.guest.get(BASE + '/room/2030')
         self.assertEqual(page.status_code, 200, page.get_data(as_text=True))
         self.assertIn('id="syncModeSelect"', page.get_data(as_text=True))
+
+    def test_schema_without_games_is_free_seating(self):
+        # Схема без единого боя — сетку ещё не составили: бои нумерует пульт.
+        conn = db()
+        conn.execute(
+            "UPDATE rules SET brackets = ? WHERE roomid = 2030",
+            (json.dumps({'name': 'пусто',
+                         'matches': [{'id': '1', 'type': 'seed', 'participantSlots': 4}]},
+                        ensure_ascii=False),),
+        )
+        conn.commit()
+        conn.close()
+        try:
+            response = self.guest.get(BASE + '/api/plan/2030/game/1/protocol')
+            self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        finally:
+            conn = db()
+            conn.execute("UPDATE rules SET brackets = NULL WHERE roomid = 2030")
+            conn.commit()
+            conn.close()
 
     def test_game_outside_plan_is_still_404(self):
         # Комната со схемой: боя, которого в ней нет, по-прежнему не существует.
