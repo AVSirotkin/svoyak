@@ -130,7 +130,18 @@
             <div class="card-body">
                 {% for theme in themes %}
                 <div class="pkg-theme {% if theme.used %}used{% endif %}">
-                    <div class="fw-semibold">{{ theme.topic }}</div>
+                    <div class="fw-semibold">{{ theme.topic }}
+                        {% if theme.same_title %}
+                        <span class="badge bg-light text-dark border"
+                              title="в пакете есть ещё тема с таким названием, но с другими вопросами — это разные темы">одноимённая</span>
+                        {% endif %}
+                    </div>
+                    {% if theme.elsewhere %}
+                    <div class="small text-muted">
+                        эта же тема игралась в других пакетах:
+                        {{ theme.elsewhere | join('; ') }}
+                    </div>
+                    {% endif %}
                     {% if theme.used %}
                     <div class="small text-muted">
                         {% for block in theme.used %}

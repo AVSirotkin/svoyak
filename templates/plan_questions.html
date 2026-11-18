@@ -24,6 +24,14 @@
     <a class="btn btn-outline-secondary btn-sm" href="/packages">Библиотека пакетов</a>
 </div>
 
+{% if free_seating %}
+<div class="alert alert-light border py-2 small">
+    Свободная посадка: сетки боёв нет, бои идут по порядку. Нумерация здесь — та же,
+    что в протоколах: ведущий вносит темы боя заранее, а сайт по ним считает,
+    кто мог их слышать.
+</div>
+{% endif %}
+
 {% if not packages %}
 <div class="alert alert-warning">
     В комнате нет ни одного пакета вопросов. Загрузите пакет в полном пульте комнаты,
@@ -31,13 +39,13 @@
 </div>
 {% endif %}
 
-{% for game in plan.games|sort(attribute='order') %}
+{% for game in games|sort(attribute='order') %}
 {% set binding = assigned.get(game.gameindex) %}
 <div class="game-card" id="game-{{ game.gameindex }}" data-game="{{ game.gameindex }}">
     <div class="head">
         <span>
             <strong>{{ game.name }}</strong>
-            <span class="text-muted small">· бой {{ game.gameindex }} · стадия {{ game.stage }} · площадка {{ game.table }}</span>
+            <span class="text-muted small">· бой {{ game.gameindex }}{% if not free_seating %} · стадия {{ game.stage }} · площадка {{ game.table }}{% endif %}</span>
         </span>
         <span class="text-muted small">
             {% if binding %}{{ binding.topics|length }} тем{% else %}не назначено{% endif %}
@@ -117,10 +125,12 @@
             return;
         }
         const chosen = new Set(selected || []);
-        usage = usage || {};
+        usage = usage || [];
         list.innerHTML = topics.map((topic, index) => {
-            const places = usage[topic.topic];
-            const mark = places
+            // Пометка стоит на теме, а не на её названии: темы с одинаковыми
+            // названиями, но разными вопросами — разные темы.
+            const places = usage[index];
+            const mark = places && places.length
                 ? `<span class="badge bg-warning text-dark ms-1"
                          title="уже игралась: ${places.join('; ')}">уже игралась</span>
                    <span class="text-muted small">${places.join('; ')}</span>`
@@ -146,7 +156,7 @@
         list.innerHTML = '<span class="text-muted small">Загружаю…</span>';
         try {
             const topics = await loadPackage(select.value);
-            renderThemes(list, topics, selectedTopics || [], THEME_USE[select.value] || {});
+            renderThemes(list, topics, selectedTopics || [], THEME_USE[select.value] || []);
         } catch (error) {
             list.innerHTML = '<span class="text-danger small">Не удалось загрузить пакет</span>';
         }
@@ -182,12 +192,15 @@
             }
             // Повтор сыгранных тем не запрещаем, но спрашиваем.
             const topics = await loadPackage(select.value).catch(() => []);
-            const usage = THEME_USE[select.value] || {};
+            const usage = THEME_USE[select.value] || [];
             const repeated = [];
             themes.forEach((index) => {
+                const places = usage[index];
                 const topic = topics[index];
-                const places = topic && usage[topic.topic];
-                if (places) repeated.push(topic.topic + ' (' + places.join('; ') + ')');
+                if (places && places.length) {
+                    repeated.push((topic ? topic.topic : 'тема ' + (index + 1)) +
+                                  ' (' + places.join('; ') + ')');
+                }
             });
             if (repeated.length) {
                 const question = 'Эти темы уже игрались:\n' + repeated.join('\n') +

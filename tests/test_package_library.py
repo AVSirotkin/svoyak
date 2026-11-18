@@ -100,17 +100,21 @@ class LibraryGroupingTests(unittest.TestCase):
     def test_theme_usage_shows_both_rooms(self):
         first = add_package(self.conn, 9105, "Общий", ["Кино", "Музыка"])
         second = add_package(self.conn, 9106, "Общий", ["Кино", "Музыка"])
+        data = self.conn.execute("SELECT data FROM packages WHERE packageid = ?",
+                                 (first,)).fetchone()[0]
         for packageid, roomid, gameindex in ((first, 9105, 1), (second, 9106, 2)):
             self.conn.execute(
                 "INSERT INTO game_questions (roomid, gameindex, packageid, payload) "
                 "VALUES (?, ?, ?, ?)",
                 (roomid, gameindex, packageid,
-                 json.dumps({"themes": [{"topic": "Кино"}]}, ensure_ascii=False)))
+                 json.dumps({"themes": [{"topic": "Кино", "questions": [
+                     {"text": "вопрос по теме Кино"}]}]}, ensure_ascii=False)))
         libraryid = self.conn.execute(
             "SELECT libraryid FROM packages WHERE packageid = ?", (first,)).fetchone()[0]
-        usage = package_library.theme_usage(self.conn, libraryid)
-        self.assertEqual(sorted(usage["Кино"]), ["комната 9105, бой 1", "комната 9106, бой 2"])
-        self.assertNotIn("Музыка", usage)
+        places = package_library.theme_use_by_index(self.conn, data)
+        # Темы идут в порядке пакета: Кино, Музыка.
+        self.assertEqual(places[0], ["комната 9105, бой 1", "комната 9106, бой 2"])
+        self.assertEqual(places[1], [])
 
 
 class ListenerTests(unittest.TestCase):
@@ -349,6 +353,85 @@ class LibraryPageTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
 
 
+class ThemeIdentityTests(unittest.TestCase):
+    """Тема — это её вопросы. Названия могут совпадать, вопросы — нет."""
+
+    def setUp(self):
+        self.conn = db()
+        self.addCleanup(self.conn.close)
+        self.conn.isolation_level = None
+        self.conn.execute("BEGIN IMMEDIATE")
+        self.addCleanup(self._rollback)
+
+    def _rollback(self):
+        try:
+            self.conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+
+    def _package(self, themes):
+        cursor = self.conn.execute(
+            "INSERT INTO packages (roomid, name, data) VALUES (?, ?, ?)",
+            (9600, "Пакет тем", json.dumps({"topics": themes}, ensure_ascii=False)))
+        packageid = cursor.lastrowid
+        package_library.ensure_library(self.conn)
+        package_library.link_package(self.conn, packageid)
+        data = self.conn.execute("SELECT data FROM packages WHERE packageid = ?",
+                                 (packageid,)).fetchone()[0]
+        libraryid = self.conn.execute(
+            "SELECT libraryid FROM packages WHERE packageid = ?",
+            (packageid,)).fetchone()[0]
+        return packageid, libraryid, data
+
+    def _theme(self, title, texts):
+        return {"topic": title, "questions": [{"value": 10 * (i + 1), "text": text}
+                                              for i, text in enumerate(texts)]}
+
+    def test_same_title_different_questions_are_different_themes(self):
+        first = self._theme("Кино", ["вопрос про Чаплина", "вопрос про Тарантино"])
+        second = self._theme("Кино", ["вопрос про Куросаву", "вопрос про Феллини"])
+        packageid, libraryid, data = self._package([first, second])
+        # Игралась только вторая тема (с Куросавой).
+        self.conn.execute(
+            "INSERT INTO game_questions (roomid, gameindex, packageid, payload) VALUES (?, ?, ?, ?)",
+            (9600, 1, packageid, json.dumps({"themes": [second]}, ensure_ascii=False)))
+        places = package_library.theme_use_by_index(self.conn, data)
+        self.assertEqual(places[0], [])
+        self.assertEqual(places[1], ["комната 9600, бой 1"])
+
+        history = package_library.theme_history(self.conn, libraryid)
+        self.assertEqual(len(history), 2)
+        self.assertTrue(all(item["same_title"] for item in history))
+        self.assertEqual(history[0]["used"], [])
+        self.assertEqual(len(history[1]["used"]), 1)
+
+    def test_same_questions_under_another_title_are_one_theme(self):
+        first = self._theme("Космос", ["вопрос про Гагарина"])
+        second = self._theme("Космос-2", ["вопрос про Гагарина"])
+        packageid, libraryid, data = self._package([first, second])
+        # В другой комнате та же тема называется иначе — это та же тема.
+        cursor = self.conn.execute(
+            "INSERT INTO packages (roomid, name, data) VALUES (?, ?, ?)",
+            (9601, "Пакет тем", json.dumps({"topics": [self._theme("Поехали", [
+                "вопрос про Гагарина"])]}, ensure_ascii=False)))
+        other = cursor.lastrowid
+        package_library.link_package(self.conn, other)
+        self.conn.execute(
+            "INSERT INTO game_questions (roomid, gameindex, packageid, payload) VALUES (?, ?, ?, ?)",
+            (9601, 1, other, json.dumps({"themes": [self._theme("Поехали", [
+                "вопрос про Гагарина"])]}, ensure_ascii=False)))
+        places = package_library.theme_use_by_index(self.conn, data)
+        self.assertEqual(places[0], ["комната 9601, бой 1"])
+        self.assertEqual(places[1], ["комната 9601, бой 1"])
+
+    def test_signature_ignores_order_and_case(self):
+        one = package_library.theme_signature(self._theme("Кино", ["Вопрос А", "Вопрос Б"]))
+        two = package_library.theme_signature(self._theme("Другое", ["вопрос б", "вопрос а"]))
+        three = package_library.theme_signature(self._theme("Кино", ["вопрос а", "вопрос в"]))
+        self.assertEqual(one, two)
+        self.assertNotEqual(one, three)
+
+
 class QuestionsPageTests(unittest.TestCase):
     """Раскладка тем: сыгранная тема помечена, но назначить её можно."""
 
@@ -379,12 +462,16 @@ class QuestionsPageTests(unittest.TestCase):
         ownerid = conn.execute("SELECT ownerid FROM activerooms WHERE roomid = 2024"
                                ).fetchone()[0]
         packageid = add_package(conn, 2024, "Пакет раскладки", ["Кино", "Музыка"])
+        # Тема опознаётся по вопросам: берём ровно ту тему, что лежит в пакете.
+        data = json.loads(conn.execute("SELECT data FROM packages WHERE packageid = ?",
+                                       (packageid,)).fetchone()[0])
+        played = data["topics"][0]
+        self.assertEqual(played["topic"], "Кино")
         add_room(conn, 9500, ownerid)
         conn.execute(
             "INSERT INTO game_questions (roomid, gameindex, packageid, payload) "
             "VALUES (?, ?, ?, ?)",
-            (9500, 3, packageid, json.dumps(
-                {"themes": [{"topic": "Кино"}]}, ensure_ascii=False)))
+            (9500, 3, packageid, json.dumps({"themes": [played]}, ensure_ascii=False)))
         conn.commit()
         conn.close()
 
@@ -392,8 +479,36 @@ class QuestionsPageTests(unittest.TestCase):
         self.assertEqual(page.status_code, 200, page.get_data(as_text=True))
         text = page.get_data(as_text=True)
         self.assertIn('THEME_USE', text)
-        self.assertIn('Кино', text)
-        self.assertIn('9500', text)
+        line = [row for row in text.splitlines() if 'const THEME_USE' in row][0]
+        # Пометка о сыгранной теме: место, где она уже игралась. У «Музыки» пусто.
+        self.assertIn('9500', line)
+        self.assertTrue(line.rstrip().endswith('[]]};'), line)
+
+    def test_free_seating_room_gets_layout_page(self):
+        # Комната 2030 — свободная посадка: сетки нет, бои идут по порядку.
+        conn = db()
+        free = conn.execute(
+            "SELECT roomid FROM activerooms ORDER BY roomid").fetchall()
+        conn.close()
+        roomid = None
+        for row in free:
+            probe = db()
+            plan = None
+            try:
+                plan = site.build_room_plan(probe, row[0])
+            except Exception:
+                plan = None
+            probe.close()
+            if plan is None:
+                roomid = row[0]
+                break
+        self.assertIsNotNone(roomid, "в тестовой базе нет комнаты со свободной посадкой")
+
+        page = self.admin.get(BASE + '/plan/%s/questions' % roomid)
+        self.assertEqual(page.status_code, 200, page.get_data(as_text=True))
+        text = page.get_data(as_text=True)
+        self.assertIn('Свободная посадка', text)
+        self.assertIn('Бой 1', text)
 
 
 if __name__ == '__main__':

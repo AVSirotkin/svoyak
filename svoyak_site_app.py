@@ -1623,6 +1623,31 @@ def room_packages(conn, roomid):
     return [dict(row) for row in rows]
 
 
+def free_seating_games(conn, roomid):
+    """Бои комнаты со свободной посадкой: их видно по результатам и протоколам."""
+    indexes = set()
+    for table in ("results", "game_protocols", "game_questions"):
+        try:
+            rows = conn.execute(
+                "SELECT DISTINCT gameindex FROM %s WHERE roomid = ?" % table, (roomid,)
+            ).fetchall()
+        except sqlite3.OperationalError:
+            continue
+        for row in rows:
+            try:
+                index = int(row[0])
+            except (TypeError, ValueError):
+                continue
+            if index > 0:
+                indexes.add(index)
+    last = max(indexes) if indexes else 0
+    # Последний бой ещё не сыгран — его тоже надо показать, чтобы было куда
+    # разложить темы заранее.
+    indexes.add(last + 1)
+    return [{"gameindex": index, "name": "Бой %s" % index, "stage": "—",
+             "table": "—", "order": index} for index in sorted(indexes)]
+
+
 @app.route('/plan/<int:roomid>/questions', subdomain="svoyak")
 @room_access_required
 def PlanQuestionsPage(roomid):
@@ -1633,12 +1658,20 @@ def PlanQuestionsPage(roomid):
         if overview is None:
             return redirect(f"/init/{roomid}", code=302)
         plan = build_room_plan(conn, roomid)
+        free_seating = plan is None
+        if free_seating:
+            # Свободная посадка: сетки нет, бои нумеруются по порядку игры.
+            games = free_seating_games(conn, roomid)
+        else:
+            games = [{"gameindex": game.gameindex, "name": game.name,
+                      "stage": game.stage, "table": game.table, "order": game.order}
+                     for game in plan.games]
         packages = room_packages(conn, roomid)
         assigned = {}
-        for game in (plan.games if plan is not None else []):
-            payload = room_questions(conn, roomid, game.gameindex)
+        for game in games:
+            payload = room_questions(conn, roomid, game["gameindex"])
             if payload:
-                assigned[game.gameindex] = {
+                assigned[game["gameindex"]] = {
                     "packageid": payload.get("packageid"),
                     "topics": [theme.get("topic") for theme in payload.get("themes") or []],
                 }
@@ -1651,6 +1684,7 @@ def PlanQuestionsPage(roomid):
         except sqlite3.OperationalError:
             started = {}
         # Что из этих пакетов уже игралось где-то: админ видит пометку у темы.
+        # Тема опознаётся по своим вопросам, поэтому пометка — по номеру темы.
         theme_use = {}
         try:
             package_library.ensure_library(conn)
@@ -1658,18 +1692,22 @@ def PlanQuestionsPage(roomid):
             for package in packages:
                 if not package.get("libraryid"):
                     continue
-                theme_use[str(package["packageid"])] = package_library.theme_usage(
-                    conn, package["libraryid"])
+                row = conn.execute(
+                    "SELECT data FROM packages WHERE packageid = ?",
+                    (package["packageid"],),
+                ).fetchone()
+                if row is None:
+                    continue
+                theme_use[str(package["packageid"])] = package_library.theme_use_by_index(
+                    conn, row["data"])
         except sqlite3.Error:
             theme_use = {}
     finally:
         conn.close()
-    if plan is None:
-        return redirect(f"/room/{roomid}", code=302)
     return render_template(
-        "plan_questions.html", roomid=roomid, overview=overview, plan=plan,
-        packages=packages, assigned=assigned, started=started, theme_use=theme_use,
-        title=f"Вопросы турнира {roomid}",
+        "plan_questions.html", roomid=roomid, overview=overview, games=games,
+        free_seating=free_seating, packages=packages, assigned=assigned, started=started,
+        theme_use=theme_use, title=f"Вопросы турнира {roomid}",
     )
 
 

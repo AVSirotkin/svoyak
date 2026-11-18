@@ -92,18 +92,40 @@ def package_topics(data):
     return topics if isinstance(topics, list) else []
 
 
-def question_texts(data):
-    """Тексты вопросов пакета: по ним ищем пакеты, где вопросы пересекаются."""
+def theme_question_texts(theme):
+    """Тексты вопросов одной темы в нормальном виде."""
     texts = set()
-    for topic in package_topics(data):
-        if not isinstance(topic, dict):
-            continue
-        for question in topic.get("questions") or []:
-            if isinstance(question, dict):
-                text = (question.get("text") or "").strip().lower()
-                if text:
-                    texts.add(" ".join(text.split()))
+    if not isinstance(theme, dict):
+        return texts
+    for question in theme.get("questions") or []:
+        if isinstance(question, dict):
+            text = (question.get("text") or "").strip().lower()
+            if text:
+                texts.add(" ".join(text.split()))
     return texts
+
+
+def theme_signature(theme):
+    """Тождество темы — её вопросы, а не название.
+
+    Тема — это набор вопросов (обычно пять). В разных пакетах темы могут
+    называться одинаково, но содержать разные вопросы: это разные темы.
+    """
+    texts = theme_question_texts(theme)
+    if not texts:
+        title = theme.get("topic") if isinstance(theme, dict) else None
+        if not title:
+            return None
+        return "title:" + " ".join(title.split()).lower()
+    return hashlib.sha1("\n".join(sorted(texts)).encode("utf-8")).hexdigest()
+
+
+def theme_title(theme):
+    if isinstance(theme, dict):
+        return (theme.get("topic") or "без названия").strip()
+    if isinstance(theme, str):
+        return theme.strip() or "без названия"
+    return "без названия"
 
 
 def content_hash(data):
@@ -461,11 +483,12 @@ def library_usage(conn, libraryid, mode=EXPOSURE_HALL):
         except ValueError:
             payload = {}
         topics = []
+        theme_items = []
         for theme in payload.get("themes") or []:
-            if isinstance(theme, dict):
-                topics.append(theme.get("topic") or "без названия")
-            elif isinstance(theme, str):
-                topics.append(theme)
+            if isinstance(theme, (dict, str)):
+                topics.append(theme_title(theme))
+                theme_items.append({"title": theme_title(theme),
+                                    "signature": theme_signature(theme)})
         if roomid not in cache:
             timeline = room_timeline(conn, roomid)
             cache[roomid] = (timeline, game_times(conn, roomid, timeline[2]))
@@ -482,6 +505,7 @@ def library_usage(conn, libraryid, mode=EXPOSURE_HALL):
             "packageid": row[4],
             "package": row[5],
             "topics": topics,
+            "theme_items": theme_items,
             "when": format_time(times.get(gameindex)),
             "date": room[0] if room else "",
             "owner": room[1] if room else None,
@@ -492,13 +516,16 @@ def library_usage(conn, libraryid, mode=EXPOSURE_HALL):
     return usage
 
 
-def theme_usage(conn, libraryid):
-    """{тема: [«комната X, бой Y»]} — где тема уже игралась, без подсчёта слышавших."""
+def theme_usage(conn, libraryid=None):
+    """{подпись темы: {"title": …, "places": [...]}} — где тема уже игралась.
+
+    Тема опознаётся по своим вопросам, поэтому считается по всем комнатам и
+    пакетам: если та же тема (тот же набор вопросов) игралась в другом пакете,
+    она уже засвечена. libraryid оставлен для совместимости и больше не сужает.
+    """
     usage = {}
     rows = conn.execute(
-        "SELECT gq.roomid, gq.gameindex, gq.payload FROM game_questions gq "
-        "JOIN packages p ON p.packageid = gq.packageid WHERE p.libraryid = ?",
-        (libraryid,),
+        "SELECT gq.roomid, gq.gameindex, gq.payload FROM game_questions gq"
     ).fetchall()
     for row in rows:
         try:
@@ -507,13 +534,24 @@ def theme_usage(conn, libraryid):
             continue
         place = "комната %s, бой %s" % (row[0], row[1])
         for theme in payload.get("themes") or []:
-            topic = theme.get("topic") if isinstance(theme, dict) else theme
-            if not topic:
+            signature = theme_signature(theme)
+            if signature is None:
                 continue
-            places = usage.setdefault(topic, [])
-            if place not in places:
-                places.append(place)
+            item = usage.setdefault(signature, {"title": theme_title(theme), "places": []})
+            if place not in item["places"]:
+                item["places"].append(place)
     return usage
+
+
+def theme_use_by_index(conn, data, libraryid=None):
+    """Где игралась каждая тема пакета — по порядку тем в пакете."""
+    usage = theme_usage(conn)
+    result = []
+    for theme in package_topics(data):
+        signature = theme_signature(theme)
+        item = usage.get(signature) if signature else None
+        result.append(list(item["places"]) if item else [])
+    return result
 
 
 def library_listeners(conn, libraryid, mode=EXPOSURE_HALL):
@@ -532,53 +570,82 @@ def library_listeners(conn, libraryid, mode=EXPOSURE_HALL):
 
 
 def package_themes(conn, libraryid):
-    """Темы пакета по порядку: из самой свежей копии."""
+    """Темы пакета по порядку — из самой свежей копии."""
     row = conn.execute(
         "SELECT data FROM packages WHERE libraryid = ? ORDER BY packageid DESC LIMIT 1",
         (libraryid,),
     ).fetchone()
     if row is None:
         return []
-    topics = []
-    for topic in package_topics(row[0]):
-        if isinstance(topic, dict) and topic.get("topic"):
-            topics.append(topic["topic"])
-    return topics
+    return [topic for topic in package_topics(row[0]) if isinstance(topic, dict)]
 
 
 def theme_history(conn, libraryid, mode=EXPOSURE_HALL):
-    """История по темам: что игралось, где и кто слышал. Темы — все темы пакета."""
-    order = package_themes(conn, libraryid)
+    """История по темам пакета: где тема игралась и кто мог её слышать."""
+    order, seen = [], set()
+    for theme in package_themes(conn, libraryid):
+        signature = theme_signature(theme)
+        key = signature or ("title", theme_title(theme))
+        if key in seen:
+            continue
+        seen.add(key)
+        order.append((theme_title(theme), signature))
     blocks = {}
     for item in library_usage(conn, libraryid, mode):
-        for topic in item["topics"]:
-            if topic not in order:
-                order.append(topic)
-            blocks.setdefault(topic, []).append({
+        for entry in item.get("theme_items") or []:
+            key = entry["signature"] or ("title", entry["title"])
+            used = blocks.setdefault(key, [])
+            place = (item["roomid"], item["gameindex"])
+            if any((block["roomid"], block["gameindex"]) == place for block in used):
+                continue
+            used.append({
                 "roomid": item["roomid"], "gameindex": item["gameindex"],
                 "when": item["when"], "listeners": item["listeners"],
             })
+    titles = {}
+    for title, _ in order:
+        titles[title] = titles.get(title, 0) + 1
+    everywhere = theme_usage(conn)
     themes = []
-    for topic in order:
-        used = blocks.get(topic, [])
+    for title, signature in order:
+        key = signature or ("title", title)
+        used = blocks.get(key, [])
         heard = set()
         for block in used:
             heard.update(block["listeners"])
-        themes.append({"topic": topic, "used": used, "listeners": sorted(heard)})
+        known = {("комната %s, бой %s" % (block["roomid"], block["gameindex"])) for block in used}
+        elsewhere = []
+        if signature:
+            for place in (everywhere.get(signature) or {}).get("places", []):
+                if place not in known:
+                    elsewhere.append(place)
+        themes.append({
+            "topic": title,
+            "signature": signature,
+            "used": used,
+            "elsewhere": elsewhere,
+            "listeners": sorted(heard),
+            # Одноимённые темы с разными вопросами — разные темы.
+            "same_title": titles.get(title, 0) > 1,
+        })
     return themes
 
 
 # ------------------------------------------------------- похожие и подтверждение
 
-def _question_sets(conn):
-    """libraryid → набор текстов вопросов."""
+def _theme_sets(conn):
+    """libraryid → набор подписей тем пакета (тема = её вопросы)."""
     sets = {}
     for row in conn.execute(
         "SELECT libraryid, data FROM packages WHERE libraryid IS NOT NULL"
     ):
-        texts = question_texts(row[1])
-        if texts:
-            sets.setdefault(row[0], set()).update(texts)
+        signatures = set()
+        for theme in package_topics(row[1]):
+            signature = theme_signature(theme)
+            if signature:
+                signatures.add(signature)
+        if signatures:
+            sets.setdefault(row[0], set()).update(signatures)
     return sets
 
 
@@ -591,7 +658,7 @@ def decided_links(conn):
 
 def similar_libraries(conn, libraryid):
     """Какие ещё записи библиотеки похожи на эту (для подтверждения админом)."""
-    sets = _question_sets(conn)
+    sets = _theme_sets(conn)
     mine = sets.get(libraryid) or set()
     if not mine:
         return []
