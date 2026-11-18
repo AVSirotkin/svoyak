@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import shutil
 import sqlite3
 import sys
@@ -183,6 +184,65 @@ class ClaimTests(unittest.TestCase):
     def test_claim_missing_room(self):
         response = self.host.post(BASE + '/api/room/999999/claim')
         self.assertEqual(response.status_code, 404)
+
+
+class FreeSeatingPlanTests(unittest.TestCase):
+    """Пульт турнира у свободной посадки: правила видны, /init не предлагается."""
+
+    SPONTAN = json.dumps({'basic_game_number': 3})
+    BATUMI = json.dumps({'basic_game_number': 3, 'final_players': 4,
+                         'final_participants': 'best_active'})
+
+    def setUp(self):
+        site.DB_PATH = WORK_DB
+        conn = db()
+        conn.execute("UPDATE activerooms SET ownerid = NULL WHERE roomid = 2030")
+        self.set_rules(conn, 'Spontan', self.SPONTAN)
+        conn.close()
+        self.guest = site.app.test_client()
+
+    def tearDown(self):
+        conn = db()
+        self.set_rules(conn, 'Spontan', self.SPONTAN)
+        conn.close()
+
+    @staticmethod
+    def set_rules(conn, name, parameters):
+        conn.execute("DELETE FROM rules WHERE roomid = 2030")
+        conn.execute(
+            "INSERT INTO rules(roomid, name, parameters, brackets) VALUES(?,?,?,NULL)",
+            (2030, name, parameters),
+        )
+        conn.commit()
+
+    def page(self):
+        response = self.guest.get(BASE + '/plan/2030')
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        # Переносы строк в разметке не должны мешать проверке текста.
+        return re.sub(r'\s+', ' ', response.get_data(as_text=True))
+
+    def test_rules_without_final(self):
+        html = self.page()
+        self.assertIn('Свободная посадка', html)
+        self.assertIn('первые 3 игры', html)
+        self.assertIn('финального боя нет', html)
+        self.assertNotIn('/init/2030', html, 'настройка занятой комнаты не работает')
+
+    def test_rules_with_final(self):
+        conn = db()
+        self.set_rules(conn, 'Batumi3', self.BATUMI)
+        conn.close()
+        html = self.page()
+        self.assertIn('4 участника', html)
+        self.assertIn('лучшие по текущему зачёту', html)
+        self.assertNotIn('финального боя нет', html)
+
+    def test_plural_filter(self):
+        self.assertEqual(site.plural_filter(1, 'игру', 'игры', 'игр'), 'игру')
+        self.assertEqual(site.plural_filter(3, 'игру', 'игры', 'игр'), 'игры')
+        self.assertEqual(site.plural_filter(5, 'игру', 'игры', 'игр'), 'игр')
+        self.assertEqual(site.plural_filter(11, 'игру', 'игры', 'игр'), 'игр')
+        self.assertEqual(site.plural_filter(21, 'игру', 'игры', 'игр'), 'игру')
 
 
 if __name__ == '__main__':

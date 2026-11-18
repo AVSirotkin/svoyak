@@ -30,9 +30,47 @@
 </div>
 
 {% if plan is none %}
-<div class="alert alert-warning">
-    У комнаты нет схемы правил, планировать нечего.
-    <a href="/init/{{ roomid }}">Настроить комнату</a>
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h5 class="mb-0">Свободная посадка</h5>
+            <span class="badge bg-secondary">сетки боёв нет</span>
+        </div>
+        <p class="text-muted mb-3">
+            Правила у комнаты есть, но расписанных боёв нет: номера идут подряд, стол
+            назначает ведущий на пульте. Планировать заранее нечего — зато видно,
+            по каким правилам считается итог.
+        </p>
+        <dl class="row mb-3">
+            <dt class="col-sm-4 fw-normal text-muted">Отбор</dt>
+            <dd class="col-sm-8">
+                {% if free and free.qualifying %}
+                сумма очков за первые {{ free.qualifying }}
+                {{ free.qualifying|plural('игру', 'игры', 'игр') }}
+                {% else %}
+                число игр в правилах не задано
+                {% endif %}
+            </dd>
+            <dt class="col-sm-4 fw-normal text-muted">Финал</dt>
+            <dd class="col-sm-8">
+                {% if free and free.final_players %}
+                {{ free.final_players }}
+                {{ free.final_players|plural('участник', 'участника', 'участников') }}{% if free.final_note %} — {{ free.final_note }}{% endif %}
+                {% else %}
+                финального боя нет: победитель по отбору
+                {% endif %}
+            </dd>
+            <dt class="col-sm-4 fw-normal text-muted">Сыграно боёв</dt>
+            <dd class="col-sm-8">{{ free.played if free else 0 }}</dd>
+            <dt class="col-sm-4 fw-normal text-muted">Игроков в комнате</dt>
+            <dd class="col-sm-8">{{ overview.players|length }}</dd>
+        </dl>
+        <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-primary btn-sm" href="/room/{{ roomid }}">Пульт площадки</a>
+            <a class="btn btn-outline-secondary btn-sm" href="/view/{{ roomid }}">Просмотр</a>
+            <a class="btn btn-outline-secondary btn-sm" href="/plan/{{ roomid }}/questions">Вопросы по боям</a>
+        </div>
+    </div>
 </div>
 {% elif plan.errors %}
 <div class="alert alert-danger">

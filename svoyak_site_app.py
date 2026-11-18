@@ -923,6 +923,49 @@ def plan_view(plan):
     return stages
 
 
+FINAL_PARTICIPANTS = {
+    "best_active": "лучшие по текущему зачёту",
+}
+
+
+@app.template_filter('plural')
+def plural_filter(number, one, few, many):
+    """Русское склонение по числу: 1 игра, 2 игры, 5 игр."""
+    try:
+        value = abs(int(number))
+    except (TypeError, ValueError):
+        return many
+    if value % 10 == 1 and value % 100 != 11:
+        return one
+    if 2 <= value % 10 <= 4 and not 12 <= value % 100 <= 14:
+        return few
+    return many
+
+
+def free_seating_view(rules, params, played):
+    """Правила комнаты без сетки: отбор, финал, сколько уже сыграно.
+
+    Свободная посадка — это тоже правила, просто без расписанных боёв:
+    ведущему полезно видеть, сколько игр в отборе и есть ли финал.
+    """
+    params = params if isinstance(params, dict) else {}
+
+    def number(key):
+        try:
+            return int(params.get(key))
+        except (TypeError, ValueError):
+            return None
+
+    participants = params.get("final_participants")
+    return {
+        "name": (rules or {}).get("name"),
+        "qualifying": number("basic_game_number"),
+        "final_players": number("final_players"),
+        "final_note": FINAL_PARTICIPANTS.get(participants, participants),
+        "played": played,
+    }
+
+
 @app.route('/plan/<int:roomid>', subdomain="svoyak")
 @room_access_required
 def PlanPage(roomid):
@@ -935,6 +978,13 @@ def PlanPage(roomid):
         plan = build_room_plan(conn, roomid)
         seed = room_seed(conn, roomid)
         activity = room_activity(conn, roomid, plan)
+        free = None
+        if plan is None:
+            played = conn.execute(
+                "SELECT COUNT(DISTINCT gameindex) AS games FROM results WHERE roomid = ?",
+                (roomid,),
+            ).fetchone()["games"]
+            free = free_seating_view(overview["rules"], overview["params"], played)
         hosts = conn.execute(
             "SELECT userid, name, role FROM users ORDER BY name"
         ).fetchall()
@@ -948,6 +998,7 @@ def PlanPage(roomid):
         hosts=hosts,
         area_hosts=room_area_hosts(roomid),
         activity=activity,
+        free=free,
         title=f"Турнир {roomid}",
     )
 
