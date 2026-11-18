@@ -807,6 +807,7 @@ async function refreshBattleHeard() {
             });
         } catch (error) {
             // Офлайн: подсветки не будет, бой это не блокирует.
+            console.warn('[heard] пометки тем недоступны', error);
         }
     }
     if (!asked) {
@@ -828,6 +829,7 @@ async function refreshBattleHeard() {
             }
         } catch (error) {
             // Офлайн: подсветки не будет.
+            console.warn('[heard] пометки игроков недоступны', error);
         }
     }
     battleThemeUse = use;
