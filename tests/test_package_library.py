@@ -600,5 +600,209 @@ class QuestionsPageTests(unittest.TestCase):
         self.assertIn('Бой 1', text)
 
 
+class ConsoleLayoutTests(unittest.TestCase):
+    """Раскладка из пульта комнаты видна плану, истории и предупреждениям."""
+
+    ROOM = 9801
+    OTHER = 9802
+    LISTENER = 'Илья Орлов'
+
+    def setUp(self):
+        site.DB_PATH = WORK_DB
+        self.client = self.registered('администратор')
+        self.rooms = [self.ROOM, self.OTHER]
+
+    def tearDown(self):
+        conn = db()
+        for roomid in self.rooms:
+            for table in ("activerooms", "game_questions", "game_protocols",
+                          "activeplayers", "results", "log", "packages"):
+                conn.execute("DELETE FROM %s WHERE roomid = ?" % table, (roomid,))
+        dead = ("SELECT libraryid FROM package_library WHERE libraryid NOT IN "
+                "(SELECT libraryid FROM packages WHERE libraryid IS NOT NULL)")
+        conn.execute("DELETE FROM package_links WHERE libraryid_a IN (%s) "
+                     "OR libraryid_b IN (%s)" % (dead, dead))
+        conn.execute("DELETE FROM package_library WHERE libraryid NOT IN "
+                     "(SELECT libraryid FROM packages WHERE libraryid IS NOT NULL)")
+        conn.commit()
+        conn.close()
+
+    def registered(self, role):
+        client = site.app.test_client()
+        login = 'cl_' + uuid.uuid4().hex[:8]
+        response = client.post(BASE + '/register', data={
+            'login': login, 'name': 'Пульт ' + login,
+            'password': 'secret123', 'password2': 'secret123'})
+        self.assertEqual(response.status_code, 302, response.get_data(as_text=True))
+        conn = db()
+        userid = conn.execute("SELECT userid FROM users WHERE login = ?",
+                              (login,)).fetchone()[0]
+        conn.execute("UPDATE users SET role = ? WHERE userid = ?", (role, userid))
+        conn.commit()
+        conn.close()
+        client.userid = userid
+        return client
+
+    def _protocol(self, conn, roomid, gameindex, themes, placeholder=False):
+        payload = {"themes": themes}
+        if placeholder:
+            payload["placeholder"] = True
+        conn.execute(
+            "INSERT INTO game_protocols (roomid, gameindex, payload, revision) "
+            "VALUES (?, ?, ?, 1)",
+            (roomid, gameindex, json.dumps(payload, ensure_ascii=False)))
+
+    def _layout(self, topics=("Стенд", "Резерв")):
+        """Пакет в комнате и его первая тема, разложенная в пульте."""
+        conn = db()
+        add_room(conn, self.ROOM)
+        packageid = add_package(conn, self.ROOM, "Пакет пульта", list(topics))
+        data = json.loads(conn.execute("SELECT data FROM packages WHERE packageid = ?",
+                                       (packageid,)).fetchone()[0])
+        theme = data["topics"][0]
+        self._protocol(conn, self.ROOM, 1, [theme])
+        conn.commit()
+        conn.close()
+        return packageid, data, theme
+
+    def test_console_layout_counts_as_played(self):
+        packageid, data, theme = self._layout()
+        conn = db()
+        places = package_library.theme_use_by_index(conn, data)
+        self.assertEqual(places[0]["exact"], ["комната 9801, бой 1"])
+        libraryid = conn.execute("SELECT libraryid FROM packages WHERE packageid = ?",
+                                 (packageid,)).fetchone()[0]
+        usage = package_library.library_usage(conn, libraryid)
+        conn.close()
+        self.assertEqual(len(usage), 1)
+        self.assertEqual(usage[0]["gameindex"], 1)
+        self.assertEqual(usage[0]["source"], "protocol")
+        self.assertEqual(usage[0]["topics"], ["Стенд"])
+
+    def test_placeholder_protocol_is_ignored(self):
+        conn = db()
+        add_room(conn, self.ROOM)
+        placeholder = [{"topic": "Тема %d" % (i + 1), "questions": [
+            {"value": 10, "text": "Вопрос %d" % (i + 1)}]} for i in range(6)]
+        self._protocol(conn, self.ROOM, 1, placeholder, placeholder=True)
+        conn.commit()
+        items = [item for item in package_library.played_themes(conn)
+                 if item["roomid"] == self.ROOM]
+        conn.close()
+        self.assertEqual(items, [])
+
+    def test_layout_page_lists_console_themes(self):
+        packageid, data, theme = self._layout()
+        page = self.client.get(BASE + '/plan/%d/questions' % self.ROOM)
+        self.assertEqual(page.status_code, 200, page.get_data(as_text=True))
+        text = page.get_data(as_text=True)
+        self.assertIn('(из пульта)', text)
+        line = [row for row in text.splitlines() if 'const ASSIGNED' in row][0]
+        assigned = json.loads(line.split('=', 1)[1].strip().rstrip(';'))
+        self.assertEqual(assigned["1"]["source"], "protocol")
+        self.assertEqual(assigned["1"]["packageid"], packageid)
+        self.assertEqual(assigned["1"]["topics"], ["Стенд"])
+
+    def _save(self, packageid, themes, **extra):
+        body = {"gameindex": 1, "packageid": packageid, "themes": themes}
+        body.update(extra)
+        return self.client.post(BASE + '/api/plan/%d/questions' % self.ROOM, json=body)
+
+    def test_saving_same_layout_keeps_protocol(self):
+        packageid, data, theme = self._layout()
+        response = self._save(packageid, [0])
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        conn = db()
+        protocol = conn.execute(
+            "SELECT 1 FROM game_protocols WHERE roomid = ? AND gameindex = 1",
+            (self.ROOM,)).fetchone()
+        binding = conn.execute(
+            "SELECT packageid FROM game_questions WHERE roomid = ? AND gameindex = 1",
+            (self.ROOM,)).fetchone()
+        conn.close()
+        self.assertIsNotNone(protocol, "протокол боя не должен пропадать")
+        self.assertEqual(binding[0], packageid)
+
+    def test_other_layout_asks_about_protocol(self):
+        packageid, data, theme = self._layout()
+        response = self._save(packageid, [1])
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(json.loads(response.get_data(as_text=True))["status"], "conflict")
+        response = self._save(packageid, [1], force=True)
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        conn = db()
+        protocol = conn.execute(
+            "SELECT 1 FROM game_protocols WHERE roomid = ? AND gameindex = 1",
+            (self.ROOM,)).fetchone()
+        conn.close()
+        self.assertIsNone(protocol)
+
+    def _heard_player(self, theme):
+        """Ту же тему играли в другой комнате, а игрок там был."""
+        conn = db()
+        add_room(conn, self.OTHER)
+        other_package = add_package(conn, self.OTHER, "Старый пакет", ["Кино"])
+        log_row(conn, self.OTHER, "Sat Nov 14 19:00:00 2026", "add active player",
+                name=self.LISTENER, playerid=1)
+        log_row(conn, self.OTHER, "Sat Nov 14 20:30:00 2026", "save game result",
+                gameindex=1, scores=[])
+        conn.execute(
+            "INSERT INTO game_questions (roomid, gameindex, packageid, payload) "
+            "VALUES (?, ?, ?, ?)",
+            (self.OTHER, 1, other_package,
+             json.dumps({"themes": [theme]}, ensure_ascii=False)))
+        conn.execute(
+            "INSERT INTO activeplayers (roomid, playerid, name) VALUES (?, ?, ?)",
+            (self.ROOM, 1, self.LISTENER))
+        conn.commit()
+        conn.close()
+
+    def test_player_who_heard_themes_is_flagged(self):
+        packageid, data, theme = self._layout()
+        self._heard_player(theme)
+
+        players = json.loads(self.client.get(
+            BASE + '/activeplayers/%d' % self.ROOM).get_data(as_text=True))
+        flagged = [player for player in players if player["heard"]]
+        self.assertEqual([player["name"] for player in flagged], [self.LISTENER])
+        self.assertEqual(flagged[0]["heard"][0]["place"], "комната 9802, бой 1")
+
+        response = self._save(packageid, [0])
+        self.assertEqual(response.status_code, 409)
+        data = json.loads(response.get_data(as_text=True))
+        self.assertEqual(data["status"], "heard")
+        self.assertIn(self.LISTENER, data["message"])
+
+        # Ведущий подтвердил — раскладка сохраняется.
+        response = self._save(packageid, [0], ack_heard=True)
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+
+    def test_edited_theme_is_the_same_theme(self):
+        questions = ["Кто первым полетел в космос и как звали его собаку",
+                     "Какая планета Солнечной системы самая большая",
+                     "Сколько спутников у Марса и как они называются",
+                     "Что такое чёрная дыра и почему она чёрная",
+                     "Как называется наша галактика и сколько в ней звёзд"]
+        original = {"topic": "Космос", "questions": [
+            {"value": 10 * (i + 1), "text": text, "answer": "ответ"}
+            for i, text in enumerate(questions)]}
+        packageid, data, theme = self._layout()
+        # В другой комнате та же тема с исправленным текстом двух вопросов.
+        edited = {"topic": "Космос", "questions": [
+            {"value": 10 * (i + 1), "text": text, "answer": "ответ"}
+            for i, text in enumerate(questions[:3] + [
+                "Что такое чёрная дырка и почему она тёмная",
+                "Как называетася наша галактика и сколько в ней звёзд"])]}
+        self._heard_player(edited)
+
+        conn = db()
+        try:
+            heard = package_library.heard_by_themes(conn, [original], [self.LISTENER])
+        finally:
+            conn.close()
+        self.assertEqual([item["topic"] for item in heard[self.LISTENER]], ["Космос"])
+        self.assertTrue(heard[self.LISTENER][0]["changed"])
+
+
 if __name__ == '__main__':
     unittest.main()

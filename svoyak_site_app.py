@@ -1648,6 +1648,25 @@ def free_seating_games(conn, roomid):
              "table": "—", "order": index} for index in sorted(indexes)]
 
 
+def room_package_for_themes(conn, packages, themes):
+    """Какой пакет комнаты содержит эти темы (по вопросам, а не по названию)."""
+    wanted = {package_library.theme_signature(theme) for theme in themes}
+    wanted.discard(None)
+    if not wanted:
+        return None
+    for package in packages:
+        row = conn.execute(
+            "SELECT data FROM packages WHERE packageid = ?", (package["packageid"],)
+        ).fetchone()
+        if row is None:
+            continue
+        signatures = {package_library.theme_signature(theme)
+                      for theme in package_library.package_topics(row["data"])}
+        if wanted & signatures:
+            return package["packageid"]
+    return None
+
+
 @app.route('/plan/<int:roomid>/questions', subdomain="svoyak")
 @room_access_required
 def PlanQuestionsPage(roomid):
@@ -1667,6 +1686,13 @@ def PlanQuestionsPage(roomid):
                       "stage": game.stage, "table": game.table, "order": game.order}
                      for game in plan.games]
         packages = room_packages(conn, roomid)
+        layouts = {}
+        try:
+            for layout in package_library.theme_layouts(conn):
+                if layout["roomid"] == roomid:
+                    layouts[layout["gameindex"]] = layout
+        except sqlite3.Error:
+            layouts = {}
         assigned = {}
         for game in games:
             payload = room_questions(conn, roomid, game["gameindex"])
@@ -1674,7 +1700,20 @@ def PlanQuestionsPage(roomid):
                 assigned[game["gameindex"]] = {
                     "packageid": payload.get("packageid"),
                     "topics": [theme.get("topic") for theme in payload.get("themes") or []],
+                    "source": "plan",
                 }
+                continue
+            # Темы могли остаться только в протоколе боя: ведущий раскладывал их
+            # в пульте, и в план они не попадали.
+            layout = layouts.get(game["gameindex"])
+            if layout is None:
+                continue
+            assigned[game["gameindex"]] = {
+                "packageid": layout["packageid"] or room_package_for_themes(
+                    conn, packages, layout["themes"]),
+                "topics": [package_library.theme_title(theme) for theme in layout["themes"]],
+                "source": "protocol",
+            }
         started = {}
         try:
             for row in conn.execute(
@@ -1741,31 +1780,81 @@ def PlanQuestionsSave(roomid):
 
     conn = get_tx_connection()
     try:
+        # Пакет и выбранные темы — только чтение, до каких-либо изменений.
+        chosen, packageid, package_name, source_file = [], None, "", None
+        if theme_indexes:
+            try:
+                packageid = int(data.get("packageid"))
+            except (TypeError, ValueError):
+                return json.dumps(
+                    {"status": "error", "message": "Не выбран пакет"}, ensure_ascii=False
+                ), 400
+
+            row = conn.execute(
+                "SELECT name, data FROM packages WHERE packageid = ? AND roomid = ?",
+                (packageid, roomid),
+            ).fetchone()
+            if row is None:
+                return json.dumps(
+                    {"status": "error", "message": "Пакет не найден"}, ensure_ascii=False
+                ), 404
+
+            try:
+                package_data = json.loads(row["data"])
+            except (TypeError, ValueError):
+                package_data = {}
+            topics = package_data.get("topics") if isinstance(package_data, dict) else None
+            if not isinstance(topics, list):
+                return json.dumps(
+                    {"status": "error", "message": "В пакете нет тем"}, ensure_ascii=False
+                ), 400
+
+            for index in theme_indexes:
+                try:
+                    index = int(index)
+                except (TypeError, ValueError):
+                    continue
+                if 0 <= index < len(topics):
+                    chosen.append(topics[index])
+            if not chosen:
+                return json.dumps(
+                    {"status": "error", "message": "Ни одной темы не выбрано"},
+                    ensure_ascii=False
+                ), 400
+            package_name = row["name"]
+            if isinstance(package_data, dict):
+                source_file = package_data.get("sourceFileName")
+
         conn.execute("BEGIN IMMEDIATE")
+        protocol_row = conn.execute(
+            "SELECT payload FROM game_protocols WHERE roomid = ? AND gameindex = ?",
+            (roomid, gameindex),
+        ).fetchone()
+        protocol_themes = []
+        if protocol_row is not None:
+            try:
+                protocol_payload = json.loads(protocol_row["payload"] or "{}")
+            except (TypeError, ValueError):
+                protocol_payload = {}
+            protocol_themes = [theme for theme in (protocol_payload.get("themes") or [])
+                               if isinstance(theme, dict)]
+
+        # Раскладка уже лежит в протоколе боя и совпадает с нашей: это не
+        # перепривязка, а перенос той же раскладки в план — протокол не трогаем.
+        same_layout = bool(chosen) and len(protocol_themes) == len(chosen) and (
+            {package_library.theme_signature(theme) for theme in protocol_themes} ==
+            {package_library.theme_signature(theme) for theme in chosen})
+
         # Начатый бой уже идёт по своему протоколу. Менять ему темы можно
         # только с явного согласия: протокол при этом стирается.
-        has_protocol = conn.execute(
-            "SELECT 1 FROM game_protocols WHERE roomid = ? AND gameindex = ?",
-            (roomid, gameindex),
-        ).fetchone() is not None
-        if has_protocol and not force:
+        has_protocol = protocol_row is not None
+        if has_protocol and not force and not same_layout:
             conn.execute("ROLLBACK")
             return json.dumps({
                 "status": "conflict",
                 "message": "К бою уже есть протокол. Перепривязка тем его сотрёт — "
                            "подтвердите, если бой нужно начать заново.",
             }, ensure_ascii=False), 409
-        if has_protocol:
-            conn.execute(
-                "DELETE FROM game_protocols WHERE roomid = ? AND gameindex = ?",
-                (roomid, gameindex),
-            )
-            log_game_events(
-                roomid, "protocol cleared",
-                {"gameindex": gameindex, "reason": "rebind",
-                 "by": user["name"] if user else None},
-                conn=conn,
-            )
 
         if not theme_indexes:
             conn.execute(
@@ -1777,53 +1866,50 @@ def PlanQuestionsSave(roomid):
             return json.dumps({"status": "ok", "gameindex": gameindex, "themes": []},
                               ensure_ascii=False)
 
-        try:
-            packageid = int(data.get("packageid"))
-        except (TypeError, ValueError):
-            conn.execute("ROLLBACK")
-            return json.dumps(
-                {"status": "error", "message": "Не выбран пакет"}, ensure_ascii=False
-            ), 400
-
-        row = conn.execute(
-            "SELECT name, data FROM packages WHERE packageid = ? AND roomid = ?",
-            (packageid, roomid),
-        ).fetchone()
-        if row is None:
-            conn.execute("ROLLBACK")
-            return json.dumps(
-                {"status": "error", "message": "Пакет не найден"}, ensure_ascii=False
-            ), 404
-
-        try:
-            package_data = json.loads(row["data"])
-        except (TypeError, ValueError):
-            package_data = {}
-        topics = package_data.get("topics") if isinstance(package_data, dict) else None
-        if not isinstance(topics, list):
-            conn.execute("ROLLBACK")
-            return json.dumps(
-                {"status": "error", "message": "В пакете нет тем"}, ensure_ascii=False
-            ), 400
-
-        chosen = []
-        for index in theme_indexes:
+        # Кто-то из сидящих в комнате уже слышал эти темы — говорим об этом
+        # ведущему, но решает он: повтор разрешён по его подтверждению.
+        if not data.get("ack_heard"):
             try:
-                index = int(index)
-            except (TypeError, ValueError):
-                continue
-            if 0 <= index < len(topics):
-                chosen.append(topics[index])
-        if not chosen:
-            conn.execute("ROLLBACK")
-            return json.dumps(
-                {"status": "error", "message": "Ни одной темы не выбрано"}, ensure_ascii=False
-            ), 400
+                player_rows = conn.execute(
+                    "SELECT name FROM activeplayers WHERE roomid = ?", (roomid,)
+                ).fetchall()
+                heard = package_library.heard_by_themes(
+                    conn, chosen, [row["name"] for row in player_rows])
+            except sqlite3.Error:
+                heard = {}
+            warnings = []
+            for name, items in sorted(heard.items()):
+                warnings.append({
+                    "name": name,
+                    "places": sorted({item["place"] for item in items}),
+                    "themes": sorted({item["topic"] for item in items}),
+                })
+            if warnings:
+                conn.execute("ROLLBACK")
+                return json.dumps({
+                    "status": "heard",
+                    "message": "Эти темы уже слышали игроки в комнате: " + "; ".join(
+                        "%s (%s)" % (item["name"], ", ".join(item["themes"]))
+                        for item in warnings) + ". Поставить всё равно?",
+                    "players": warnings,
+                }, ensure_ascii=False), 409
+
+        if has_protocol and not same_layout:
+            conn.execute(
+                "DELETE FROM game_protocols WHERE roomid = ? AND gameindex = ?",
+                (roomid, gameindex),
+            )
+            log_game_events(
+                roomid, "protocol cleared",
+                {"gameindex": gameindex, "reason": "rebind",
+                 "by": user["name"] if user else None},
+                conn=conn,
+            )
 
         payload = {
             "themes": chosen,
-            "package": row["name"],
-            "source_file": package_data.get("sourceFileName") if isinstance(package_data, dict) else None,
+            "package": package_name,
+            "source_file": source_file,
         }
         conn.execute(
             "INSERT OR REPLACE INTO game_questions (roomid, gameindex, packageid, payload, updated_at) "
@@ -2760,9 +2846,7 @@ def SvoyakViewOldPage(roomid):
 @app.route('/activeplayers/<int:roomid>', subdomain = "svoyak", methods = ["GET"])
 @api_room_access_required
 def ActivePalayers(roomid):
-    conn = get_db_connection()
-    all_players = conn.execute('SELECT playerid, name FROM activeplayers where roomid =='+str(roomid)).fetchall()
-    return json.dumps( [dict(ix) for ix in all_players])
+    return json.dumps(_active_players(roomid), ensure_ascii=False)
 
 
 def get_id(name, force_new=True, conn=None):
@@ -2811,13 +2895,23 @@ def get_name(playerid):
     return ""
 
 
-def _active_players(roomid):
+def _active_players(roomid, with_heard=True):
     conn = get_db_connection()
     try:
         rows = conn.execute(
             "SELECT playerid, name FROM activeplayers WHERE roomid = ? ORDER BY name", (roomid,)
         ).fetchall()
-        return [dict(r) for r in rows]
+        players = [dict(r) for r in rows]
+        if with_heard and players:
+            # Кто из сидящих в комнате уже слышал разложенные здесь темы.
+            try:
+                heard = package_library.heard_before(
+                    conn, roomid, [player["name"] for player in players])
+            except sqlite3.Error:
+                heard = {}
+            for player in players:
+                player["heard"] = heard.get(player["name"]) or []
+        return players
     finally:
         conn.close()
 

@@ -688,6 +688,46 @@ let player_name_drag = null;
 let gameindex = {{gameindex}};
 let editModeActive = false;
 
+// Кто из игроков уже слышал темы, разложенные в комнате: имя → [{topic, place}].
+// Считает сервер: темы опознаются по вопросам, а не по названию.
+let heardMap = {};
+
+function rememberHeard(players) {
+    if (!Array.isArray(players)) return;
+    players.forEach((player) => {
+        if (!player || !player.name) return;
+        if (Array.isArray(player.heard)) heardMap[player.name] = player.heard;
+    });
+}
+
+function heardText(items) {
+    return (items || []).map((item) => item.topic + ' (' + item.place + ')').join(', ');
+}
+
+function showHeardNotice(name, items) {
+    if (!items || !items.length) return;
+    let box = document.getElementById('heard-notice');
+    if (!box) {
+        box = document.createElement('div');
+        box.id = 'heard-notice';
+        box.style.cssText = 'position:fixed;right:1rem;bottom:1rem;max-width:24rem;z-index:2000;' +
+            'background:#fff3cd;border:1px solid #ffc107;border-radius:.5rem;padding:.6rem .8rem;' +
+            'box-shadow:0 4px 12px rgba(0,0,0,.15);font-size:.85rem;';
+        document.body.append(box);
+    }
+    const line = document.createElement('div');
+    line.style.marginTop = '0.25rem';
+    line.textContent = name + ' уже слышал: ' + heardText(items);
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.textContent = '×';
+    close.style.cssText = 'float:right;border:0;background:none;font-size:1rem;line-height:1;cursor:pointer';
+    close.onclick = () => line.remove();
+    line.append(close);
+    box.append(line);
+    setTimeout(() => line.remove(), 30000);
+}
+
 let currentGameStartIndex = 0;
 
 // Хелперы для скипов по пакетам
@@ -2813,6 +2853,18 @@ function UpdateActivePlayer(list) {
         nameEl.textContent = p.name;
         tag.append(nameEl);
 
+        // Игрок уже слышал темы, разложенные в комнате: сажать можно, но с пометкой.
+        const heard = (p.heard && p.heard.length) ? p.heard : heardMap[p.name];
+        if (heard && heard.length) {
+            const heardEl = document.createElement('span');
+            heardEl.className = 'tag-btn';
+            heardEl.style.cssText = 'cursor:help;color:#b8860b';
+            heardEl.textContent = '⚠';
+            heardEl.title = 'Уже слышал: ' + heardText(heard);
+            tag.append(heardEl);
+            tag.title = (tag.title ? tag.title + '. ' : '') + 'Уже слышал: ' + heardText(heard);
+        }
+
         const blockBtn = document.createElement('button');
         blockBtn.type = 'button';
         blockBtn.className = 'tag-btn block-btn';
@@ -3543,6 +3595,7 @@ async function redrawBrackets() {
         const container = document.getElementById('current-bracket');
         if (container) container.classList.remove('bracketless');
         const activePlayers = await fetch('/activeplayers/{{roomid}}').then(r => r.json());
+        rememberHeard(activePlayers);
         const playerNames = activePlayers.map(p => p.name);
         const gameArray = await GetGameHistoryArray();
         renderBracket(rules.brackets, gameArray, 'current-bracket', {
@@ -4685,6 +4738,18 @@ const Offline = (() => {
                             saveState();
                         }
                     } catch (error) { /* тело ответа не обязательно */ }
+                } else if (op.type === 'addPlayer') {
+                    try {
+                        const players = await response.json();
+                        rememberHeard(players);
+                        const added = Array.isArray(players)
+                            ? players.find((player) => player.name === op.payload.name)
+                            : null;
+                        if (added && added.heard && added.heard.length) {
+                            showHeardNotice(added.name, added.heard);
+                        }
+                        UpdateActivePlayer(active);
+                    } catch (error) { /* пометки обновятся следующим опросом */ }
                 } else if (op.type === 'protocol') {
                     try {
                         const data = await response.json();
@@ -4727,6 +4792,7 @@ const Offline = (() => {
             ]);
             if (playersResponse.ok) {
                 const players = await playersResponse.json();
+                rememberHeard(players);
                 if (Array.isArray(players)) setActivePlayers(players);
             }
             if (historyResponse.ok) {

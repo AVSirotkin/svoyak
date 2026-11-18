@@ -48,7 +48,7 @@
             <span class="text-muted small">· бой {{ game.gameindex }}{% if not free_seating %} · стадия {{ game.stage }} · площадка {{ game.table }}{% endif %}</span>
         </span>
         <span class="text-muted small">
-            {% if binding %}{{ binding.topics|length }} тем{% else %}не назначено{% endif %}
+            {% if binding %}{{ binding.topics|length }} тем{% if binding.source == 'protocol' %} (из пульта){% endif %}{% else %}не назначено{% endif %}
             {% if started.get(game.gameindex) %}
             <span class="badge bg-warning text-dark" title="бой уже идёт по сохранённому протоколу">
                 идёт бой
@@ -60,6 +60,13 @@
         {% if binding %}
         <div class="mb-2 small">
             {% for topic in binding.topics %}<span class="badge bg-light text-dark border me-1">{{ topic }}</span>{% endfor %}
+            {% if binding.source == 'protocol' %}
+            <div class="text-muted mt-1" style="font-size: .85em">
+                Темы разложены в пульте комнаты: бой уже идёт по своему протоколу.
+                Если хотите вести раскладку из плана — выберите тот же пакет и те же темы
+                и сохраните: протокол при этом не тронется.
+            </div>
+            {% endif %}
         </div>
         {% endif %}
 
@@ -105,6 +112,8 @@
     const CACHE = {};
     // Что из этих пакетов уже игралось раньше и где именно.
     const THEME_USE = {{ theme_use|tojson }};
+    // Что уже разложено по боям: пакет и темы.
+    const ASSIGNED = {{ assigned|tojson }};
 
     async function loadPackage(packageid) {
         if (CACHE[packageid]) return CACHE[packageid];
@@ -182,13 +191,12 @@
 
         select.addEventListener('change', () => fillGame(card, []));
         if (select.value) {
-            const assigned = {{ assigned|tojson }};
-            const binding = assigned[card.dataset.game];
+            const binding = ASSIGNED[card.dataset.game];
             fillGame(card, binding ? binding.topics : []);
         }
     });
 
-    async function saveBinding(button, clear, force) {
+    async function saveBinding(button, clear, force, ackHeard) {
         const card = button.closest('.game-card');
         const select = card.querySelector('.package-select');
         const gameindex = Number(card.dataset.game);
@@ -248,7 +256,8 @@
                     gameindex: gameindex,
                     packageid: select.value ? Number(select.value) : null,
                     themes: themes,
-                    force: Boolean(force)
+                    force: Boolean(force),
+                    ack_heard: Boolean(ackHeard)
                 })
             });
             if (response.status === 401) {
@@ -259,7 +268,8 @@
             if (response.status === 409) {
                 if (confirm(data.message)) {
                     button.disabled = false;
-                    await saveBinding(button, clear, true);
+                    // «heard» — предупреждение о слышавших, «conflict» — протокол боя.
+                    await saveBinding(button, clear, data.status === 'heard' ? force : true, true);
                 }
                 return;
             }

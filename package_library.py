@@ -36,6 +36,10 @@ FUZZY_RATIO = 0.8
 # Тема та же, если совпало столько её вопросов (5 вопросов → нужно 4).
 SAME_THEME_SHARE = 0.7
 
+# В совсем коротких вопросах («Кто автор?») одна замена слова меняет смысл,
+# поэтому мягкое сравнение начинается с этой длины в словах.
+SHORT_QUESTION_WORDS = 4
+
 MONTHS = {
     "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
     "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12,
@@ -154,6 +158,10 @@ def question_similarity(one, two):
     if one == two:
         return 1.0
     left, right = one.split(), two.split()
+    # Короткие тексты («вопрос Наука 10» и «вопрос Космос 10») отличаются одним
+    # словом, но это разные вопросы: правки ищем только в длинных формулировках.
+    if min(len(left), len(right)) < SHORT_QUESTION_WORDS:
+        return 0.0
     # Быстрый отсев по словам: у разных вопросов мало общих слов.
     left_words, right_words = set(left), set(right)
     shared = left_words & right_words
@@ -556,28 +564,110 @@ def game_listeners(conn, roomid, gameindex, mode=EXPOSURE_HALL, times=None,
             for name in heard]
 
 
+def load_json(value):
+    try:
+        data = json.loads(value or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+PLACEHOLDER_QUESTION = re.compile(r"^вопрос \d+$")
+
+
+def is_placeholder(themes, placeholder=False):
+    """Заглушка вместо пакета: «Тема N / Вопрос M» — это не настоящие вопросы."""
+    if placeholder:
+        return True
+    real = 0
+    for theme in themes:
+        if not isinstance(theme, dict):
+            continue
+        for question in theme.get("questions") or []:
+            if not isinstance(question, dict):
+                continue
+            text = normalize_text(question.get("text"))
+            if text and not PLACEHOLDER_QUESTION.match(text):
+                real += 1
+    return real == 0
+
+
+def theme_layouts(conn):
+    """Раскладки тем по боям: из плана (game_questions) и из пульта (game_protocols).
+
+    Ведущий раскладывает темы в пульте: там они попадают в протокол боя и в план
+    могут не попадать вовсе. Обе раскладки равноправны — бой один и тот же.
+    """
+    layouts = []
+    try:
+        rows = conn.execute(
+            "SELECT roomid, gameindex, packageid, payload, updated_at FROM game_questions"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    for row in rows:
+        payload = load_json(row["payload"])
+        themes = [theme for theme in payload.get("themes") or [] if isinstance(theme, dict)]
+        if not themes or is_placeholder(themes, payload.get("placeholder")):
+            continue
+        layouts.append({
+            "roomid": row["roomid"], "gameindex": row["gameindex"],
+            "packageid": row["packageid"], "themes": themes,
+            "source": "plan", "updated": row["updated_at"],
+        })
+    try:
+        rows = conn.execute(
+            "SELECT roomid, gameindex, payload, updated_at FROM game_protocols"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    for row in rows:
+        payload = load_json(row["payload"])
+        themes = [theme for theme in payload.get("themes") or [] if isinstance(theme, dict)]
+        if not themes or is_placeholder(themes, payload.get("placeholder")):
+            continue
+        layouts.append({
+            "roomid": row["roomid"], "gameindex": row["gameindex"],
+            "packageid": payload.get("packageid"), "themes": themes,
+            "source": "protocol", "updated": row["updated_at"],
+        })
+    # Если бой есть и в плане, и в пульте — берём тот, где тем больше: так
+    # сохраняется и плановая раскладка, и то, что ведущий реально играл.
+    best = {}
+    for layout in layouts:
+        key = (layout["roomid"], layout["gameindex"])
+        current = best.get(key)
+        if current is None or len(layout["themes"]) > len(current["themes"]):
+            best[key] = layout
+        elif len(layout["themes"]) == len(current["themes"]) and layout["source"] == "plan":
+            best[key] = layout
+    return list(best.values())
+
+
+def library_signatures(conn, libraryid):
+    """Подписи всех тем, которые есть в пакетах этой записи библиотеки."""
+    signatures = set()
+    for row in conn.execute("SELECT data FROM packages WHERE libraryid = ?", (libraryid,)):
+        for theme in package_topics(row[0]):
+            signature = theme_signature(theme)
+            if signature:
+                signatures.add(signature)
+    return signatures
+
+
 def library_usage(conn, libraryid, mode=EXPOSURE_HALL):
-    """История пакета: где и когда игрались темы и кто их мог слышать."""
-    rows = conn.execute(
-        "SELECT gq.roomid, gq.gameindex, gq.payload, gq.updated_at, p.packageid, p.name "
-        "FROM game_questions gq JOIN packages p ON p.packageid = gq.packageid "
-        "WHERE p.libraryid = ? ORDER BY gq.roomid DESC, gq.gameindex", (libraryid,)
-    ).fetchall()
+    """История пакета: где и когда игрались его темы и кто их мог слышать."""
+    signatures = library_signatures(conn, libraryid)
     cache = {}
     usage = []
-    for row in rows:
-        roomid, gameindex = row[0], row[1]
-        try:
-            payload = json.loads(row[2] or "{}")
-        except ValueError:
-            payload = {}
-        topics = []
-        theme_items = []
-        for theme in payload.get("themes") or []:
-            if isinstance(theme, (dict, str)):
-                topics.append(theme_title(theme))
-                theme_items.append({"title": theme_title(theme),
-                                    "signature": theme_signature(theme)})
+    for layout in sorted(theme_layouts(conn),
+                         key=lambda item: (item["roomid"], item["gameindex"]),
+                         reverse=True):
+        themes = [theme for theme in layout["themes"]
+                  if theme_signature(theme) in signatures]
+        if not themes:
+            continue
+        roomid, gameindex = layout["roomid"], layout["gameindex"]
         if roomid not in cache:
             timeline = room_timeline(conn, roomid)
             cache[roomid] = (timeline, game_times(conn, roomid, timeline[2]))
@@ -591,10 +681,12 @@ def library_usage(conn, libraryid, mode=EXPOSURE_HALL):
         usage.append({
             "roomid": roomid,
             "gameindex": gameindex,
-            "packageid": row[4],
-            "package": row[5],
-            "topics": topics,
-            "theme_items": theme_items,
+            "packageid": layout["packageid"],
+            "package": layout.get("package") or library_name(conn, libraryid),
+            "source": layout["source"],
+            "topics": [theme_title(theme) for theme in themes],
+            "theme_items": [{"title": theme_title(theme),
+                             "signature": theme_signature(theme)} for theme in themes],
             "when": format_time(times.get(gameindex)),
             "date": room[0] if room else "",
             "owner": room[1] if room else None,
@@ -605,6 +697,13 @@ def library_usage(conn, libraryid, mode=EXPOSURE_HALL):
     return usage
 
 
+def library_name(conn, libraryid):
+    row = conn.execute(
+        "SELECT name FROM package_library WHERE libraryid = ?", (libraryid,)
+    ).fetchone()
+    return row[0] if row else ""
+
+
 def place_name(roomid, gameindex):
     return "комната %s, бой %s" % (roomid, gameindex)
 
@@ -612,20 +711,16 @@ def place_name(roomid, gameindex):
 def played_themes(conn):
     """Все темы, которые раскладывались по боям: где, что и с какой подписью."""
     items = []
-    rows = conn.execute("SELECT roomid, gameindex, payload FROM game_questions").fetchall()
-    for row in rows:
-        try:
-            payload = json.loads(row[2] or "{}")
-        except ValueError:
-            continue
-        for theme in payload.get("themes") or []:
+    for layout in theme_layouts(conn):
+        for theme in layout["themes"]:
             signature = theme_signature(theme)
             if signature is None:
                 continue
             items.append({
-                "place": place_name(row[0], row[1]),
-                "roomid": row[0],
-                "gameindex": row[1],
+                "place": place_name(layout["roomid"], layout["gameindex"]),
+                "roomid": layout["roomid"],
+                "gameindex": layout["gameindex"],
+                "source": layout["source"],
                 "theme": theme,
                 "title": theme_title(theme),
                 "signature": signature,
@@ -692,6 +787,81 @@ def similar_plays(theme, played, skip=()):
                 "total": match["total"],
             })
     return found
+
+
+def heard_by_themes(conn, themes, names, mode=EXPOSURE_HALL):
+    """Кто из названных игроков уже слышал эти темы и где.
+
+    Возвращает {имя: [{topic, place, changed}]}. Мелкие правки текста тему не
+    меняют: повторы с исправленным текстом тоже считаются услышанными.
+    """
+    names = [name for name in (names or []) if name]
+    themes = [theme for theme in (themes or []) if isinstance(theme, dict)]
+    if not names or not themes:
+        return {}
+    wanted = set(names)
+    signatures = {theme_signature(theme) for theme in themes}
+    prepared = [(theme, question_texts_of(theme), frozenset(theme_vocabulary(theme)))
+                for theme in themes]
+
+    def close_to(theme):
+        """Та же тема или та же тема с поправленным текстом."""
+        if theme_signature(theme) in signatures:
+            return True
+        texts = question_texts_of(theme)
+        words = frozenset(theme_vocabulary(theme))
+        for other, other_texts, other_words in prepared:
+            if abs(len(texts) - len(other_texts)) > max(1, len(other_texts) // 3):
+                continue
+            if len(words & other_words) < 0.25 * max(1, min(len(words), len(other_words))):
+                continue
+            match = theme_match(other, theme)
+            if same_theme(match):
+                return True
+        return False
+
+    heard = {}
+    cache = {}
+    for layout in theme_layouts(conn):
+        topics = []
+        for theme in layout["themes"]:
+            if not close_to(theme):
+                continue
+            changed = theme_signature(theme) not in signatures
+            topics.append((theme_title(theme), changed))
+        if not topics:
+            continue
+        key = (layout["roomid"], layout["gameindex"])
+        if key not in cache:
+            timeline = room_timeline(conn, layout["roomid"])
+            times = game_times(conn, layout["roomid"], timeline[2])
+            listeners = game_listeners(conn, layout["roomid"], layout["gameindex"],
+                                       mode, times, timeline)
+            cache[key] = [item["name"] for item in listeners]
+        place = place_name(layout["roomid"], layout["gameindex"])
+        for name in cache[key]:
+            if name not in wanted:
+                continue
+            entry = heard.setdefault(name, [])
+            for title, changed in topics:
+                item = {"topic": title, "place": place, "changed": changed}
+                if item not in entry:
+                    entry.append(item)
+    return heard
+
+
+def room_themes(conn, roomid):
+    """Темы, разложенные в комнате."""
+    themes = []
+    for layout in theme_layouts(conn):
+        if layout["roomid"] == roomid:
+            themes.extend(layout["themes"])
+    return themes
+
+
+def heard_before(conn, roomid, names, mode=EXPOSURE_HALL):
+    """Что из разложенного в этой комнате её игроки уже слышали."""
+    return heard_by_themes(conn, room_themes(conn, roomid), names, mode)
 
 
 def theme_use_by_index(conn, data, libraryid=None, played=None):

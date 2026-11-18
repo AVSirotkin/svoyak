@@ -101,7 +101,10 @@
                 {% for item in usage %}
                 <tr>
                     <td><a href="/plan/{{ item.roomid }}">{{ item.roomid }}</a>
-                        {% if item.date %}<span class="text-muted small">{{ item.date }}</span>{% endif %}</td>
+                        {% if item.date %}<span class="text-muted small">{{ item.date }}</span>{% endif %}
+                        {% if item.source == 'protocol' %}
+                        <span class="badge bg-light text-dark border" title="Темы разложены в пульте комнаты">пульт</span>
+                        {% endif %}</td>
                     <td class="text-end">{{ item.gameindex }}</td>
                     <td class="small">{{ item.when or '—' }}</td>
                     <td class="small">
