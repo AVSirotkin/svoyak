@@ -702,6 +702,16 @@
             white-space: nowrap;
         }
 
+        .question-card .q-author {
+            flex: none;
+            font-size: 12px;
+            color: var(--gray-600);
+            white-space: nowrap;
+            max-width: 45%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
         .question-card .q-value {
             font-weight: 700;
             font-size: 18px;

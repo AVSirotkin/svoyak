@@ -255,6 +255,19 @@ class ConsoleWiringTests(unittest.TestCase):
         self.assertIn('/static/js/sync.js', html)
         self.assertIn('id="syncModeSelect"', html)
 
+    def test_question_card_shows_author_and_arrows(self):
+        """В карточке вопроса есть место под автора темы, стрелки водят по вопросам."""
+        # Пульт комнаты и стол боя — разные страницы, карточка вопроса в обеих.
+        for url in ('/room/2024', '/room/2024/3'):
+            page = self.guest.get(BASE + url)
+            self.assertEqual(page.status_code, 200, page.get_data(as_text=True))
+            html = page.get_data(as_text=True)
+            self.assertIn('id="qThemeAuthor"', html, url)
+            self.assertIn("function themeAuthors(", html, url)
+            self.assertIn("'ArrowRight'", html, url)
+            self.assertIn("'ArrowLeft'", html, url)
+            self.assertIn('stepQuestion(', html, url)
+
     def test_old_console_has_sync_controls(self):
         page = self.guest.get(BASE + '/room/2024')
         self.assertEqual(page.status_code, 200, page.get_data(as_text=True))

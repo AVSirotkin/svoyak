@@ -181,8 +181,8 @@
             </div>
 
             <div class="game-controls-row">
-                <button id="prevQuestionBtn" class="btn btn-outline">⬅️ Предыдущий</button>
-                <button id="nextQuestionBtn" class="btn btn-primary">Следующий ➡️</button>
+                <button id="prevQuestionBtn" class="btn btn-outline" title="Клавиша ←">⬅️ Предыдущий</button>
+                <button id="nextQuestionBtn" class="btn btn-primary" title="Клавиша →">Следующий ➡️</button>
                 <button onclick="ClearCurrentGameLog(false)" class="btn btn-outline">🔄 Сбросить</button>
                 <label class="checkbox-group" title="При включении за неправильный ответ начисляется половина номинала">
                     <input type="checkbox" id="halfMinusToggle" onchange="toggleHalfMinus()">
@@ -221,6 +221,7 @@
                     <div class="q-header">
                         <span class="q-theme-number" id="qThemeNumber">Тема 1 из 1</span>
                         <span class="q-theme" id="qTheme">Тема не загружена</span>
+                        <span class="q-author" id="qThemeAuthor" style="display:none;"></span>
                         <span class="q-value" id="qValue">0</span>
                     </div>
                     <div class="q-text" id="qText">Загрузите файл с вопросами для отображения</div>
@@ -1108,11 +1109,20 @@ function getGameTopicIndices(startActiveIndex, themesPerGame) {
     return activeIndices.slice(startActiveIndex, startActiveIndex + themesPerGame);
 }
 
+// Авторы темы из пакета: список строк, пустой, если авторов не указали.
+function themeAuthors(topic) {
+    const value = (topic || {}).authors;
+    const list = Array.isArray(value) ? value : (value ? [value] : []);
+    return list.map((item) => String(item == null ? '' : item).trim()).filter(Boolean);
+}
+
 function buildBlockFromTopic(topic, realIdx, packageLocalId) {
     const questions = topic.questions || [];
     return {
         theme: topic.topic || `Тема ${realIdx + 1}`,
         comment: topic.comment || '',
+        // Автор темы бывает не указан, а иногда их несколько.
+        authors: themeAuthors(topic),
         sourcePackageLocalId: packageLocalId,
         sourceThemeIndex: realIdx,
         questions: questions.map((q, qi) => ({
@@ -2105,6 +2115,19 @@ function updateQuestionCard() {
     }
 
     document.getElementById('qTheme').textContent = q.theme || 'Без названия';
+    const authorEl = document.getElementById('qThemeAuthor');
+    if (authorEl) {
+        const authors = themeAuthors(block);
+        if (authors.length) {
+            authorEl.textContent = 'автор: ' + authors.join(', ');
+            authorEl.title = 'Автор темы: ' + authors.join(', ');
+            authorEl.style.display = 'inline-block';
+        } else {
+            authorEl.textContent = '';
+            authorEl.title = '';
+            authorEl.style.display = 'none';
+        }
+    }
     document.getElementById('qValue').textContent = currentQ.value || 0;
 
     const themeNumber = document.getElementById('qThemeNumber');
@@ -2243,6 +2266,19 @@ function nextQuestion() {
         updateQuestionCard();
         saveGame();
     }
+}
+
+// Стрелки водят по вопросам, но не объявляют игру завершённой: для этого
+// есть кнопка «Следующий» и клавиша «0».
+function stepQuestion(delta) {
+    if (gameState.editMode || gameState.gameFinished) return;
+    if (delta < 0) {
+        prevQuestion();
+        return;
+    }
+    const total = getTotalQuestions();
+    if (!total || getAbsoluteQuestionNumber() >= total - 1) return;
+    nextQuestion();
 }
 
 function paintViewButton() {
@@ -2636,6 +2672,7 @@ function protocolPayload(mid) {
         payload.themes = gameData.questionBlocks.map((block) => ({
             topic: block.theme || '',
             comment: block.comment || '',
+            authors: themeAuthors(block),
             questions: (block.questions || []).map((question) => ({
                 value: Number(question.value) || 0,
                 text: question.text || '',
@@ -2696,6 +2733,7 @@ function applyProtocol(protocol) {
         gameData.questionBlocks = protocol.themes.map((theme) => ({
             theme: theme.topic || '',
             comment: theme.comment || '',
+            authors: themeAuthors(theme),
             questions: (theme.questions || []).map((question) => ({
                 value: Number(question.value) || 0,
                 text: question.text || '',
@@ -2795,6 +2833,16 @@ document.addEventListener('keydown', (e) => {
     if (!gameState.keyboardEnabled) return;
     if (gameState.gameFinished || gameState.editMode) return;
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+
+    // Стрелки — те же кнопки «Предыдущий»/«Следующий». В списках и с
+    // модификаторами не перехватываем: там у стрелок своя работа.
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+        if (e.target && (e.target.tagName === 'SELECT' || e.target.isContentEditable)) return;
+        e.preventDefault();
+        stepQuestion(e.key === 'ArrowRight' ? 1 : -1);
+        return;
+    }
 
     const map = {
         '1': { p: 0, c: true }, '2': { p: 1, c: true }, '3': { p: 2, c: true }, '4': { p: 3, c: true },
