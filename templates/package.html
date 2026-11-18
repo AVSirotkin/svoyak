@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .pkg-theme { border-left: 3px solid #dee2e6; padding-left: .75rem; margin-bottom: .9rem; }
+    .pkg-theme.used { border-left-color: #198754; }
+    .pkg-chip {
+        display: inline-block; padding: .1rem .45rem; border-radius: .4rem;
+        background: #f1f3f5; margin: 0 .25rem .25rem 0; font-size: .85rem;
+    }
+    .pkg-heard { font-size: .85rem; }
+</style>
+
+<div class="mb-3">
+    <div class="text-muted small">
+        <a href="/packages">Библиотека пакетов</a> · пакет №{{ entry.libraryid }}
+    </div>
+    <h2 class="mb-1">{{ entry.name or 'без названия' }}</h2>
+    <div class="text-muted small">
+        Копий в комнатах: {{ copies | length }}.
+        Записей о раскладке тем: {{ usage | length }}.
+        {% if access == 'admin' %}<span class="badge bg-secondary">вид администратора</span>{% endif %}
+    </div>
+</div>
+
+<div class="d-flex gap-2 align-items-center flex-wrap mb-3">
+    <span class="text-muted small">Кто мог слышать:</span>
+    <div class="btn-group btn-group-sm" role="group">
+        <a class="btn btn-outline-secondary {% if mode == 'hall' %}active{% endif %}"
+           href="/packages/{{ entry.libraryid }}?mode=hall"
+           title="все, кто был в комнате, пока шёл бой">весь зал</a>
+        <a class="btn btn-outline-secondary {% if mode == 'game' %}active{% endif %}"
+           href="/packages/{{ entry.libraryid }}?mode=game"
+           title="только участники боя">участники боя</a>
+    </div>
+    {% if similar %}<span class="badge bg-warning text-dark">похожих пакетов: {{ similar | length }}</span>{% endif %}
+</div>
+
+<div class="card mb-3">
+    <div class="card-header fw-semibold">Где лежит пакет</div>
+    <div class="table-responsive">
+        <table class="table table-sm mb-0 align-middle">
+            <thead>
+                <tr><th>Комната</th><th>Дата</th><th>Ведущий</th><th>Площадка</th>
+                    <th class="text-end">Тем</th><th>Обновлён</th><th></th></tr>
+            </thead>
+            <tbody>
+                {% for copy in copies %}
+                <tr>
+                    <td><a href="/plan/{{ copy.roomid }}">{{ copy.roomid }}</a></td>
+                    <td class="small">{{ copy.date or '—' }}</td>
+                    <td class="small">{{ copy.owner or '—' }}</td>
+                    <td class="small">{{ copy.venue or '—' }}</td>
+                    <td class="text-end">{{ copy.topics }}</td>
+                    <td class="small text-muted">{{ copy.updated }}</td>
+                    <td class="text-end">
+                        <a class="btn btn-sm btn-outline-secondary"
+                           href="/plan/{{ copy.roomid }}/questions">Темы по боям</a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" class="text-muted small">Копий нет.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if rooms %}
+    <div class="card-footer d-flex gap-2 align-items-center flex-wrap">
+        <span class="small text-muted">Взять копию в комнату:</span>
+        <select class="form-select form-select-sm" id="takeRoom" style="width: 12rem">
+            {% for room in rooms %}
+            <option value="{{ room.roomid }}">{{ room.roomid }}{% if room.date %} · {{ room.date }}{% endif %}</option>
+            {% endfor %}
+        </select>
+        <button class="btn btn-sm btn-outline-primary" type="button" onclick="takeToRoom()">
+            Скопировать
+        </button>
+        <span class="small text-muted">Копия появится в пульте комнаты — дальше раскладывайте её темы по боям.</span>
+    </div>
+    {% endif %}
+</div>
+
+<div class="card mb-3" id="games">
+    <div class="card-header fw-semibold">Бои этим пакетом</div>
+    {% if usage %}
+    <div class="table-responsive">
+        <table class="table table-sm mb-0 align-middle">
+            <thead>
+                <tr><th>Комната</th><th class="text-end">Бой</th><th>Когда</th>
+                    <th>Темы</th><th class="text-end">Слышали</th></tr>
+            </thead>
+            <tbody>
+                {% for item in usage %}
+                <tr>
+                    <td><a href="/plan/{{ item.roomid }}">{{ item.roomid }}</a>
+                        {% if item.date %}<span class="text-muted small">{{ item.date }}</span>{% endif %}</td>
+                    <td class="text-end">{{ item.gameindex }}</td>
+                    <td class="small">{{ item.when or '—' }}</td>
+                    <td class="small">
+                        {% for topic in item.topics %}<span class="pkg-chip">{{ topic }}</span>{% endfor %}
+                    </td>
+                    <td class="text-end">
+                        <span title="{{ item.listeners | join(', ') }}">{{ item.listeners | length }}</span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="card-body text-muted small">
+        Пока ни один бой этим пакетом не размечен. Раскладка тем делается в пульте комнаты:
+        «Вопросы по боям».
+    </div>
+    {% endif %}
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-7">
+        <div class="card h-100">
+            <div class="card-header fw-semibold">Темы и их судьба</div>
+            <div class="card-body">
+                {% for theme in themes %}
+                <div class="pkg-theme {% if theme.used %}used{% endif %}">
+                    <div class="fw-semibold">{{ theme.topic }}</div>
+                    {% if theme.used %}
+                    <div class="small text-muted">
+                        {% for block in theme.used %}
+                        комната <a href="/plan/{{ block.roomid }}">{{ block.roomid }}</a>,
+                        бой {{ block.gameindex }}{% if block.when %} ({{ block.when }}){% endif %};
+                        {% endfor %}
+                    </div>
+                    <div class="pkg-heard">Слышали: {{ theme.listeners | length }}
+                        {% if theme.listeners %}<span class="text-muted">({{ theme.listeners | join(', ') }})</span>{% endif %}
+                    </div>
+                    {% else %}
+                    <div class="small text-muted">Ещё не игралась.</div>
+                    {% endif %}
+                </div>
+                {% else %}
+                <div class="text-muted small">По этому пакету нет размеченных тем.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-header fw-semibold">Кто мог слышать</div>
+            <div class="card-body">
+                {% if listeners %}
+                <ol class="mb-0 small">
+                    {% for person in listeners %}
+                    <li>{{ person.name }}
+                        <span class="text-muted">— {{ person.places | join('; ') }}</span></li>
+                    {% endfor %}
+                </ol>
+                {% else %}
+                <div class="text-muted small">Пока никто: пакет ещё не игрался.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if similar %}
+<div class="card mt-3 border-warning">
+    <div class="card-header fw-semibold">Похожие пакеты — подтвердите, что это один пакет</div>
+    <div class="card-body">
+        <div class="small text-muted mb-2">
+            Совпадение содержимого или общие вопросы. Если это одна и та же колода, история
+            соберётся в одну запись; если разные — предложение больше не появится.
+        </div>
+        {% for item in similar %}
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 border-top py-2">
+            <div>
+                <a href="/packages/{{ item.libraryid }}">{{ item.name or 'без названия' }}</a>
+                <span class="badge {% if item.same_content %}bg-success{% else %}bg-secondary{% endif %}">
+                    {% if item.same_content %}то же содержимое{% else %}{{ item.ratio }}% общих вопросов{% endif %}
+                </span>
+                <span class="text-muted small">общих вопросов: {{ item.shared }} из {{ item.total }}</span>
+            </div>
+            <div>
+                <button class="btn btn-sm btn-outline-primary" type="button"
+                        onclick='mergeWith({{ item.libraryid }}, {{ item.name | tojson }})'>Это тот же пакет</button>
+                <button class="btn btn-sm btn-outline-secondary" type="button"
+                        onclick="rejectWith({{ item.libraryid }})">Это разные пакеты</button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function init_page() {}
+
+    async function postJson(url, body) {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+            body: JSON.stringify(body || {}),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            alert(data.message || 'Операция не выполнена');
+            return null;
+        }
+        return data;
+    }
+
+    async function takeToRoom() {
+        const select = document.getElementById('takeRoom');
+        if (!select) {
+            return;
+        }
+        const data = await postJson('/api/packages/library/{{ entry.libraryid }}/take',
+                                    {roomid: parseInt(select.value, 10)});
+        if (data) {
+            alert('Копия пакета добавлена в комнату ' + data.roomid +
+                  '.\nДальше: «Вопросы по боям» в пульте этой комнаты.');
+        }
+    }
+
+    async function mergeWith(other, name) {
+        if (!confirm('Связать с пакетом «' + name + '» как один и тот же?')) {
+            return;
+        }
+        const data = await postJson('/api/packages/library/{{ entry.libraryid }}/merge',
+                                    {other: other});
+        if (data) {
+            document.location.reload();
+        }
+    }
+
+    async function rejectWith(other) {
+        if (!confirm('Отметить как разные пакеты и больше не предлагать?')) {
+            return;
+        }
+        const data = await postJson('/api/packages/library/{{ entry.libraryid }}/reject',
+                                    {other: other});
+        if (data) {
+            document.location.reload();
+        }
+    }
+</script>
+{% endblock %}

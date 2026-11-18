@@ -45,6 +45,11 @@ class RoomDumpTests(unittest.TestCase):
     """Копия, удаление, перенос номера и восстановление — на уровне базы."""
 
     def setUp(self):
+        # Операции с базой не должны дотянуться до исходной базы тестов.
+        self.assertNotEqual(
+            os.path.abspath(site.DB_PATH),
+            os.path.abspath(os.path.join(ROOT, 'svoyak-test.db')),
+        )
         self.conn = db()
         self.conn.isolation_level = None
         self.conn.execute("BEGIN IMMEDIATE")
@@ -124,6 +129,10 @@ class AdminApiTests(unittest.TestCase):
 
     def setUp(self):
         site.DB_PATH = WORK_DB
+        self.assertNotEqual(
+            os.path.abspath(site.DB_PATH),
+            os.path.abspath(os.path.join(ROOT, 'svoyak-test.db')),
+        )
         self.admin = self.registered('администратор')
         self.host = self.registered('ведущий')
         self.guest = site.app.test_client()

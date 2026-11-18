@@ -21,6 +21,7 @@
         </div>
     </div>
     <a class="btn btn-outline-secondary btn-sm" href="/plan/{{ roomid }}">Пульт турнира</a>
+    <a class="btn btn-outline-secondary btn-sm" href="/packages">Библиотека пакетов</a>
 </div>
 
 {% if not packages %}
@@ -94,6 +95,8 @@
 
     const ROOMID = {{ roomid }};
     const CACHE = {};
+    // Что из этих пакетов уже игралось раньше и где именно.
+    const THEME_USE = {{ theme_use|tojson }};
 
     async function loadPackage(packageid) {
         if (CACHE[packageid]) return CACHE[packageid];
@@ -107,21 +110,30 @@
         return topics;
     }
 
-    function renderThemes(list, topics, selected) {
+    function renderThemes(list, topics, selected, usage) {
         if (!topics.length) {
             list.innerHTML = '<span class="text-muted small">В пакете нет тем</span>';
             list.dataset.themes = '[]';
             return;
         }
         const chosen = new Set(selected || []);
-        list.innerHTML = topics.map((topic, index) => `
+        usage = usage || {};
+        list.innerHTML = topics.map((topic, index) => {
+            const places = usage[topic.topic];
+            const mark = places
+                ? `<span class="badge bg-warning text-dark ms-1"
+                         title="уже игралась: ${places.join('; ')}">уже игралась</span>
+                   <span class="text-muted small">${places.join('; ')}</span>`
+                : '';
+            return `
             <label class="theme-item">
                 <input class="form-check-input me-2 theme-check" type="checkbox" value="${index}"
                        ${chosen.has(topic.topic) ? 'checked' : ''}>
                 ${topic.topic}
                 <span class="text-muted small">· ${(topic.questions || []).length} вопр.</span>
-            </label>
-        `).join('');
+                ${mark}
+            </label>`;
+        }).join('');
     }
 
     async function fillGame(card, selectedTopics) {
@@ -134,7 +146,7 @@
         list.innerHTML = '<span class="text-muted small">Загружаю…</span>';
         try {
             const topics = await loadPackage(select.value);
-            renderThemes(list, topics, selectedTopics || []);
+            renderThemes(list, topics, selectedTopics || [], THEME_USE[select.value] || {});
         } catch (error) {
             list.innerHTML = '<span class="text-danger small">Не удалось загрузить пакет</span>';
         }
@@ -167,6 +179,22 @@
             if (!themes.length) {
                 alert('Отметьте хотя бы одну тему');
                 return;
+            }
+            // Повтор сыгранных тем не запрещаем, но спрашиваем.
+            const topics = await loadPackage(select.value).catch(() => []);
+            const usage = THEME_USE[select.value] || {};
+            const repeated = [];
+            themes.forEach((index) => {
+                const topic = topics[index];
+                const places = topic && usage[topic.topic];
+                if (places) repeated.push(topic.topic + ' (' + places.join('; ') + ')');
+            });
+            if (repeated.length) {
+                const question = 'Эти темы уже игрались:\n' + repeated.join('\n') +
+                                 '\n\nВсё равно поставить их в этот бой?';
+                if (!confirm(question)) {
+                    return;
+                }
             }
         }
 

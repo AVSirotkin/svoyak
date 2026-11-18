@@ -11,6 +11,7 @@ from player_state import player_state
 import tournament_plan
 import telegram_link
 import site_admin
+import package_library
 import secrets
 import pandas as pd
 from statistics import median
@@ -1613,7 +1614,8 @@ def placeholder_topics():
 def room_packages(conn, roomid):
     try:
         rows = conn.execute(
-            "SELECT packageid, name FROM packages WHERE roomid = ? ORDER BY created_at DESC",
+            "SELECT packageid, name, libraryid FROM packages WHERE roomid = ? "
+            "ORDER BY created_at DESC",
             (roomid,),
         ).fetchall()
     except sqlite3.OperationalError:
@@ -1648,13 +1650,25 @@ def PlanQuestionsPage(roomid):
                 started[row["gameindex"]] = row["updated_at"]
         except sqlite3.OperationalError:
             started = {}
+        # Что из этих пакетов уже игралось где-то: админ видит пометку у темы.
+        theme_use = {}
+        try:
+            package_library.ensure_library(conn)
+            conn.commit()
+            for package in packages:
+                if not package.get("libraryid"):
+                    continue
+                theme_use[str(package["packageid"])] = package_library.theme_usage(
+                    conn, package["libraryid"])
+        except sqlite3.Error:
+            theme_use = {}
     finally:
         conn.close()
     if plan is None:
         return redirect(f"/room/{roomid}", code=302)
     return render_template(
         "plan_questions.html", roomid=roomid, overview=overview, plan=plan,
-        packages=packages, assigned=assigned, started=started,
+        packages=packages, assigned=assigned, started=started, theme_use=theme_use,
         title=f"Вопросы турнира {roomid}",
     )
 
@@ -4723,12 +4737,198 @@ def sync_packages(roomid):
             'INSERT INTO packages (roomid, name, data) VALUES (?, ?, ?)',
             (roomid, name, data_json)
         )
+        try:
+            package_library.ensure_library(conn)
+            package_library.link_package(conn, cur.lastrowid)
+        except sqlite3.Error:
+            # Библиотека — надстройка: без неё пакет всё равно сохранится,
+            # а библиотечный номер ему выдадут при первом открытии страницы.
+            pass
         results.append({"localId": local_id, "serverId": cur.lastrowid, "status": "created"})
 
     conn.commit()
     conn.close()
     return json.dumps({"status": "ok", "results": results}, ensure_ascii=False)
 
+
+def package_library_access(conn, libraryid, user):
+    """Кому открыт пакет: администратору — любой, иначе своему владельцу."""
+    row = conn.execute(
+        "SELECT libraryid, ownerid FROM package_library WHERE libraryid = ?", (libraryid,)
+    ).fetchone()
+    if row is None:
+        return None
+    if is_admin(user):
+        return "admin"
+    if row["ownerid"] == user["userid"]:
+        return "owner"
+    # Пакет из комнаты, которая сейчас принадлежит этому человеку.
+    own = conn.execute(
+        "SELECT 1 FROM packages p JOIN activerooms r ON r.roomid = p.roomid "
+        "WHERE p.libraryid = ? AND r.ownerid = ?", (libraryid, user["userid"])
+    ).fetchone()
+    return "owner" if own is not None else None
+
+
+@app.route('/packages', subdomain="svoyak")
+@login_required
+def PackagesPage():
+    """Библиотека пакетов: где игрались и кто мог их слышать."""
+    user = current_user()
+    query = (request.args.get("q") or "").strip()
+    conn = get_db_connection()
+    try:
+        package_library.ensure_library(conn)
+        conn.commit()
+        items = package_library.library_rows(
+            conn, None if is_admin(user) else user["userid"], query or None)
+        pending = package_library.pending_links(conn) if is_admin(user) else 0
+    finally:
+        conn.close()
+    return render_template(
+        "packages.html", items=items, query=query, pending=pending, me=user,
+        title="Библиотека пакетов",
+    )
+
+
+@app.route('/packages/<int:libraryid>', subdomain="svoyak")
+@login_required
+def PackagePage(libraryid):
+    """Пакет и вся его история: копии по комнатам, бои, темы, слышавшие."""
+    user = current_user()
+    mode = request.args.get("mode") or package_library.EXPOSURE_HALL
+    if mode not in package_library.EXPOSURE_MODES:
+        mode = package_library.EXPOSURE_HALL
+    conn = get_db_connection()
+    try:
+        package_library.ensure_library(conn)
+        conn.commit()
+        access = package_library_access(conn, libraryid, user)
+        if access is None:
+            abort(403)
+        entry = conn.execute(
+            "SELECT libraryid, name, ownerid, hash, created_at FROM package_library "
+            "WHERE libraryid = ?", (libraryid,)
+        ).fetchone()
+        copies = package_library.library_copies(conn, libraryid)
+        usage = package_library.library_usage(conn, libraryid, mode)
+        listeners = package_library.library_listeners(conn, libraryid, mode)
+        themes = package_library.theme_history(conn, libraryid, mode)
+        similar = package_library.similar_libraries(conn, libraryid) if access == "admin" else []
+        # Куда можно положить копию: комнаты, которыми человек управляет.
+        if is_admin(user):
+            rooms = [dict(row) for row in conn.execute(
+                "SELECT roomid, date FROM activerooms ORDER BY roomid DESC LIMIT 200")]
+        else:
+            rooms = [dict(row) for row in conn.execute(
+                "SELECT roomid, date FROM activerooms WHERE ownerid = ? "
+                "ORDER BY roomid DESC LIMIT 200", (user["userid"],))]
+    finally:
+        conn.close()
+    return render_template(
+        "package.html", entry=entry, copies=copies, usage=usage, listeners=listeners,
+        themes=themes, similar=similar, mode=mode, access=access, rooms=rooms,
+        me=user, title="Пакет «%s»" % (entry["name"] if entry else ""),
+    )
+
+
+@app.route('/api/packages/library/<int:libraryid>/take', subdomain="svoyak", methods=["POST"])
+@login_required
+def PackageTakeToRoom(libraryid):
+    """Кладёт копию пакета в комнату — дальше он виден в пульте этой комнаты."""
+    user = current_user()
+    data = request.get_json(silent=True) or {}
+    try:
+        roomid = int(data.get("roomid"))
+    except (TypeError, ValueError):
+        return json.dumps({"status": "error", "message": "Не указана комната"},
+                          ensure_ascii=False), 400
+    if not can_manage_room(roomid, user):
+        return json.dumps({"status": "error", "message": "Нет прав на эту комнату"},
+                          ensure_ascii=False), 403
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        package_library.ensure_library(conn)
+        source = conn.execute(
+            "SELECT name, data FROM packages WHERE libraryid = ? ORDER BY packageid DESC LIMIT 1",
+            (libraryid,),
+        ).fetchone()
+        if source is None:
+            conn.execute("ROLLBACK")
+            return json.dumps({"status": "error", "message": "Пакета нет"},
+                              ensure_ascii=False), 404
+        cursor = conn.execute(
+            "INSERT INTO packages (roomid, name, data, libraryid) VALUES (?, ?, ?, ?)",
+            (roomid, source["name"], source["data"], libraryid),
+        )
+        packageid = cursor.lastrowid
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+    return json.dumps({"status": "ok", "packageid": packageid, "roomid": roomid},
+                      ensure_ascii=False)
+
+
+@app.route('/api/packages/library/<int:libraryid>/merge', subdomain="svoyak", methods=["POST"])
+@api_admin_required
+def PackageMerge(libraryid):
+    """Администратор подтверждает: это тот же пакет."""
+    data = request.get_json(silent=True) or {}
+    try:
+        other = int(data.get("other"))
+    except (TypeError, ValueError):
+        return json.dumps({"status": "error", "message": "Не указан пакет"},
+                          ensure_ascii=False), 400
+    user = current_user()
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        package_library.ensure_library(conn)
+        moved = package_library.merge_libraries(
+            conn, libraryid, other, "%s (%s)" % (user["name"], user["login"]))
+        conn.execute("COMMIT")
+    except package_library.LibraryError as error:
+        conn.execute("ROLLBACK")
+        return json.dumps({"status": "error", "message": str(error)},
+                          ensure_ascii=False), 400
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+    return json.dumps({"status": "ok", "moved": moved}, ensure_ascii=False)
+
+
+@app.route('/api/packages/library/<int:libraryid>/reject', subdomain="svoyak", methods=["POST"])
+@api_admin_required
+def PackageReject(libraryid):
+    """Администратор говорит: нет, это разные пакеты."""
+    data = request.get_json(silent=True) or {}
+    try:
+        other = int(data.get("other"))
+    except (TypeError, ValueError):
+        return json.dumps({"status": "error", "message": "Не указан пакет"},
+                          ensure_ascii=False), 400
+    user = current_user()
+    conn = get_db_connection()
+    try:
+        package_library.ensure_library(conn)
+        package_library.reject_link(
+            conn, libraryid, other, "%s (%s)" % (user["name"], user["login"]))
+        conn.commit()
+    finally:
+        conn.close()
+    return json.dumps({"status": "ok"}, ensure_ascii=False)
 
 
 def read_cfg():

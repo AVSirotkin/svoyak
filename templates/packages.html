@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="mb-3">
+    <div class="text-muted small">Пакеты</div>
+    <h2 class="mb-1">Библиотека пакетов</h2>
+    <div class="text-muted small">
+        Один пакет может играться в разных комнатах и в разные дни. Здесь видно,
+        в каких боях игрались его темы и кто мог их слышать.
+    </div>
+</div>
+
+{% if pending %}
+<div class="alert alert-warning d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <span>Похожих пар пакетов, которые ждут вашего решения: {{ pending }}.</span>
+    <span class="small">Откройте пакет — там будет блок «Похожие пакеты».</span>
+</div>
+{% endif %}
+
+<form class="d-flex gap-2 mb-3" method="get" action="/packages">
+    <input class="form-control form-control-sm" style="max-width: 22rem" type="search"
+           name="q" value="{{ query }}" placeholder="название пакета">
+    <button class="btn btn-sm btn-outline-secondary" type="submit">Найти</button>
+    {% if query %}<a class="btn btn-sm btn-link" href="/packages">сбросить</a>{% endif %}
+</form>
+
+{% if items %}
+<div class="table-responsive">
+    <table class="table table-sm table-hover align-middle">
+        <thead>
+            <tr>
+                <th>Пакет</th>
+                <th class="text-end">Тем</th>
+                <th class="text-end">Копий</th>
+                <th class="text-end">Комнат</th>
+                <th class="text-end">Боёв</th>
+                <th>Обновлён</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items %}
+            <tr>
+                <td><a href="/packages/{{ item.libraryid }}">{{ item.name or 'без названия' }}</a></td>
+                <td class="text-end">{{ item.topics }}</td>
+                <td class="text-end">{{ item.copies }}</td>
+                <td class="text-end">{{ item.rooms }}</td>
+                <td class="text-end">
+                    {% if item.games %}<a href="/packages/{{ item.libraryid }}#games">{{ item.games }}</a>
+                    {% else %}0{% endif %}
+                </td>
+                <td class="small text-muted">{{ item.updated }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="alert alert-secondary">
+    {% if query %}По запросу «{{ query }}» ничего не нашлось.
+    {% else %}Пакетов пока нет: они появляются, когда ведущий загружает их в пульте комнаты.{% endif %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function init_page() {}
+</script>
+{% endblock %}
