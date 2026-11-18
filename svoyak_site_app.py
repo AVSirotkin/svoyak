@@ -1689,6 +1689,7 @@ def PlanQuestionsPage(roomid):
         try:
             package_library.ensure_library(conn)
             conn.commit()
+            played = package_library.played_themes(conn)
             for package in packages:
                 if not package.get("libraryid"):
                     continue
@@ -1699,7 +1700,7 @@ def PlanQuestionsPage(roomid):
                 if row is None:
                     continue
                 theme_use[str(package["packageid"])] = package_library.theme_use_by_index(
-                    conn, row["data"])
+                    conn, row["data"], played=played)
         except sqlite3.Error:
             theme_use = {}
     finally:

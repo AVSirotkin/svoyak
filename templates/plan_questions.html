@@ -129,12 +129,26 @@
         list.innerHTML = topics.map((topic, index) => {
             // Пометка стоит на теме, а не на её названии: темы с одинаковыми
             // названиями, но разными вопросами — разные темы.
-            const places = usage[index];
-            const mark = places && places.length
-                ? `<span class="badge bg-warning text-dark ms-1"
-                         title="уже игралась: ${places.join('; ')}">уже игралась</span>
-                   <span class="text-muted small">${places.join('; ')}</span>`
-                : '';
+            const entry = usage[index] || {};
+            const places = entry.exact || [];
+            const near = entry.similar || [];
+            let mark = '';
+            if (places.length) {
+                mark += `<span class="badge bg-warning text-dark ms-1"
+                                title="уже игралась: ${places.join('; ')}">уже игралась</span>
+                         <span class="text-muted small">${places.join('; ')}</span>`;
+            }
+            if (near.length) {
+                const where = near.map((item) => {
+                    const how = item.matched === item.total
+                        ? 'текст вопросов поправлен'
+                        : 'совпало ' + item.matched + ' из ' + item.total + ' вопр.';
+                    return `${item.place} (${how})`;
+                });
+                mark += `<span class="badge bg-warning text-dark ms-1"
+                                title="похожая тема игралась: ${where.join('; ')}">похожая тема</span>
+                         <span class="text-muted small">${where.join('; ')}</span>`;
+            }
             return `
             <label class="theme-item">
                 <input class="form-check-input me-2 theme-check" type="checkbox" value="${index}"
@@ -194,17 +208,31 @@
             const topics = await loadPackage(select.value).catch(() => []);
             const usage = THEME_USE[select.value] || [];
             const repeated = [];
+            const near = [];
             themes.forEach((index) => {
-                const places = usage[index];
+                const entry = usage[index] || {};
                 const topic = topics[index];
-                if (places && places.length) {
-                    repeated.push((topic ? topic.topic : 'тема ' + (index + 1)) +
-                                  ' (' + places.join('; ') + ')');
+                const name = topic ? topic.topic : 'тема ' + (index + 1);
+                if (entry.exact && entry.exact.length) {
+                    repeated.push(name + ' (' + entry.exact.join('; ') + ')');
                 }
+                (entry.similar || []).forEach((item) => {
+                    const how = item.matched === item.total
+                        ? 'текст вопросов поправлен'
+                        : 'совпало ' + item.matched + ' из ' + item.total;
+                    near.push(name + ' — ' + item.place + ' (' + how + ')');
+                });
             });
+            let question = '';
             if (repeated.length) {
-                const question = 'Эти темы уже игрались:\n' + repeated.join('\n') +
-                                 '\n\nВсё равно поставить их в этот бой?';
+                question += 'Эти темы уже игрались:\n' + repeated.join('\n') + '\n\n';
+            }
+            if (near.length) {
+                question += 'Похожие темы уже игрались (текст вопросов поправлен):\n' +
+                            near.join('\n') + '\n\n';
+            }
+            if (question) {
+                question += 'Всё равно поставить их в этот бой?';
                 if (!confirm(question)) {
                     return;
                 }

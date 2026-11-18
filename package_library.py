@@ -11,8 +11,11 @@
 """
 
 import datetime
+import difflib
 import hashlib
 import json
+import math
+import re
 import sqlite3
 import time as _time
 
@@ -25,6 +28,13 @@ EXPOSURE_MODES = (EXPOSURE_HALL, EXPOSURE_GAME)
 # времени после конца боя относится к тому бою. Дольше — считаем, что это уже
 # другая партия (например, следующий день турнира).
 LATE_ENTRY_HOURS = 12
+
+# Два вопроса считаем одним и тем же, если тексты совпадают настолько (опечатки,
+# перестановка слов, замена пары слов). Ответы не сравниваются.
+FUZZY_RATIO = 0.8
+
+# Тема та же, если совпало столько её вопросов (5 вопросов → нужно 4).
+SAME_THEME_SHARE = 0.7
 
 MONTHS = {
     "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
@@ -92,17 +102,31 @@ def package_topics(data):
     return topics if isinstance(topics, list) else []
 
 
-def theme_question_texts(theme):
-    """Тексты вопросов одной темы в нормальном виде."""
-    texts = set()
+def normalize_text(text):
+    """Текст вопроса для сравнения: без регистра, знаков и лишних пробелов."""
+    if not text:
+        return ""
+    text = str(text).lower().replace("ё", "е")
+    text = re.sub(r"[^\w]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def theme_questions(theme):
+    """Тексты вопросов темы по порядку, в нормальном виде."""
+    texts = []
     if not isinstance(theme, dict):
         return texts
     for question in theme.get("questions") or []:
         if isinstance(question, dict):
-            text = (question.get("text") or "").strip().lower()
+            text = normalize_text(question.get("text"))
             if text:
-                texts.add(" ".join(text.split()))
+                texts.append(text)
     return texts
+
+
+def theme_question_texts(theme):
+    """Тексты вопросов одной темы (набор)."""
+    return set(theme_questions(theme))
 
 
 def theme_signature(theme):
@@ -118,6 +142,71 @@ def theme_signature(theme):
             return None
         return "title:" + " ".join(title.split()).lower()
     return hashlib.sha1("\n".join(sorted(texts)).encode("utf-8")).hexdigest()
+
+
+def question_similarity(one, two):
+    """Насколько похожи два вопроса: 1.0 — тот же текст, 0.0 — совсем разный.
+
+    Ответы не участвуют: сравниваются только тексты вопросов.
+    """
+    if not one or not two:
+        return 0.0
+    if one == two:
+        return 1.0
+    left, right = one.split(), two.split()
+    # Быстрый отсев по словам: у разных вопросов мало общих слов.
+    left_words, right_words = set(left), set(right)
+    shared = left_words & right_words
+    union = left_words | right_words
+    if not shared or len(shared) < 0.5 * len(union):
+        return 0.0
+    longest = max(len(one), len(two))
+    if abs(len(one) - len(two)) > max(24, longest // 2):
+        return 0.0
+    matcher = difflib.SequenceMatcher(None, one, two)
+    # quick_ratio — верхняя оценка: если она ниже порога, точную не считаем.
+    if matcher.quick_ratio() < FUZZY_RATIO:
+        return 0.0
+    return matcher.ratio()
+
+
+def theme_vocabulary(theme):
+    """Слова всех вопросов темы — для быстрого отсева разных тем."""
+    words = set()
+    for text in theme_questions(theme):
+        words.update(text.split())
+    return words
+
+
+def theme_match(one, two):
+    """Сравнение двух тем по вопросам: сколько вопросов совпало (с точностью до правок)."""
+    left, right = theme_questions(one), theme_questions(two)
+    if not left or not right:
+        return {"exact": False, "matched": 0, "total": 0}
+    exact = sorted(left) == sorted(right)
+    used, matched = set(), 0
+    for text in left:
+        best, best_index = 0.0, None
+        for index, other in enumerate(right):
+            if index in used:
+                continue
+            score = question_similarity(text, other)
+            if score > best:
+                best, best_index = score, index
+        if best_index is not None and best >= FUZZY_RATIO:
+            used.add(best_index)
+            matched += 1
+    return {"exact": exact, "matched": matched, "total": max(len(left), len(right))}
+
+
+def same_theme(match):
+    """Одна ли это тема: полностью та же или с небольшими правками текста."""
+    if match["total"] <= 0:
+        return False
+    if match["exact"]:
+        return True
+    need = max(2, math.ceil(match["total"] * SAME_THEME_SHARE))
+    return match["matched"] >= need
 
 
 def theme_title(theme):
@@ -516,6 +605,40 @@ def library_usage(conn, libraryid, mode=EXPOSURE_HALL):
     return usage
 
 
+def place_name(roomid, gameindex):
+    return "комната %s, бой %s" % (roomid, gameindex)
+
+
+def played_themes(conn):
+    """Все темы, которые раскладывались по боям: где, что и с какой подписью."""
+    items = []
+    rows = conn.execute("SELECT roomid, gameindex, payload FROM game_questions").fetchall()
+    for row in rows:
+        try:
+            payload = json.loads(row[2] or "{}")
+        except ValueError:
+            continue
+        for theme in payload.get("themes") or []:
+            signature = theme_signature(theme)
+            if signature is None:
+                continue
+            items.append({
+                "place": place_name(row[0], row[1]),
+                "roomid": row[0],
+                "gameindex": row[1],
+                "theme": theme,
+                "title": theme_title(theme),
+                "signature": signature,
+                "observed": question_texts_of(theme),
+                "words": frozenset(theme_vocabulary(theme)),
+            })
+    return items
+
+
+def question_texts_of(theme):
+    return tuple(theme_questions(theme))
+
+
 def theme_usage(conn, libraryid=None):
     """{подпись темы: {"title": …, "places": [...]}} — где тема уже игралась.
 
@@ -524,33 +647,72 @@ def theme_usage(conn, libraryid=None):
     она уже засвечена. libraryid оставлен для совместимости и больше не сужает.
     """
     usage = {}
-    rows = conn.execute(
-        "SELECT gq.roomid, gq.gameindex, gq.payload FROM game_questions gq"
-    ).fetchall()
-    for row in rows:
-        try:
-            payload = json.loads(row[2] or "{}")
-        except ValueError:
-            continue
-        place = "комната %s, бой %s" % (row[0], row[1])
-        for theme in payload.get("themes") or []:
-            signature = theme_signature(theme)
-            if signature is None:
-                continue
-            item = usage.setdefault(signature, {"title": theme_title(theme), "places": []})
-            if place not in item["places"]:
-                item["places"].append(place)
+    for item in played_themes(conn):
+        entry = usage.setdefault(item["signature"],
+                                 {"title": item["title"], "places": []})
+        if item["place"] not in entry["places"]:
+            entry["places"].append(item["place"])
     return usage
 
 
-def theme_use_by_index(conn, data, libraryid=None):
-    """Где игралась каждая тема пакета — по порядку тем в пакете."""
-    usage = theme_usage(conn)
+def similar_plays(theme, played, skip=()):
+    """Где игрались темы, отличающиеся от этой только правками текста."""
+    mine = theme_questions(theme)
+    if not mine:
+        return []
+    found = []
+    seen_places = set()
+    mine_words = frozenset(theme_vocabulary(theme))
+    # Одну и ту же тему не сравниваем по второму разу: группируем по подписи.
+    unique = {}
+    for item in played:
+        unique.setdefault(item["signature"], []).append(item)
+    for items in unique.values():
+        first = items[0]
+        theirs = first.get("observed") or question_texts_of(first["theme"])
+        # Быстрый отсев: темы заметно разной длины не бывают одной темой.
+        if abs(len(mine) - len(theirs)) > max(1, len(mine) // 3):
+            continue
+        words = first.get("words") or frozenset(theme_vocabulary(first["theme"]))
+        if len(mine_words & words) < 0.25 * max(1, min(len(mine_words), len(words))):
+            continue
+        match = theme_match(theme, first["theme"])
+        if not same_theme(match) or match["exact"]:
+            continue
+        for item in items:
+            if item["place"] in skip or item["place"] in seen_places:
+                continue
+            seen_places.add(item["place"])
+            found.append({
+                "place": item["place"],
+                "roomid": item["roomid"],
+                "gameindex": item["gameindex"],
+                "title": item["title"],
+                "matched": match["matched"],
+                "total": match["total"],
+            })
+    return found
+
+
+def theme_use_by_index(conn, data, libraryid=None, played=None):
+    """Где игралась каждая тема пакета — по порядку тем в пакете.
+
+    Для каждой темы: точные повторы и похожие темы, отличающиеся правками.
+    """
+    if played is None:
+        played = played_themes(conn)
+    usage = {}
+    for item in played:
+        usage.setdefault(item["signature"], []).append(item)
     result = []
     for theme in package_topics(data):
         signature = theme_signature(theme)
-        item = usage.get(signature) if signature else None
-        result.append(list(item["places"]) if item else [])
+        exact = []
+        for item in (usage.get(signature) or []) if signature else []:
+            if item["place"] not in exact:
+                exact.append(item["place"])
+        similar = similar_plays(theme, played, skip=exact)
+        result.append({"exact": exact, "similar": similar})
     return result
 
 
@@ -582,6 +744,7 @@ def package_themes(conn, libraryid):
 
 def theme_history(conn, libraryid, mode=EXPOSURE_HALL):
     """История по темам пакета: где тема игралась и кто мог её слышать."""
+    package = {}
     order, seen = [], set()
     for theme in package_themes(conn, libraryid):
         signature = theme_signature(theme)
@@ -590,6 +753,7 @@ def theme_history(conn, libraryid, mode=EXPOSURE_HALL):
             continue
         seen.add(key)
         order.append((theme_title(theme), signature))
+        package[signature] = theme
     blocks = {}
     for item in library_usage(conn, libraryid, mode):
         for entry in item.get("theme_items") or []:
@@ -606,6 +770,7 @@ def theme_history(conn, libraryid, mode=EXPOSURE_HALL):
     for title, _ in order:
         titles[title] = titles.get(title, 0) + 1
     everywhere = theme_usage(conn)
+    played = played_themes(conn)
     themes = []
     for title, signature in order:
         key = signature or ("title", title)
@@ -613,17 +778,22 @@ def theme_history(conn, libraryid, mode=EXPOSURE_HALL):
         heard = set()
         for block in used:
             heard.update(block["listeners"])
-        known = {("комната %s, бой %s" % (block["roomid"], block["gameindex"])) for block in used}
+        known = {place_name(block["roomid"], block["gameindex"]) for block in used}
         elsewhere = []
         if signature:
             for place in (everywhere.get(signature) or {}).get("places", []):
                 if place not in known:
                     elsewhere.append(place)
+        similar = []
+        theme = package.get(signature)
+        if theme is not None:
+            similar = similar_plays(theme, played, skip=known | set(elsewhere))
         themes.append({
             "topic": title,
             "signature": signature,
             "used": used,
             "elsewhere": elsewhere,
+            "similar": similar,
             "listeners": sorted(heard),
             # Одноимённые темы с разными вопросами — разные темы.
             "same_title": titles.get(title, 0) > 1,

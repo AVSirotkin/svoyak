@@ -142,6 +142,16 @@
                         {{ theme.elsewhere | join('; ') }}
                     </div>
                     {% endif %}
+                    {% if theme.similar %}
+                    <div class="small text-muted">
+                        похожая тема с исправленным текстом игралась:
+                        {% for item in theme.similar %}
+                        комната <a href="/plan/{{ item.roomid }}">{{ item.roomid }}</a>,
+                        бой {{ item.gameindex }} —
+                        {% if item.matched == item.total %}текст вопросов поправлен{% else %}совпало {{ item.matched }} из {{ item.total }} вопросов{% endif %}{% if not loop.last %}; {% endif %}
+                        {% endfor %}
+                    </div>
+                    {% endif %}
                     {% if theme.used %}
                     <div class="small text-muted">
                         {% for block in theme.used %}
@@ -153,7 +163,9 @@
                         {% if theme.listeners %}<span class="text-muted">({{ theme.listeners | join(', ') }})</span>{% endif %}
                     </div>
                     {% else %}
+                    {% if not theme.similar %}
                     <div class="small text-muted">Ещё не игралась.</div>
+                    {% endif %}
                     {% endif %}
                 </div>
                 {% else %}

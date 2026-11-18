@@ -113,8 +113,8 @@ class LibraryGroupingTests(unittest.TestCase):
             "SELECT libraryid FROM packages WHERE packageid = ?", (first,)).fetchone()[0]
         places = package_library.theme_use_by_index(self.conn, data)
         # Темы идут в порядке пакета: Кино, Музыка.
-        self.assertEqual(places[0], ["комната 9105, бой 1", "комната 9106, бой 2"])
-        self.assertEqual(places[1], [])
+        self.assertEqual(places[0]["exact"], ["комната 9105, бой 1", "комната 9106, бой 2"])
+        self.assertEqual(places[1]["exact"], [])
 
 
 class ListenerTests(unittest.TestCase):
@@ -396,8 +396,8 @@ class ThemeIdentityTests(unittest.TestCase):
             "INSERT INTO game_questions (roomid, gameindex, packageid, payload) VALUES (?, ?, ?, ?)",
             (9600, 1, packageid, json.dumps({"themes": [second]}, ensure_ascii=False)))
         places = package_library.theme_use_by_index(self.conn, data)
-        self.assertEqual(places[0], [])
-        self.assertEqual(places[1], ["комната 9600, бой 1"])
+        self.assertEqual(places[0]["exact"], [])
+        self.assertEqual(places[1]["exact"], ["комната 9600, бой 1"])
 
         history = package_library.theme_history(self.conn, libraryid)
         self.assertEqual(len(history), 2)
@@ -421,8 +421,8 @@ class ThemeIdentityTests(unittest.TestCase):
             (9601, 1, other, json.dumps({"themes": [self._theme("Поехали", [
                 "вопрос про Гагарина"])]}, ensure_ascii=False)))
         places = package_library.theme_use_by_index(self.conn, data)
-        self.assertEqual(places[0], ["комната 9601, бой 1"])
-        self.assertEqual(places[1], ["комната 9601, бой 1"])
+        self.assertEqual(places[0]["exact"], ["комната 9601, бой 1"])
+        self.assertEqual(places[1]["exact"], ["комната 9601, бой 1"])
 
     def test_signature_ignores_order_and_case(self):
         one = package_library.theme_signature(self._theme("Кино", ["Вопрос А", "Вопрос Б"]))
@@ -430,6 +430,92 @@ class ThemeIdentityTests(unittest.TestCase):
         three = package_library.theme_signature(self._theme("Кино", ["вопрос а", "вопрос в"]))
         self.assertEqual(one, two)
         self.assertNotEqual(one, three)
+
+
+class FuzzyThemeTests(unittest.TestCase):
+    """Правки текста (опечатки, замена пары слов) — та же тема, ответы не в счёт."""
+
+    def setUp(self):
+        self.conn = db()
+        self.addCleanup(self.conn.close)
+        self.conn.isolation_level = None
+        self.conn.execute("BEGIN IMMEDIATE")
+        self.addCleanup(self._rollback)
+
+    def _rollback(self):
+        try:
+            self.conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+
+    def _theme(self, title, texts, answer="ответ"):
+        return {"topic": title, "questions": [
+            {"value": 10 * (i + 1), "text": text, "answer": answer}
+            for i, text in enumerate(texts)]}
+
+    QUESTIONS = ["Кто первым полетел в космос и как звали его собаку",
+                 "Какая планета Солнечной системы самая большая",
+                 "Сколько спутников у Марса и как они называются",
+                 "Что такое чёрная дыра и почему она чёрная",
+                 "Как называется наша галактика и сколько в ней звёзд"]
+
+    def test_typo_keeps_theme_recognisable(self):
+        original = self._theme("Космос", self.QUESTIONS)
+        # Опечатка в одном вопросе и замена пары слов в другом.
+        edited = self._theme("Космос", self.QUESTIONS[:3] + [
+            "Что такое чёрная дырка и почему она тёмная",
+            "Как называетася наша галактика и сколько в ней звёзд"])
+        match = package_library.theme_match(original, edited)
+        self.assertFalse(match["exact"])
+        self.assertEqual(match["matched"], 5)
+        self.assertTrue(package_library.same_theme(match))
+
+    def test_replaced_word_still_same_question(self):
+        one = "Кто первым полетел в космос и как звали его собаку"
+        two = "Кто самым первым полетел в космос и как звали его собаку"
+        self.assertGreaterEqual(package_library.question_similarity(
+            package_library.normalize_text(one),
+            package_library.normalize_text(two)), package_library.FUZZY_RATIO)
+
+    def test_unrelated_questions_are_different_themes(self):
+        one = self._theme("Космос", self.QUESTIONS)
+        other = self._theme("Космос", [
+            "Кто написал «Войну и мир»",
+            "В каком году основали Санкт-Петербург",
+            "Сколько лет длилась Столетняя война",
+            "Какой химический элемент обозначают буквой Fe",
+            "Кто нарисовал «Джоконду»"])
+        match = package_library.theme_match(one, other)
+        self.assertFalse(package_library.same_theme(match))
+
+    def test_answers_do_not_affect_identity(self):
+        one = self._theme("Космос", self.QUESTIONS, answer="правильный ответ")
+        two = self._theme("Космос", self.QUESTIONS, answer="совсем другой ответ")
+        self.assertEqual(package_library.theme_signature(one),
+                         package_library.theme_signature(two))
+
+    def test_layout_marks_similar_theme(self):
+        cursor = self.conn.execute(
+            "INSERT INTO packages (roomid, name, data) VALUES (?, ?, ?)",
+            (9700, "Пакет", json.dumps({"topics": [self._theme("Космос", self.QUESTIONS)]},
+                                       ensure_ascii=False)))
+        packageid = cursor.lastrowid
+        package_library.ensure_library(self.conn)
+        package_library.link_package(self.conn, packageid)
+        # В другом бою та же тема с опечаткой в одном вопросе.
+        edited = self._theme("Космосъ", self.QUESTIONS[:4] + [
+            "Как называетася наша галактика и сколько в ней звёзд"])
+        self.conn.execute(
+            "INSERT INTO game_questions (roomid, gameindex, packageid, payload) "
+            "VALUES (?, ?, ?, ?)",
+            (9701, 2, packageid, json.dumps({"themes": [edited]}, ensure_ascii=False)))
+        data = json.loads(self.conn.execute(
+            "SELECT data FROM packages WHERE packageid = ?", (packageid,)).fetchone()[0])
+        places = package_library.theme_use_by_index(self.conn, data)
+        self.assertEqual(places[0]["exact"], [])
+        self.assertEqual(len(places[0]["similar"]), 1)
+        self.assertEqual(places[0]["similar"][0]["place"], "комната 9701, бой 2")
+        self.assertEqual(places[0]["similar"][0]["matched"], 5)
 
 
 class QuestionsPageTests(unittest.TestCase):
@@ -480,9 +566,12 @@ class QuestionsPageTests(unittest.TestCase):
         text = page.get_data(as_text=True)
         self.assertIn('THEME_USE', text)
         line = [row for row in text.splitlines() if 'const THEME_USE' in row][0]
-        # Пометка о сыгранной теме: место, где она уже игралась. У «Музыки» пусто.
-        self.assertIn('9500', line)
-        self.assertTrue(line.rstrip().endswith('[]]};'), line)
+        usage = json.loads(line.split('=', 1)[1].strip().rstrip(';'))
+        package_use = usage[str(packageid)]
+        # Первая тема («Кино») игралась, у второй («Музыка») пусто.
+        self.assertEqual(package_use[0]["exact"], ["комната 9500, бой 3"])
+        self.assertEqual(package_use[0]["similar"], [])
+        self.assertEqual(package_use[1], {"exact": [], "similar": []})
 
     def test_free_seating_room_gets_layout_page(self):
         # Комната 2030 — свободная посадка: сетки нет, бои идут по порядку.
