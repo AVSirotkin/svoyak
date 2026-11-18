@@ -1,0 +1,296 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .admin-table td, .admin-table th { vertical-align: middle; }
+    .admin-num { font-variant-numeric: tabular-nums; }
+    .admin-row-actions { white-space: nowrap; }
+    .admin-muted { color: #6c757d; }
+</style>
+
+<div class="mb-3">
+    <div class="text-muted small">Администратор сайта</div>
+    <h2 class="mb-1">Инструменты</h2>
+    <div class="text-muted small">
+        Удаление турниров вместе с резервной копией, перенос номера комнаты,
+        владельцы и роли пользователей.
+    </div>
+</div>
+
+<div class="card mb-4" id="rooms">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span class="fw-semibold">Турниры</span>
+        <form class="d-flex gap-2 align-items-center flex-wrap" method="get" action="/admin">
+            <input class="form-control form-control-sm" style="width: 14rem" type="search"
+                   name="q" value="{{ query }}" placeholder="номер, ведущий, площадка">
+            <select class="form-select form-select-sm" style="width: 11rem" name="state">
+                <option value="all" {% if state == 'all' %}selected{% endif %}>все</option>
+                <option value="active" {% if state == 'active' %}selected{% endif %}>идущие</option>
+                <option value="finished" {% if state == 'finished' %}selected{% endif %}>завершённые</option>
+            </select>
+            <button class="btn btn-sm btn-outline-secondary" type="submit">Показать</button>
+            {% if query or state != 'all' %}
+            <a class="btn btn-sm btn-link" href="/admin">сбросить</a>
+            {% endif %}
+        </form>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 admin-table">
+            <thead>
+                <tr>
+                    <th>№</th>
+                    <th>Дата</th>
+                    <th>Площадка</th>
+                    <th>Правила</th>
+                    <th>Ведущий</th>
+                    <th class="text-end">Игроков</th>
+                    <th class="text-end">Боёв</th>
+                    <th>Статус</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for room in rooms %}
+                <tr>
+                    <td class="admin-num"><a href="/plan/{{ room.roomid }}">{{ room.roomid }}</a></td>
+                    <td class="admin-num">{{ room.date }}</td>
+                    <td>{{ room.venuename or '—' }}</td>
+                    <td>{{ room.rule_name or '—' }}</td>
+                    <td>
+                        {% if room.owner %}{{ room.owner }}
+                        {% elif room.ownerid %}<span class="admin-muted">#{{ room.ownerid }}</span>
+                        {% else %}<span class="admin-muted">без владельца</span>{% endif %}
+                    </td>
+                    <td class="text-end admin-num">{{ room.players }}</td>
+                    <td class="text-end admin-num">{{ room.games }}</td>
+                    <td>
+                        {% if room.finished %}
+                        <span class="badge bg-secondary">завершён</span>
+                        {% else %}
+                        <span class="badge bg-success">идёт</span>
+                        {% endif %}
+                    </td>
+                    <td class="admin-row-actions text-end">
+                        <a class="btn btn-sm btn-outline-secondary" href="/plan/{{ room.roomid }}">Пульт</a>
+                        <button class="btn btn-sm btn-outline-secondary" type="button"
+                                onclick="renumberRoom({{ room.roomid }})">Номер…</button>
+                        <button class="btn btn-sm btn-outline-secondary" type="button"
+                                onclick="setOwner({{ room.roomid }}, {{ room.ownerid or 0 }})">Владелец…</button>
+                        <button class="btn btn-sm btn-outline-danger" type="button"
+                                onclick="deleteRoom({{ room.roomid }}, {{ room.games }})">Удалить…</button>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="9" class="text-muted">Ничего не нашлось.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="card-footer text-muted small">
+        Удаление сначала кладёт полную копию комнаты в <code>backups/rooms</code> рядом с базой,
+        затем освобождает номер. Восстановить можно ниже.
+    </div>
+</div>
+
+<div class="card mb-4" id="users">
+    <div class="card-header fw-semibold">Пользователи</div>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 admin-table">
+            <thead>
+                <tr>
+                    <th>Логин</th>
+                    <th>Имя</th>
+                    <th>Роль</th>
+                    <th>Создан</th>
+                    <th>Telegram</th>
+                    <th class="text-end">Комнат</th>
+                    <th class="text-end">Площадок</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for person in users %}
+                <tr>
+                    <td>{{ person.login }}{% if person.userid == me.userid %} <span class="admin-muted small">(вы)</span>{% endif %}</td>
+                    <td>{{ person.name }}</td>
+                    <td>
+                        <select class="form-select form-select-sm" style="width: 11rem"
+                                onchange="setRole({{ person.userid }}, this)"
+                                {% if person.userid == me.userid %}disabled title="себе роль не меняем"{% endif %}>
+                            <option value="ведущий" {% if person.role == 'ведущий' %}selected{% endif %}>ведущий</option>
+                            <option value="администратор" {% if person.role == 'администратор' %}selected{% endif %}>администратор</option>
+                        </select>
+                    </td>
+                    <td class="admin-num small">{{ (person.created_at or '')[:16] }}</td>
+                    <td class="small">
+                        {% if person.telegram_username %}@{{ person.telegram_username }}
+                        {% else %}<span class="admin-muted">не привязан</span>{% endif %}
+                    </td>
+                    <td class="text-end admin-num">{{ person.rooms }}</td>
+                    <td class="text-end admin-num">{{ person.areas }}</td>
+                    <td class="admin-row-actions text-end">
+                        {% if person.userid != me.userid %}
+                        <button class="btn btn-sm btn-outline-danger" type="button"
+                                onclick="deleteUser({{ person.userid }}, '{{ person.login }}', {{ person.rooms }})">Удалить…</button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="card-footer text-muted small">
+        Удалённый пользователь пропадает из списков, а его комнаты остаются без владельца.
+        Последнего администратора удалить или разжаловать нельзя.
+    </div>
+</div>
+
+<div class="card mb-4" id="backups">
+    <div class="card-header fw-semibold">Удалённые комнаты (резервные копии)</div>
+    {% if backups %}
+    <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 admin-table">
+            <thead>
+                <tr>
+                    <th>Когда</th>
+                    <th>Комната</th>
+                    <th>Кто удалил</th>
+                    <th>Файл</th>
+                    <th class="text-end">Размер</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in backups %}
+                <tr>
+                    <td class="admin-num small">{{ item.modified }}</td>
+                    <td class="admin-num">#{{ item.roomid }}</td>
+                    <td class="small">{{ item.deleted_by or '—' }}</td>
+                    <td class="small"><code>{{ item.name }}</code></td>
+                    <td class="text-end admin-num small">{{ (item.size / 1024) | round(1) }} КБ</td>
+                    <td class="admin-row-actions text-end">
+                        <a class="btn btn-sm btn-outline-secondary" href="/admin/backups/{{ item.name }}">Скачать</a>
+                        <button class="btn btn-sm btn-outline-primary" type="button"
+                                onclick="restoreRoom('{{ item.name }}', {{ item.roomid }})">Восстановить…</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="card-body text-muted small">Копий пока нет: они появляются при удалении комнат.</div>
+    {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function init_page() {}
+
+    async function postJson(url, body) {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+            body: JSON.stringify(body || {}),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            alert(data.message || 'Операция не выполнена');
+            return null;
+        }
+        return data;
+    }
+
+    async function deleteRoom(roomid, games) {
+        const line = games
+            ? 'В комнате записано боёв: ' + games + '.'
+            : 'Результатов в комнате нет.';
+        if (!confirm('Удалить комнату ' + roomid + '?\n' + line +
+                     '\nКопия сохранится в резервных копиях.')) {
+            return;
+        }
+        const typed = prompt('Наберите номер комнаты ' + roomid + ', чтобы подтвердить удаление:');
+        if (typed === null) {
+            return;
+        }
+        const data = await postJson('/api/admin/rooms/' + roomid + '/delete',
+                                    {confirm: typed.trim()});
+        if (data) {
+            alert('Комната ' + roomid + ' удалена. Копия: ' + data.backup);
+            document.location.reload();
+        }
+    }
+
+    async function renumberRoom(roomid) {
+        const typed = prompt('Новый номер для комнаты ' + roomid + ':');
+        if (typed === null) {
+            return;
+        }
+        const next = parseInt(typed.trim(), 10);
+        if (!next || next <= 0) {
+            alert('Нужен положительный номер');
+            return;
+        }
+        if (!confirm('Перенести комнату ' + roomid + ' на номер ' + next +
+                     '?\nСсылки на старый номер перестанут работать, пульты у ведущих придётся открыть заново.')) {
+            return;
+        }
+        const data = await postJson('/api/admin/rooms/' + roomid + '/renumber', {roomid: next});
+        if (data) {
+            document.location.href = '/admin#rooms';
+        }
+    }
+
+    async function setOwner(roomid, ownerid) {
+        const typed = prompt('Номер пользователя-владельца для комнаты ' + roomid +
+                             '\n(0 — снять владельца, комнату сможет открыть любой вошедший):',
+                             String(ownerid || 0));
+        if (typed === null) {
+            return;
+        }
+        const data = await postJson('/api/admin/rooms/' + roomid + '/owner',
+                                    {userid: parseInt(typed.trim(), 10) || 0});
+        if (data) {
+            document.location.reload();
+        }
+    }
+
+    async function setRole(userid, select) {
+        const data = await postJson('/api/admin/users/' + userid + '/role', {role: select.value});
+        if (!data) {
+            document.location.reload();
+        }
+    }
+
+    async function deleteUser(userid, login, rooms) {
+        const extra = rooms ? '\nУ ' + rooms + ' комнат(ы) не станет владельца.' : '';
+        if (!confirm('Удалить пользователя ' + login + '?' + extra)) {
+            return;
+        }
+        const data = await postJson('/api/admin/users/' + userid + '/delete', {});
+        if (data) {
+            document.location.reload();
+        }
+    }
+
+    async function restoreRoom(name, roomid) {
+        const typed = prompt('Под каким номером восстановить комнату ' + (roomid || '') + '?\n' +
+                             'Пусто — исходный номер, если он свободен.', roomid ? String(roomid) : '');
+        if (typed === null) {
+            return;
+        }
+        const value = typed.trim();
+        const body = {name: name};
+        const number = parseInt(value, 10);
+        if (value && number > 0) {
+            body.roomid = number;
+        }
+        const data = await postJson('/api/admin/rooms/restore', body);
+        if (data) {
+            document.location.href = '/plan/' + data.roomid;
+        }
+    }
+</script>
+{% endblock %}

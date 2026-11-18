@@ -12,6 +12,7 @@
       <div class="d-flex justify-content-end align-items-center gap-2 small text-muted pt-2">
         {% if current_user %}
           <a href="/my">Мои площадки</a>
+          {% if current_user.role == 'администратор' %}<a href="/admin">Админка</a>{% endif %}
           <a href="/profile">{{ current_user.name }}</a>
           <span>· {{ current_user.role }}</span>
           <form method="post" action="/logout" class="m-0">

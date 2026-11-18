@@ -1,7 +1,7 @@
 import os
 import sqlite3
 import functools
-from flask import Flask, render_template, request, redirect, abort, session, g, send_from_directory
+from flask import Flask, render_template, request, redirect, abort, session, g, send_from_directory, send_file
 import datetime
 import time
 import json
@@ -10,6 +10,7 @@ from shuffle import *
 from player_state import player_state
 import tournament_plan
 import telegram_link
+import site_admin
 import secrets
 import pandas as pd
 from statistics import median
@@ -288,6 +289,41 @@ def api_room_access_required(view):
         if not can_manage_room(kwargs.get("roomid"), user):
             return json.dumps(
                 {"status": "error", "message": "Нет прав на эту комнату"}, ensure_ascii=False
+            ), 403
+        return view(*args, **kwargs)
+
+    return wrapper
+
+
+def admin_required(view):
+    """Панель администратора сайта: только роль «администратор»."""
+
+    @functools.wraps(view)
+    def wrapper(*args, **kwargs):
+        user = current_user()
+        if user is None:
+            return redirect("/login?next=" + request.path)
+        if not is_admin(user):
+            abort(403)
+        return view(*args, **kwargs)
+
+    return wrapper
+
+
+def api_admin_required(view):
+    """То же для JSON-ручек: 401 гостю и 403 не администратору."""
+
+    @functools.wraps(view)
+    def wrapper(*args, **kwargs):
+        user = current_user()
+        if user is None:
+            return json.dumps(
+                {"status": "error", "needs_login": True, "message": "Нужно войти в систему"},
+                ensure_ascii=False,
+            ), 401
+        if not is_admin(user):
+            return json.dumps(
+                {"status": "error", "message": "Только администратор сайта"}, ensure_ascii=False
             ), 403
         return view(*args, **kwargs)
 
@@ -2851,6 +2887,316 @@ def InitRoom(roomid):
         rules.append(item)
     return render_template("InitRoom.html", roomid = roomid, venues = venues,
                            rules = rules, title = "Инициализация комнаты")
+
+
+def _admin_error(message, code=400):
+    return json.dumps({"status": "error", "message": message}, ensure_ascii=False), code
+
+
+def _admin_count(conn):
+    row = conn.execute(
+        "SELECT COUNT(*) FROM users WHERE role = ?", (ROLE_ADMIN,)
+    ).fetchone()
+    return int(row[0])
+
+
+@app.route('/admin', subdomain="svoyak")
+@admin_required
+def AdminPage():
+    """Панель администратора сайта: турниры, пользователи, резервные копии."""
+    ensure_auth_tables()
+    ensure_tournament_tables()
+    query = (request.args.get("q") or "").strip()
+    state = request.args.get("state") or "all"
+    if state not in ("all", "active", "finished"):
+        state = "all"
+    conn = get_db_connection()
+    try:
+        sql = (
+            "SELECT r.roomid, r.date, r.finished, r.ownerid, u.name AS owner, "
+            "u.login AS owner_login, v.venuename, "
+            "(SELECT name FROM rules WHERE roomid = r.roomid) AS rule_name, "
+            "(SELECT COUNT(*) FROM activeplayers WHERE roomid = r.roomid "
+            " AND trim(name) <> '') AS players, "
+            "(SELECT COUNT(DISTINCT gameindex) FROM results WHERE roomid = r.roomid) AS games "
+            "FROM activerooms r "
+            "LEFT JOIN users u ON u.userid = r.ownerid "
+            "LEFT JOIN venues v ON v.venueid = r.venueid "
+        )
+        where, params = [], []
+        if state == "active":
+            where.append("r.finished = 0")
+        elif state == "finished":
+            where.append("r.finished = 1")
+        if query:
+            where.append("(CAST(r.roomid AS TEXT) LIKE ? OR u.name LIKE ? "
+                         "OR u.login LIKE ? OR v.venuename LIKE ?)")
+            like = "%" + query + "%"
+            params.extend([like, like, like, like])
+        if where:
+            sql += "WHERE " + " AND ".join(where) + " "
+        sql += "ORDER BY r.roomid DESC LIMIT 300"
+        rooms = conn.execute(sql, params).fetchall()
+        users = conn.execute(
+            "SELECT u.userid, u.login, u.name, u.role, u.created_at, u.telegram_username, "
+            "(SELECT COUNT(*) FROM activerooms WHERE ownerid = u.userid) AS rooms, "
+            "(SELECT COUNT(*) FROM area_hosts WHERE userid = u.userid) AS areas "
+            "FROM users u ORDER BY u.userid"
+        ).fetchall()
+    finally:
+        conn.close()
+    return render_template(
+        "admin.html",
+        rooms=rooms,
+        users=users,
+        backups=site_admin.list_backups(DB_PATH),
+        query=query,
+        state=state,
+        me=current_user(),
+        next_roomid_template=None,
+        title="Администратор сайта",
+    )
+
+
+@app.route('/api/admin/rooms/<int:roomid>/delete', subdomain="svoyak", methods=["POST"])
+@api_admin_required
+def AdminDeleteRoom(roomid):
+    """Удаляет комнату, но сначала кладёт её полную копию рядом с базой."""
+    data = request.get_json(silent=True) or {}
+    if str(data.get("confirm") or "").strip() != str(roomid):
+        return _admin_error("Для удаления наберите номер комнаты")
+    user = current_user()
+    author = f"{user['name']} ({user['login']})"
+    conn = get_tx_connection()
+    dump = None
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        dump = site_admin.room_dump(conn, roomid)
+        # Копию пишем до удаления: база и диск не переживут падение посередине.
+        path = site_admin.save_dump(DB_PATH, dump, author)
+        removed = site_admin.delete_room(conn, roomid)
+        conn.execute("COMMIT")
+    except site_admin.AdminError as error:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        return _admin_error(str(error), 404)
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+    # Кэш весов старой комнаты больше не нужен.
+    game_states.pop(roomid, None)
+    return json.dumps({
+        "status": "ok",
+        "backup": os.path.basename(path),
+        "removed": removed,
+    }, ensure_ascii=False)
+
+
+@app.route('/api/admin/rooms/<int:roomid>/renumber', subdomain="svoyak", methods=["POST"])
+@api_admin_required
+def AdminRenumberRoom(roomid):
+    """Переносит комнату на другой номер вместе со всеми её записями."""
+    data = request.get_json(silent=True) or {}
+    try:
+        new_roomid = int(data.get("roomid"))
+    except (TypeError, ValueError):
+        return _admin_error("Нужен новый номер комнаты")
+    if new_roomid <= 0:
+        return _admin_error("Номер должен быть положительным")
+    user = current_user()
+    by = f"{user['name']} ({user['login']})"
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        moved = site_admin.renumber_room(conn, roomid, new_roomid)
+        log_game_events(
+            new_roomid, "room renumbered", {"from": roomid, "to": new_roomid, "by": by},
+            conn=conn,
+        )
+        conn.execute("COMMIT")
+    except site_admin.AdminError as error:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        return _admin_error(str(error))
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+    game_states.pop(roomid, None)
+    game_states.pop(new_roomid, None)
+    return json.dumps({"status": "ok", "roomid": new_roomid, "moved": moved}, ensure_ascii=False)
+
+
+@app.route('/api/admin/rooms/<int:roomid>/owner', subdomain="svoyak", methods=["POST"])
+@api_admin_required
+def AdminRoomOwner(roomid):
+    """Передаёт комнату другому ведущему или снимает владельца."""
+    data = request.get_json(silent=True) or {}
+    userid = data.get("userid")
+    if userid in (None, "", 0, "0"):
+        ownerid = None
+    else:
+        try:
+            ownerid = int(userid)
+        except (TypeError, ValueError):
+            return _admin_error("Владелец должен быть числом")
+    conn = get_db_connection()
+    try:
+        room = conn.execute(
+            "SELECT roomid FROM activerooms WHERE roomid = ?", (roomid,)
+        ).fetchone()
+        if room is None:
+            return _admin_error(f"Комнаты {roomid} нет", 404)
+        if ownerid is not None:
+            person = conn.execute(
+                "SELECT userid FROM users WHERE userid = ?", (ownerid,)
+            ).fetchone()
+            if person is None:
+                return _admin_error(f"Пользователя {ownerid} нет")
+        conn.execute(
+            "UPDATE activerooms SET ownerid = ? WHERE roomid = ?", (ownerid, roomid)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return json.dumps({"status": "ok", "ownerid": ownerid}, ensure_ascii=False)
+
+
+@app.route('/admin/backups/<path:name>', subdomain="svoyak")
+@admin_required
+def AdminBackupFile(name):
+    """Скачать резервную копию удалённой комнаты."""
+    try:
+        path = site_admin.backup_path(DB_PATH, name)
+    except site_admin.AdminError as error:
+        abort(404, description=str(error))
+    return send_file(path, as_attachment=True, download_name=os.path.basename(path))
+
+
+@app.route('/api/admin/rooms/restore', subdomain="svoyak", methods=["POST"])
+@api_admin_required
+def AdminRestoreRoom():
+    """Возвращает комнату из резервной копии — под своим или новым номером."""
+    data = request.get_json(silent=True) or {}
+    name = str(data.get("name") or "").strip()
+    if not name:
+        return _admin_error("Не выбрана резервная копия")
+    try:
+        dump = site_admin.load_dump(site_admin.backup_path(DB_PATH, name))
+    except site_admin.AdminError as error:
+        return _admin_error(str(error), 404)
+    roomid = data.get("roomid")
+    if roomid in (None, ""):
+        target = None
+    else:
+        try:
+            target = int(roomid)
+        except (TypeError, ValueError):
+            return _admin_error("Номер комнаты должен быть числом")
+        if target <= 0:
+            return _admin_error("Номер должен быть положительным")
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        restored = site_admin.restore_room(conn, dump, target)
+        conn.execute("COMMIT")
+    except site_admin.AdminError as error:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        return _admin_error(str(error))
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+    game_states.pop(restored, None)
+    return json.dumps({"status": "ok", "roomid": restored}, ensure_ascii=False)
+
+
+@app.route('/api/admin/users/<int:userid>/role', subdomain="svoyak", methods=["POST"])
+@api_admin_required
+def AdminUserRole(userid):
+    """Меняет роль: ведущий или администратор."""
+    data = request.get_json(silent=True) or {}
+    role = str(data.get("role") or "").strip()
+    if role not in (ROLE_ADMIN, ROLE_HOST):
+        return _admin_error("Неизвестная роль")
+    me = current_user()
+    conn = get_db_connection()
+    try:
+        person = conn.execute(
+            "SELECT userid, role FROM users WHERE userid = ?", (userid,)
+        ).fetchone()
+        if person is None:
+            return _admin_error(f"Пользователя {userid} нет", 404)
+        if userid == me["userid"] and role != ROLE_ADMIN:
+            return _admin_error("Себя разжаловать нельзя")
+        if person["role"] == ROLE_ADMIN and role != ROLE_ADMIN and _admin_count(conn) <= 1:
+            return _admin_error("Это последний администратор")
+        conn.execute("UPDATE users SET role = ? WHERE userid = ?", (role, userid))
+        conn.commit()
+    finally:
+        conn.close()
+    return json.dumps({"status": "ok", "role": role}, ensure_ascii=False)
+
+
+@app.route('/api/admin/users/<int:userid>/delete', subdomain="svoyak", methods=["POST"])
+@api_admin_required
+def AdminDeleteUser(userid):
+    """Удаляет пользователя: его комнаты остаются, но становятся без владельца."""
+    me = current_user()
+    if userid == me["userid"]:
+        return _admin_error("Себя удалить нельзя")
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        person = conn.execute(
+            "SELECT userid, role, login FROM users WHERE userid = ?", (userid,)
+        ).fetchone()
+        if person is None:
+            conn.execute("ROLLBACK")
+            return _admin_error(f"Пользователя {userid} нет", 404)
+        if person["role"] == ROLE_ADMIN and _admin_count(conn) <= 1:
+            conn.execute("ROLLBACK")
+            return _admin_error("Это последний администратор")
+        freed = conn.execute(
+            "UPDATE activerooms SET ownerid = NULL WHERE ownerid = ?", (userid,)
+        ).rowcount
+        conn.execute("DELETE FROM area_hosts WHERE userid = ?", (userid,))
+        for table in ("auth_tokens", "telegram_messages"):
+            if site_admin.has_table(conn, table):
+                conn.execute("DELETE FROM %s WHERE userid = ?" % table, (userid,))
+        conn.execute("DELETE FROM users WHERE userid = ?", (userid,))
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+    return json.dumps(
+        {"status": "ok", "freed_rooms": freed, "login": person["login"]}, ensure_ascii=False
+    )
 
 
 @app.route('/admin/<int:roomid>', subdomain = "svoyak")
