@@ -10,6 +10,8 @@
     .theme-list { max-height: 22rem; overflow-y: auto; border: 1px solid #eee;
                   border-radius: .4rem; padding: .5rem .75rem; }
     .theme-item { display: block; margin-bottom: .2rem; }
+    /* Тема уже игралась: подсвечиваем строку, чтобы её не взяли случайно. */
+    .theme-item.played { background: #fff8e1; border-radius: .3rem; padding: .1rem .3rem; }
 </style>
 
 <div class="d-flex justify-content-between align-items-start mb-3">
@@ -165,7 +167,7 @@
                          <span class="text-muted small">${where.join('; ')}</span>`;
             }
             return `
-            <label class="theme-item">
+            <label class="theme-item${places.length || near.length ? ' played' : ''}">
                 <input class="form-check-input me-2 theme-check" type="checkbox" value="${index}"
                        ${chosen.has(topic.topic) ? 'checked' : ''}>
                 ${topic.topic}

@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 import uuid
+from urllib.parse import quote
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
@@ -885,6 +886,85 @@ class ConsoleLayoutTests(unittest.TestCase):
         # Ведущий подтвердил — раскладка сохраняется.
         response = self._save(packageid, [0], ack_heard=True)
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+
+    def _heard(self, packageid, themes, players=""):
+        query = "/api/plan/%d/heard?packageid=%d&themes=%s" % (
+            self.ROOM, packageid, themes)
+        if players:
+            query += "&players=" + quote(players)
+        return self.client.get(BASE + query)
+
+    def test_heard_endpoint_marks_themes_and_seated_players(self):
+        """Пульт спрашивает перед боем: засвечена ли тема и кто её слышал."""
+        packageid, data, theme = self._layout()
+        self._heard_player(theme)
+
+        response = self._heard(packageid, "0,1")
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        body = json.loads(response.get_data(as_text=True))
+        # Пометки по всем темам пакета: первая игралась, вторая — нет.
+        self.assertIn("комната 9802, бой 1", body["themes"]["0"]["exact"])
+        self.assertEqual(body["themes"]["0"]["similar"], [])
+        self.assertEqual(body["themes"]["1"], {"exact": [], "similar": [], "by_title": []})
+        # Игрок уже добавлен в комнату, поэтому проверяется без явного списка.
+        self.assertEqual([item["topic"] for item in body["players"][self.LISTENER]],
+                         ["Стенд"])
+
+    def test_heard_endpoint_checks_seated_player_outside_room(self):
+        """Ведущий может посадить того, кого нет в списке активных комнаты."""
+        packageid, data, theme = self._layout()
+        self._heard_player(theme)
+        conn = db()
+        conn.execute("DELETE FROM activeplayers WHERE roomid = ?", (self.ROOM,))
+        conn.commit()
+        conn.close()
+
+        body = json.loads(self._heard(packageid, "0", players=self.LISTENER)
+                          .get_data(as_text=True))
+        self.assertEqual([item["place"] for item in body["players"][self.LISTENER]],
+                         ["комната 9802, бой 1"])
+
+    def test_heard_endpoint_uses_battle_themes_from_plan(self):
+        """Бой разложен админом в плане: пульт спрашивает по номеру боя."""
+        conn = db()
+        add_room(conn, self.ROOM)
+        packageid = add_package(conn, self.ROOM, "Пакет плана", ["Стенд", "Резерв"])
+        data = json.loads(conn.execute("SELECT data FROM packages WHERE packageid = ?",
+                                       (packageid,)).fetchone()[0])
+        theme = data["topics"][0]
+        conn.execute(
+            "INSERT INTO game_questions (roomid, gameindex, packageid, payload) "
+            "VALUES (?, ?, ?, ?)",
+            (self.ROOM, 2, packageid, json.dumps({"themes": [theme]}, ensure_ascii=False)))
+        conn.commit()
+        conn.close()
+        self._heard_player(theme)
+
+        response = self.client.get(
+            BASE + "/api/plan/%d/heard?gameindex=2&players=%s"
+            % (self.ROOM, quote(self.LISTENER)))
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        body = json.loads(response.get_data(as_text=True))
+        self.assertEqual([item["place"] for item in body["players"][self.LISTENER]],
+                         ["комната 9802, бой 1"])
+        # Пакета в запросе нет — пометок по темам не будет, только игроки.
+        self.assertEqual(body["themes"], {})
+
+    def test_heard_endpoint_needs_room_rights(self):
+        packageid, data, theme = self._layout()
+        conn = db()
+        conn.execute("UPDATE activerooms SET ownerid = ? WHERE roomid = ?",
+                     (self.client.userid, self.ROOM))
+        conn.commit()
+        conn.close()
+        stranger = self.registered('игрок')
+        response = stranger.get(BASE + "/api/plan/%d/heard?packageid=%d&themes=0"
+                                % (self.ROOM, packageid))
+        self.assertEqual(response.status_code, 403)
+
+    def test_heard_endpoint_unknown_package(self):
+        response = self._heard(999999, "0")
+        self.assertEqual(response.status_code, 404)
 
     def test_edited_theme_is_the_same_theme(self):
         questions = ["Кто первым полетел в космос и как звали его собаку",

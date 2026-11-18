@@ -1751,6 +1751,68 @@ def PlanQuestionsPage(roomid):
     )
 
 
+def battle_themes_for(conn, roomid, gameindex):
+    """Темы боя, как они записаны: сначала план, потом раскладка из пульта."""
+    payload = room_questions(conn, roomid, gameindex)
+    if payload and payload.get("themes"):
+        return list(payload["themes"])
+    try:
+        for layout in package_library.theme_layouts(conn):
+            if layout["roomid"] == roomid and layout["gameindex"] == gameindex:
+                return list(layout["themes"])
+    except sqlite3.Error:
+        return []
+    return []
+
+
+@app.route('/api/plan/<int:roomid>/heard', subdomain="svoyak", methods=["GET"])
+@api_room_access_required
+def PlanHeard(roomid):
+    """Что известно о темах боя: где они уже игрались и кто их слышал.
+
+    Пульт спрашивает это перед боем: при свободной посадке темы выбираются
+    прямо перед игрой и тогда же сажают игроков, поэтому ведущему нужно сразу
+    видеть и засвеченные темы, и посаженных, которые их уже слышали.
+    Темы задаются номерами в пакете, а если бой разложен не из пульта —
+    номером боя (gameindex). Игроки — посаженные в бой; кроме них проверяются
+    все, кто уже добавлен в комнату.
+    """
+    packageid = request.args.get("packageid", type=int)
+    gameindex = request.args.get("gameindex", type=int)
+    indices = [int(part) for part in (request.args.get("themes") or "").split(",")
+               if part.strip().isdigit()]
+    seated = [name.strip() for name in (request.args.get("players") or "").split(",")
+              if name.strip()]
+    conn = get_db_connection()
+    try:
+        usage = []
+        chosen = []
+        if packageid is not None:
+            row = conn.execute("SELECT data FROM packages WHERE packageid = ?",
+                               (packageid,)).fetchone()
+            if row is None:
+                return json.dumps({"status": "error", "message": "Пакет не найден"},
+                                  ensure_ascii=False), 404
+            usage = package_library.theme_use_by_index(conn, row["data"])
+            themes = list(package_library.package_topics(row["data"]))
+            chosen = [themes[index] for index in indices if 0 <= index < len(themes)]
+        elif gameindex is not None:
+            chosen = battle_themes_for(conn, roomid, gameindex)
+        names = [item[0] for item in conn.execute(
+            "SELECT name FROM activeplayers WHERE roomid = ?", (roomid,))]
+        for name in seated:
+            if name not in names:
+                names.append(name)
+        heard = package_library.heard_by_themes(conn, chosen, names) if chosen else {}
+    finally:
+        conn.close()
+    return json.dumps({
+        # Пометки по всем темам пакета: ведущий видит их и в списке тем, и в бою.
+        "themes": {str(index): value for index, value in enumerate(usage)},
+        "players": heard,
+    }, ensure_ascii=False)
+
+
 @app.route('/api/plan/<int:roomid>/questions', subdomain="svoyak", methods=["POST"])
 @api_login_or_open_room
 def PlanQuestionsSave(roomid):

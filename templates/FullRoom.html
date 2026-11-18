@@ -734,6 +734,124 @@ function showHeardNotice(name, items) {
     setTimeout(() => line.remove(), 30000);
 }
 
+// ============================================================
+// ПОДСВЕТКА ТЕМ БОЯ И ПОСАЖЕННЫХ ИГРОКОВ
+// ============================================================
+// При свободной посадке темы выбирают прямо перед боем и тогда же сажают
+// игроков, поэтому сервер спрашивают про темы текущего боя: где они уже
+// игрались и кто из посаженных их слышал. Ключ темы — «пакет:номер в пакете».
+let battleThemeUse = {};
+let battleHeard = {};
+let battleHeardTimer = null;
+
+function themeKey(block) {
+    if (!block || block.sourcePackageLocalId == null || block.sourceThemeIndex == null) return null;
+    return block.sourcePackageLocalId + ':' + block.sourceThemeIndex;
+}
+
+function themeUseText(entry) {
+    if (!entry) return '';
+    const byTitle = new Set(entry.by_title || []);
+    const parts = [];
+    (entry.exact || []).forEach((place) => {
+        parts.push(byTitle.has(place) ? place + ' (по названиям)' : place);
+    });
+    (entry.similar || []).forEach((item) => {
+        parts.push(item.place + ' (текст вопросов поправлен)');
+    });
+    return parts.join('; ');
+}
+
+function themeIsPlayed(block) {
+    const key = themeKey(block);
+    const entry = key ? battleThemeUse[key] : null;
+    return Boolean(entry && ((entry.exact || []).length || (entry.similar || []).length));
+}
+
+function playerHeard(name) {
+    return (name && battleHeard[name]) ? battleHeard[name] : [];
+}
+
+function scheduleBattleHeard() {
+    if (battleHeardTimer) clearTimeout(battleHeardTimer);
+    battleHeardTimer = setTimeout(() => { battleHeardTimer = null; refreshBattleHeard(); }, 250);
+}
+
+async function refreshBattleHeard() {
+    const segments = (gameState.themeSources || []).filter(
+        (segment) => segment && segment.themeIndices && segment.themeIndices.length);
+    const seated = gameData.players.map((name) => (name || '').trim()).filter(Boolean);
+    const use = {};
+    const heard = {};
+    let asked = false;
+    for (const segment of segments) {
+        const pkg = packages.find((item) => item.localId === segment.packageLocalId);
+        if (!pkg || !pkg.serverId) continue;
+        asked = true;
+        const params = new URLSearchParams({
+            packageid: String(pkg.serverId),
+            themes: segment.themeIndices.join(','),
+            players: seated.join(','),
+        });
+        try {
+            const response = await fetchWithTimeout(
+                '/api/plan/' + gameState.roomId + '/heard?' + params.toString(),
+                {cache: 'no-store'});
+            if (!response.ok) continue;
+            const data = await response.json();
+            Object.entries(data.themes || {}).forEach(([index, value]) => {
+                use[segment.packageLocalId + ':' + index] = value;
+            });
+            Object.entries(data.players || {}).forEach(([name, items]) => {
+                heard[name] = items;
+            });
+        } catch (error) {
+            // Офлайн: подсветки не будет, бой это не блокирует.
+        }
+    }
+    if (!asked) {
+        // Бой разложен не из пульта (например, админом в плане): спрашиваем
+        // сервер про темы этого боя целиком.
+        const params = new URLSearchParams({
+            gameindex: String(getCurrentMatchId()),
+            players: seated.join(','),
+        });
+        try {
+            const response = await fetchWithTimeout(
+                '/api/plan/' + gameState.roomId + '/heard?' + params.toString(),
+                {cache: 'no-store'});
+            if (response.ok) {
+                const data = await response.json();
+                Object.entries(data.players || {}).forEach(([name, items]) => {
+                    heard[name] = items;
+                });
+            }
+        } catch (error) {
+            // Офлайн: подсветки не будет.
+        }
+    }
+    battleThemeUse = use;
+    battleHeard = heard;
+    renderBattleMarks();
+}
+
+function renderBattleMarks() {
+    // Посаженные игроки: подсвечиваем тех, кто слышал темы этого боя.
+    for (let i = 1; i <= 4; i++) {
+        const input = document.getElementById('player' + i);
+        if (!input) continue;
+        const heard = playerHeard((input.value || '').trim());
+        input.classList.toggle('knows-theme', heard.length > 0);
+        if (heard.length) {
+            input.title = 'Знает темы этого боя: ' + heardText(heard);
+        } else {
+            input.removeAttribute('title');
+        }
+    }
+    refreshTable();
+    refreshThemesListIfOpen();
+}
+
 let currentGameStartIndex = 0;
 
 // Хелперы для скипов по пакетам
@@ -1188,6 +1306,7 @@ function syncQuestionsToBlocksFromPackage(startActiveIndex, silent) {
     document.getElementById('prevQuestionBtn').style.display = 'inline-flex';
 
     saveGame();
+    refreshBattleHeard();
 }
 
 // ============================================================
@@ -1269,6 +1388,7 @@ function rebuildGameFromSources() {
     updateScoresDisplay();
     showResetGameOver();
     saveGame();
+    refreshBattleHeard();
 }
 
 function syncThemeCountSelect() {
@@ -1731,12 +1851,18 @@ function renderThemesList() {
         if (isSkipped) item.classList.add('skipped');
         if (isUsed) item.classList.add('used');
 
+        // Тема уже игралась где-то: ведущий видит это до того, как возьмёт её в бой.
+        const useEntry = battleThemeUse[currentPackageLocalId + ':' + idx];
+        const playedPlaces = themeUseText(useEntry);
+        if (playedPlaces) item.classList.add('played');
+
         const questionsCount = (topic.questions || []).length;
         const statusParts = [];
         if (isSkipped) statusParts.push('⏭️ пропущена');
         if (isUsed) statusParts.push('✅ использована');
         if (isCurrent) statusParts.push('🎯 текущий бой');
         if (posInActive >= 0) statusParts.push(`позиция в активных: ${posInActive + 1}`);
+        if (playedPlaces) statusParts.push('🔁 уже игралась: ' + playedPlaces);
 
         item.innerHTML = `
             <span class="tli-num">#${idx + 1}</span>
@@ -1873,8 +1999,13 @@ function renderScoreCards() {
         const score = gameState.scores[idx] || 0;
         const card = document.createElement('div');
         card.className = 'player-score-card';
+        const heard = playerHeard(player);
+        if (heard.length) {
+            card.classList.add('knows-theme');
+            card.title = 'Знает темы этого боя: ' + heardText(heard);
+        }
         card.innerHTML = `
-            <div class="name">${player}</div>
+            <div class="name">${player}${heard.length ? ' ⚠' : ''}</div>
             <div class="score ${score > 0 ? 'positive' : score < 0 ? 'negative' : ''}">${score > 0 ? '+' : ''}${formatScore(score)}</div>
         `;
         container.appendChild(card);
@@ -1898,6 +2029,8 @@ function update_players_names() {
     refreshTable();
     updateQuestionInfo();
     initControlButtons();
+    // Посадили игрока — сразу проверяем, слышал ли он темы этого боя.
+    scheduleBattleHeard();
 }
 
 function reset_players_names() {
@@ -1936,6 +2069,12 @@ function renderVerticalTable() {
         const th = document.createElement('th');
         th.className = 'player-header';
         th.textContent = player || `Игрок ${idx+1}`;
+        const heard = playerHeard(player);
+        if (heard.length) {
+            th.classList.add('knows-theme');
+            th.textContent += ' ⚠';
+            th.title = 'Знает темы этого боя: ' + heardText(heard);
+        }
         headerRow.appendChild(th);
     });
 
@@ -1951,6 +2090,13 @@ function renderVerticalTable() {
                 if (block.comment) {
                     td.textContent += ' ⚠️';
                     td.title = block.comment;
+                }
+                if (themeIsPlayed(block)) {
+                    td.classList.add('theme-played');
+                    td.textContent += ' 🔁';
+                    const places = themeUseText(battleThemeUse[themeKey(block)]);
+                    td.title = (td.title ? td.title + '. ' : '') +
+                        'Тема уже игралась: ' + places;
                 }
                 sep.appendChild(td);
                 tableBody.appendChild(sep);
@@ -2013,6 +2159,12 @@ function renderHorizontalTable() {
             th.textContent += ' ⚠️';
             th.title = block.comment;
         }
+        if (themeIsPlayed(block)) {
+            th.classList.add('theme-played');
+            th.textContent += ' 🔁';
+            const places = themeUseText(battleThemeUse[themeKey(block)]);
+            th.title = (th.title ? th.title + '. ' : '') + 'Тема уже игралась: ' + places;
+        }
         themeRow.appendChild(th);
     });
     tableBody.appendChild(themeRow);
@@ -2036,6 +2188,12 @@ function renderHorizontalTable() {
         const playerCell = document.createElement('th');
         playerCell.className = 'theme-header';
         playerCell.textContent = player || `Игрок ${pIdx+1}`;
+        const heard = playerHeard(player);
+        if (heard.length) {
+            playerCell.classList.add('knows-theme');
+            playerCell.textContent += ' ⚠';
+            playerCell.title = 'Знает темы этого боя: ' + heardText(heard);
+        }
         row.appendChild(playerCell);
 
         let qIdx = 0;
@@ -2824,6 +2982,7 @@ function switchMatch(newMatchId) {
     refreshTable();
     updateQuestionHighlight();
     updateQuestionCard();
+    refreshBattleHeard();
 }
 
 // ============================================================
@@ -3983,6 +4142,7 @@ function init_page() {
     });
     setTimeout(redrawBrackets, 500);
     updateQuestionCard();
+    refreshBattleHeard();
 }
 
 // Глобальные функции для HTML
