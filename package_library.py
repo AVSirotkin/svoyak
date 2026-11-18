@@ -225,6 +225,83 @@ def theme_title(theme):
     return "без названия"
 
 
+def theme_title_key(title):
+    """Название темы для сравнения: без регистра, ё и знаков.
+
+    Нужно для старых боёв: в их подробностях сохранились только названия тем,
+    вопросов там нет, поэтому опознать тему иначе не получится.
+    """
+    return normalize_text(title)
+
+
+def load_json(value):
+    try:
+        data = json.loads(value or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+# Разбор старых подробностей боёв нужен на каждый запрос истории, а лог растёт:
+# запоминаем результат по состоянию лога, чтобы не разбирать его заново.
+_LEGACY_CACHE = {"key": None, "games": {}}
+
+
+def legacy_layouts(conn):
+    """Раскладки старых боёв: названия тем из подробностей боя в логе.
+
+    До появления пакетов в пульте ведущий сохранял бой вместе с подробностями:
+    в них есть названия тем и кто что взял. Вопросов там нет, поэтому тема
+    опознаётся только по названию — с соответствующей оговоркой в интерфейсе.
+    """
+    try:
+        row = conn.execute(
+            "SELECT MAX(rowid) AS last, COUNT(*) AS total FROM log").fetchone()
+        tail = conn.execute(
+            "SELECT date, LENGTH(data) AS size FROM log ORDER BY rowid DESC LIMIT 1").fetchone()
+    except sqlite3.OperationalError:
+        return {}
+    key = None if row is None else (
+        row["last"], row["total"],
+        tail["date"] if tail is not None else None,
+        tail["size"] if tail is not None else None)
+    if _LEGACY_CACHE["key"] == key:
+        return _LEGACY_CACHE["games"]
+
+    games = {}
+    try:
+        rows = conn.execute(
+            "SELECT roomid, data FROM log WHERE event = 'save game result' ORDER BY rowid"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    for row in rows:
+        payload = load_json(row["data"])
+        try:
+            gameindex = int(payload.get("gameindex"))
+        except (TypeError, ValueError):
+            continue
+        detailed = payload.get("detailed")
+        if not isinstance(detailed, dict):
+            continue
+        place = (row["roomid"], gameindex)
+        game = games.setdefault(place, {"titles": [], "players": []})
+        for answer in detailed.get("answers") or []:
+            if not isinstance(answer, dict):
+                continue
+            title = str(answer.get("theme") or "").strip()
+            if title and title not in game["titles"]:
+                game["titles"].append(title)
+        for name in detailed.get("players") or []:
+            name = str(name or "").strip()
+            if name and name not in game["players"]:
+                game["players"].append(name)
+    games = {place: game for place, game in games.items() if game["titles"]}
+    _LEGACY_CACHE["key"] = key
+    _LEGACY_CACHE["games"] = games
+    return games
+
+
 def content_hash(data):
     """Хэш содержимого: одинаковый файл даёт одинаковый хэш."""
     if isinstance(data, str):
@@ -564,14 +641,6 @@ def game_listeners(conn, roomid, gameindex, mode=EXPOSURE_HALL, times=None,
             for name in heard]
 
 
-def load_json(value):
-    try:
-        data = json.loads(value or "{}")
-    except (TypeError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
 PLACEHOLDER_QUESTION = re.compile(r"^вопрос \d+$")
 
 
@@ -641,6 +710,17 @@ def theme_layouts(conn):
             best[key] = layout
         elif len(layout["themes"]) == len(current["themes"]) and layout["source"] == "plan":
             best[key] = layout
+    # Старые бои известны только по названиям тем — и только там, где раскладки
+    # в плане или в пульте нет: иначе знание о вопросах точнее.
+    for (roomid, gameindex), game in legacy_layouts(conn).items():
+        key = (roomid, gameindex)
+        if key in best or not game["titles"]:
+            continue
+        best[key] = {
+            "roomid": roomid, "gameindex": gameindex, "packageid": None,
+            "themes": [], "titles": game["titles"],
+            "source": "log", "updated": None,
+        }
     return list(best.values())
 
 
@@ -655,9 +735,21 @@ def library_signatures(conn, libraryid):
     return signatures
 
 
+def library_titles(conn, libraryid):
+    """Названия тем пакетов этой записи библиотеки — для старых боёв."""
+    titles = set()
+    for row in conn.execute("SELECT data FROM packages WHERE libraryid = ?", (libraryid,)):
+        for theme in package_topics(row[0]):
+            key = theme_title_key(theme_title(theme))
+            if key:
+                titles.add(key)
+    return titles
+
+
 def library_usage(conn, libraryid, mode=EXPOSURE_HALL):
     """История пакета: где и когда игрались его темы и кто их мог слышать."""
     signatures = library_signatures(conn, libraryid)
+    titles = library_titles(conn, libraryid)
     cache = {}
     usage = []
     for layout in sorted(theme_layouts(conn),
@@ -665,7 +757,10 @@ def library_usage(conn, libraryid, mode=EXPOSURE_HALL):
                          reverse=True):
         themes = [theme for theme in layout["themes"]
                   if theme_signature(theme) in signatures]
-        if not themes:
+        # Старые бои: вопросов в них нет, узнаём тему только по названию.
+        legacy = [title for title in layout.get("titles") or []
+                  if theme_title_key(title) in titles]
+        if not themes and not legacy:
             continue
         roomid, gameindex = layout["roomid"], layout["gameindex"]
         if roomid not in cache:
@@ -684,9 +779,12 @@ def library_usage(conn, libraryid, mode=EXPOSURE_HALL):
             "packageid": layout["packageid"],
             "package": layout.get("package") or library_name(conn, libraryid),
             "source": layout["source"],
-            "topics": [theme_title(theme) for theme in themes],
-            "theme_items": [{"title": theme_title(theme),
-                             "signature": theme_signature(theme)} for theme in themes],
+            "by_title": not themes,
+            "topics": [theme_title(theme) for theme in themes] + legacy,
+            "theme_items": [{"title": theme_title(theme), "signature": theme_signature(theme),
+                             "by_title": False} for theme in themes] +
+                           [{"title": title, "signature": None,
+                             "by_title": True} for title in legacy],
             "when": format_time(times.get(gameindex)),
             "date": room[0] if room else "",
             "owner": room[1] if room else None,
@@ -709,7 +807,11 @@ def place_name(roomid, gameindex):
 
 
 def played_themes(conn):
-    """Все темы, которые раскладывались по боям: где, что и с какой подписью."""
+    """Все темы, которые раскладывались по боям: где, что и с какой подписью.
+
+    У старых боёв известны только названия тем: у таких записей нет ни вопросов,
+    ни подписи, зато есть ключ названия — с ним тема опознаётся по имени.
+    """
     items = []
     for layout in theme_layouts(conn):
         for theme in layout["themes"]:
@@ -724,8 +826,25 @@ def played_themes(conn):
                 "theme": theme,
                 "title": theme_title(theme),
                 "signature": signature,
+                "title_key": None,
                 "observed": question_texts_of(theme),
                 "words": frozenset(theme_vocabulary(theme)),
+            })
+        for title in layout.get("titles") or []:
+            key = theme_title_key(title)
+            if not key:
+                continue
+            items.append({
+                "place": place_name(layout["roomid"], layout["gameindex"]),
+                "roomid": layout["roomid"],
+                "gameindex": layout["gameindex"],
+                "source": layout["source"],
+                "theme": None,
+                "title": title,
+                "signature": None,
+                "title_key": key,
+                "observed": (),
+                "words": frozenset(),
             })
     return items
 
@@ -734,16 +853,24 @@ def question_texts_of(theme):
     return tuple(theme_questions(theme))
 
 
+def played_item_key(item):
+    """Ключ записи о раскладке: вопросы, если известны, иначе название."""
+    if item.get("signature"):
+        return ("sig", item["signature"])
+    return ("title", item.get("title_key") or theme_title_key(item.get("title")))
+
+
 def theme_usage(conn, libraryid=None):
-    """{подпись темы: {"title": …, "places": [...]}} — где тема уже игралась.
+    """{(«sig», подпись) или («title», название): {"title": …, "places": [...]}}.
 
     Тема опознаётся по своим вопросам, поэтому считается по всем комнатам и
     пакетам: если та же тема (тот же набор вопросов) игралась в другом пакете,
-    она уже засвечена. libraryid оставлен для совместимости и больше не сужает.
+    она уже засвечена. У старых боёв вопросов нет — такие записи лежат под
+    ключом названия. libraryid оставлен для совместимости и больше не сужает.
     """
     usage = {}
     for item in played_themes(conn):
-        entry = usage.setdefault(item["signature"],
+        entry = usage.setdefault(played_item_key(item),
                                  {"title": item["title"], "places": []})
         if item["place"] not in entry["places"]:
             entry["places"].append(item["place"])
@@ -761,6 +888,9 @@ def similar_plays(theme, played, skip=()):
     # Одну и ту же тему не сравниваем по второму разу: группируем по подписи.
     unique = {}
     for item in played:
+        if not item.get("signature") or item.get("theme") is None:
+            # У старых боёв нет вопросов — текстом их не сравнить.
+            continue
         unique.setdefault(item["signature"], []).append(item)
     for items in unique.values():
         first = items[0]
@@ -822,13 +952,41 @@ def heard_by_themes(conn, themes, names, mode=EXPOSURE_HALL):
 
     heard = {}
     cache = {}
+    finished = {}
+
+    def is_finished(roomid, gameindex):
+        """Бой уже сыгран: иначе темы в нём только разложены, а не услышаны."""
+        if roomid not in finished:
+            _, _, ends = room_timeline(conn, roomid)
+            games = set(ends)
+            try:
+                rows = conn.execute(
+                    "SELECT DISTINCT gameindex FROM results WHERE roomid = ?", (roomid,)
+                ).fetchall()
+            except sqlite3.OperationalError:
+                rows = []
+            for row in rows:
+                try:
+                    games.add(int(row[0]))
+                except (TypeError, ValueError):
+                    continue
+            finished[roomid] = games
+        return gameindex in finished[roomid]
+
+    wanted_titles = {theme_title_key(theme_title(theme)) for theme in themes}
     for layout in theme_layouts(conn):
+        if not is_finished(layout["roomid"], layout["gameindex"]):
+            continue
         topics = []
         for theme in layout["themes"]:
             if not close_to(theme):
                 continue
             changed = theme_signature(theme) not in signatures
-            topics.append((theme_title(theme), changed))
+            topics.append((theme_title(theme), changed, False))
+        # Старые бои: вопросов нет, тема узнаётся только по названию.
+        for title in layout.get("titles") or []:
+            if theme_title_key(title) in wanted_titles:
+                topics.append((title, False, True))
         if not topics:
             continue
         key = (layout["roomid"], layout["gameindex"])
@@ -843,8 +1001,9 @@ def heard_by_themes(conn, themes, names, mode=EXPOSURE_HALL):
             if name not in wanted:
                 continue
             entry = heard.setdefault(name, [])
-            for title, changed in topics:
-                item = {"topic": title, "place": place, "changed": changed}
+            for title, changed, by_title in topics:
+                item = {"topic": title, "place": place, "changed": changed,
+                        "by_title": by_title}
                 if item not in entry:
                     entry.append(item)
     return heard
@@ -867,13 +1026,18 @@ def heard_before(conn, roomid, names, mode=EXPOSURE_HALL):
 def theme_use_by_index(conn, data, libraryid=None, played=None):
     """Где игралась каждая тема пакета — по порядку тем в пакете.
 
-    Для каждой темы: точные повторы и похожие темы, отличающиеся правками.
+    Для каждой темы три яруса совпадений: точные повторы, темы с поправленным
+    текстом и старые бои, где от темы осталось одно название.
     """
     if played is None:
         played = played_themes(conn)
     usage = {}
+    by_title = {}
     for item in played:
-        usage.setdefault(item["signature"], []).append(item)
+        if item.get("signature"):
+            usage.setdefault(item["signature"], []).append(item)
+        elif item.get("title_key"):
+            by_title.setdefault(item["title_key"], []).append(item)
     result = []
     for theme in package_topics(data):
         signature = theme_signature(theme)
@@ -882,7 +1046,13 @@ def theme_use_by_index(conn, data, libraryid=None, played=None):
             if item["place"] not in exact:
                 exact.append(item["place"])
         similar = similar_plays(theme, played, skip=exact)
-        result.append({"exact": exact, "similar": similar})
+        known = set(exact) | {item["place"] for item in similar}
+        titles = []
+        for item in by_title.get(theme_title_key(theme_title(theme)), []):
+            if item["place"] in known or item["place"] in titles:
+                continue
+            titles.append(item["place"])
+        result.append({"exact": exact, "similar": similar, "title": titles})
     return result
 
 
@@ -926,16 +1096,26 @@ def theme_history(conn, libraryid, mode=EXPOSURE_HALL):
         package[signature] = theme
     blocks = {}
     for item in library_usage(conn, libraryid, mode):
+        place = (item["roomid"], item["gameindex"])
         for entry in item.get("theme_items") or []:
-            key = entry["signature"] or ("title", entry["title"])
-            used = blocks.setdefault(key, [])
-            place = (item["roomid"], item["gameindex"])
-            if any((block["roomid"], block["gameindex"]) == place for block in used):
-                continue
-            used.append({
-                "roomid": item["roomid"], "gameindex": item["gameindex"],
-                "when": item["when"], "listeners": item["listeners"],
-            })
+            keys = []
+            if entry.get("signature"):
+                keys.append(("sig", entry["signature"]))
+            elif entry.get("by_title"):
+                # Название заменяет вопросы только там, где вопросов нет:
+                # у одноимённых тем из пакета вопросы разные.
+                title_key = theme_title_key(entry.get("title"))
+                if title_key:
+                    keys.append(("title", title_key))
+            for key in keys:
+                used = blocks.setdefault(key, [])
+                if any((block["roomid"], block["gameindex"]) == place for block in used):
+                    continue
+                used.append({
+                    "roomid": item["roomid"], "gameindex": item["gameindex"],
+                    "when": item["when"], "listeners": item["listeners"],
+                    "by_title": bool(entry.get("by_title")),
+                })
     titles = {}
     for title, _ in order:
         titles[title] = titles.get(title, 0) + 1
@@ -943,15 +1123,19 @@ def theme_history(conn, libraryid, mode=EXPOSURE_HALL):
     played = played_themes(conn)
     themes = []
     for title, signature in order:
-        key = signature or ("title", title)
-        used = blocks.get(key, [])
+        used = list(blocks.get(("sig", signature), [])) if signature else []
+        seen_places = {(block["roomid"], block["gameindex"]) for block in used}
+        for block in blocks.get(("title", theme_title_key(title)), []):
+            if (block["roomid"], block["gameindex"]) in seen_places:
+                continue
+            used.append(dict(block, by_title=True))
         heard = set()
         for block in used:
             heard.update(block["listeners"])
         known = {place_name(block["roomid"], block["gameindex"]) for block in used}
         elsewhere = []
         if signature:
-            for place in (everywhere.get(signature) or {}).get("places", []):
+            for place in (everywhere.get(("sig", signature)) or {}).get("places", []):
                 if place not in known:
                     elsewhere.append(place)
         similar = []
@@ -967,6 +1151,8 @@ def theme_history(conn, libraryid, mode=EXPOSURE_HALL):
             "listeners": sorted(heard),
             # Одноимённые темы с разными вопросами — разные темы.
             "same_title": titles.get(title, 0) > 1,
+            # Есть бои, где тему узнали только по названию: вопросов там нет.
+            "by_title": any(block.get("by_title") for block in used),
         })
     return themes
 

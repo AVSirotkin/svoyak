@@ -701,7 +701,12 @@ function rememberHeard(players) {
 }
 
 function heardText(items) {
-    return (items || []).map((item) => item.topic + ' (' + item.place + ')').join(', ');
+    const list = (items || []).map((item) => item.topic +
+        (item.by_title ? ' (по названию)' : '') + ' — ' + item.place);
+    if (list.length > 4) {
+        return list.slice(0, 4).join('; ') + ' и ещё ' + (list.length - 4);
+    }
+    return list.join('; ');
 }
 
 function showHeardNotice(name, items) {

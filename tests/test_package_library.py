@@ -571,7 +571,7 @@ class QuestionsPageTests(unittest.TestCase):
         # Первая тема («Кино») игралась, у второй («Музыка») пусто.
         self.assertEqual(package_use[0]["exact"], ["комната 9500, бой 3"])
         self.assertEqual(package_use[0]["similar"], [])
-        self.assertEqual(package_use[1], {"exact": [], "similar": []})
+        self.assertEqual(package_use[1], {"exact": [], "similar": [], "title": []})
 
     def test_free_seating_room_gets_layout_page(self):
         # Комната 2030 — свободная посадка: сетки нет, бои идут по порядку.
@@ -802,6 +802,129 @@ class ConsoleLayoutTests(unittest.TestCase):
             conn.close()
         self.assertEqual([item["topic"] for item in heard[self.LISTENER]], ["Космос"])
         self.assertTrue(heard[self.LISTENER][0]["changed"])
+
+
+class LegacyLogTests(unittest.TestCase):
+    """Старые бои: в подробностях сохранились только названия тем."""
+
+    ROOM = 9810
+    LISTENER = 'Орлов Илья'
+
+    def setUp(self):
+        site.DB_PATH = WORK_DB
+        self.conn = db()
+        self.conn.isolation_level = None
+        self.conn.execute("BEGIN IMMEDIATE")
+        self.addCleanup(self._rollback)
+        package_library._LEGACY_CACHE["key"] = None
+
+    def _rollback(self):
+        try:
+            self.conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        self.conn.close()
+        package_library._LEGACY_CACHE["key"] = None
+
+    def _old_game(self, roomid, gameindex, titles, players=None, start='19:00:00',
+                  end='20:30:00'):
+        """Старый бой: подробности лежат в логе, тем в других таблицах нет."""
+        add_room(self.conn, roomid)
+        players = players or [self.LISTENER]
+        log_row(self.conn, roomid, "Sat Nov 14 %s 2026" % start, "add active player",
+                name=players[0], playerid=1)
+        detailed = {
+            "players": players,
+            "scores": [0] * len(players),
+            "answers": [{"theme": title, "value": 10 * (i + 1),
+                         "playerAnswers": [None] * len(players)}
+                        for title in titles for i in range(5)],
+        }
+        self.conn.execute(
+            "INSERT INTO log (date, roomid, event, data) VALUES (?, ?, ?, ?)",
+            ("Sat Nov 14 %s 2026" % end, roomid, "save game result",
+             json.dumps({"roomid": roomid, "gameindex": gameindex, "scores": [],
+                         "detailed": detailed}, ensure_ascii=False)))
+        for name in players:
+            self.conn.execute(
+                "INSERT INTO results (roomid, gameindex, playerid, name, score) "
+                "VALUES (?, ?, 0, ?, 0)", (roomid, gameindex, name))
+
+    def _package(self, topics):
+        cursor = self.conn.execute(
+            "INSERT INTO packages (roomid, name, data) VALUES (?, ?, ?)",
+            (self.ROOM, "Вышкафест", json.dumps(package_data(topics), ensure_ascii=False)))
+        packageid = cursor.lastrowid
+        package_library.ensure_library(self.conn)
+        package_library.link_package(self.conn, packageid)
+        data = self.conn.execute("SELECT data FROM packages WHERE packageid = ?",
+                                 (packageid,)).fetchone()[0]
+        return packageid, data
+
+    def test_old_game_is_recognised_by_title(self):
+        self._old_game(self.ROOM, 1, ["Великая тема", "Дайте мне"])
+        games = package_library.legacy_layouts(self.conn)
+        self.assertEqual(games[(self.ROOM, 1)]["titles"], ["Великая тема", "Дайте мне"])
+
+        _, data = self._package(["Великая тема", "Спорт"])
+        places = package_library.theme_use_by_index(self.conn, data)
+        self.assertEqual(places[0]["exact"], [])
+        self.assertEqual(places[0]["title"], ["комната 9810, бой 1"])
+        self.assertEqual(places[1]["title"], [])
+
+    def test_old_game_warns_the_player(self):
+        self._old_game(self.ROOM, 1, ["Великая тема"])
+        _, data = self._package(["Великая тема"])
+        themes = [topic for topic in package_library.package_topics(data)]
+        heard = package_library.heard_by_themes(self.conn, themes, [self.LISTENER])
+        items = heard[self.LISTENER]
+        self.assertEqual(items[0]["topic"], "Великая тема")
+        self.assertEqual(items[0]["place"], "комната 9810, бой 1")
+        self.assertTrue(items[0]["by_title"])
+
+        # И комната, где тема разложена, тоже видит пересечение.
+        add_room(self.conn, self.ROOM + 1)
+        self.conn.execute(
+            "INSERT INTO game_protocols (roomid, gameindex, payload, revision) "
+            "VALUES (?, ?, ?, 1)",
+            (self.ROOM + 1, 1, json.dumps({"themes": themes}, ensure_ascii=False)))
+        self.conn.execute("INSERT INTO activeplayers (roomid, playerid, name) VALUES (?, ?, ?)",
+                          (self.ROOM + 1, 1, self.LISTENER))
+        before = package_library.heard_before(self.conn, self.ROOM + 1, [self.LISTENER])
+        self.assertEqual(before[self.LISTENER][0]["place"], "комната 9810, бой 1")
+        self.assertTrue(before[self.LISTENER][0]["by_title"])
+
+    def test_history_lists_old_game(self):
+        self._old_game(self.ROOM, 1, ["Великая тема"])
+        packageid, _ = self._package(["Великая тема"])
+        libraryid = self.conn.execute(
+            "SELECT libraryid FROM packages WHERE packageid = ?", (packageid,)).fetchone()[0]
+        usage = package_library.library_usage(self.conn, libraryid)
+        self.assertEqual(len(usage), 1)
+        self.assertTrue(usage[0]["by_title"])
+        self.assertEqual(usage[0]["topics"], ["Великая тема"])
+        self.assertEqual(usage[0]["listeners"], [self.LISTENER])
+        self.assertEqual(usage[0]["source"], "log")
+
+        history = package_library.theme_history(self.conn, libraryid)
+        self.assertEqual(len(history), 1)
+        self.assertTrue(history[0]["by_title"])
+        self.assertEqual([(block["roomid"], block["gameindex"]) for block in history[0]["used"]],
+                         [(self.ROOM, 1)])
+
+    def test_layout_wins_over_old_log(self):
+        # Тот же бой уже размечен в плане: подписи вопросов точнее названий.
+        self._old_game(self.ROOM, 1, ["Кино"])
+        packageid, data = self._package(["Кино"])
+        theme = package_library.package_topics(data)[0]
+        self.conn.execute(
+            "INSERT INTO game_questions (roomid, gameindex, packageid, payload) "
+            "VALUES (?, ?, ?, ?)",
+            (self.ROOM, 1, packageid, json.dumps({"themes": [theme]}, ensure_ascii=False)))
+        layouts = [layout for layout in package_library.theme_layouts(self.conn)
+                   if (layout["roomid"], layout["gameindex"]) == (self.ROOM, 1)]
+        self.assertEqual(len(layouts), 1)
+        self.assertEqual(layouts[0]["source"], "plan")
 
 
 if __name__ == '__main__':

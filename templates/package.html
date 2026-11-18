@@ -104,6 +104,10 @@
                         {% if item.date %}<span class="text-muted small">{{ item.date }}</span>{% endif %}
                         {% if item.source == 'protocol' %}
                         <span class="badge bg-light text-dark border" title="Темы разложены в пульте комнаты">пульт</span>
+                        {% endif %}
+                        {% if item.by_title %}
+                        <span class="badge bg-light text-dark border"
+                              title="в подробностях этого боя сохранились только названия тем — совпадение по названию">по названию</span>
                         {% endif %}</td>
                     <td class="text-end">{{ item.gameindex }}</td>
                     <td class="small">{{ item.when or '—' }}</td>
@@ -138,6 +142,10 @@
                         <span class="badge bg-light text-dark border"
                               title="в пакете есть ещё тема с таким названием, но с другими вопросами — это разные темы">одноимённая</span>
                         {% endif %}
+                        {% if theme.by_title %}
+                        <span class="badge bg-light text-dark border"
+                              title="в старых боях сохранились только названия тем, поэтому там совпадение проверено по названию">по названию</span>
+                        {% endif %}
                     </div>
                     {% if theme.elsewhere %}
                     <div class="small text-muted">
@@ -159,7 +167,7 @@
                     <div class="small text-muted">
                         {% for block in theme.used %}
                         комната <a href="/plan/{{ block.roomid }}">{{ block.roomid }}</a>,
-                        бой {{ block.gameindex }}{% if block.when %} ({{ block.when }}){% endif %};
+                        бой {{ block.gameindex }}{% if block.when %} ({{ block.when }}){% endif %}{% if block.by_title %} — по названию{% endif %};
                         {% endfor %}
                     </div>
                     <div class="pkg-heard">Слышали: {{ theme.listeners | length }}

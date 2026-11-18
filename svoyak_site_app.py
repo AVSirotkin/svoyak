@@ -1883,13 +1883,17 @@ def PlanQuestionsSave(roomid):
                     "name": name,
                     "places": sorted({item["place"] for item in items}),
                     "themes": sorted({item["topic"] for item in items}),
+                    # В старых боях от темы осталось одно название.
+                    "by_title": sorted({item["topic"] for item in items
+                                        if item.get("by_title")}),
                 })
             if warnings:
                 conn.execute("ROLLBACK")
                 return json.dumps({
                     "status": "heard",
                     "message": "Эти темы уже слышали игроки в комнате: " + "; ".join(
-                        "%s (%s)" % (item["name"], ", ".join(item["themes"]))
+                        "%s (%s%s)" % (item["name"], ", ".join(item["themes"]),
+                                       ", часть — по названию" if item["by_title"] else "")
                         for item in warnings) + ". Поставить всё равно?",
                     "players": warnings,
                 }, ensure_ascii=False), 409
