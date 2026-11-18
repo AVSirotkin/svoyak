@@ -30,6 +30,9 @@
         </label>
         {% if rules and rules.get('brackets') %}
         <a href="/plan/{{roomid}}" class="btn btn-outline btn-sm">🗂 Пульт турнира</a>
+        {% else %}
+        <a href="/plan/{{roomid}}" class="btn btn-outline btn-sm"
+           title="Сетки у комнаты нет: пульт турнира откроется на настройке турнира">🗂 Пульт турнира</a>
         {% endif %}
         <a href="/oldroom/{{roomid}}" class="btn btn-outline btn-sm">Старая версия</a>
         <a href="/admin/{{roomid}}" class="btn btn-outline btn-sm">⚙️ Админка</a>
@@ -41,6 +44,16 @@
         <input type="file" id="questionsFileInput" style="display:none"
                accept=".json"
                onchange="loadQuestionsFromFile(this.files[0]); this.value='';">
+        {% if current_user %}
+        <span class="user-chip" title="Вы вошли как {{ current_user.login }}">
+            {{ current_user.name }}<span class="user-role">{{ current_user.role }}</span>
+        </span>
+        <form method="post" action="/logout" class="logout-form">
+            <button class="btn btn-outline btn-sm" type="submit">Выйти</button>
+        </form>
+        {% else %}
+        <a href="/login?next={{ request.path }}" class="btn btn-outline btn-sm">Войти</a>
+        {% endif %}
     </div>
 </header>
 

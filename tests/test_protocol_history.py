@@ -262,6 +262,34 @@ class ConsoleWiringTests(unittest.TestCase):
         self.assertIn('/static/js/sync.js', html)
         self.assertIn('id="syncModeSelect"', html)
 
+    def test_old_console_shows_login(self):
+        guest = self.guest.get(BASE + '/room/2024').get_data(as_text=True)
+        self.assertIn('/login', guest)
+        self.assertNotIn('user-chip', guest)
+
+        client = site.app.test_client()
+        login = 'head_' + uuid.uuid4().hex[:8]
+        registered = client.post(
+            BASE + '/register',
+            data={'login': login, 'name': 'Ведущий Пётр',
+                  'password': 'secret123', 'password2': 'secret123'},
+        )
+        self.assertEqual(registered.status_code, 302, registered.get_data(as_text=True))
+        html = client.get(BASE + '/room/2024').get_data(as_text=True)
+        self.assertIn('user-chip', html)
+        self.assertIn('Ведущий Пётр', html)
+        self.assertIn('/logout', html)
+
+    def test_old_console_links_to_tournament_console(self):
+        # Пульт турнира доступен из пульта и у свободной посадки, где сетки нет.
+        for roomid in (2024, 2030):
+            conn = db()
+            conn.execute("UPDATE activerooms SET ownerid = NULL WHERE roomid = ?", (roomid,))
+            conn.commit()
+            conn.close()
+            html = self.guest.get(BASE + '/room/%d' % roomid).get_data(as_text=True)
+            self.assertIn('href="/plan/%d"' % roomid, html)
+
     def test_plan_page_shows_last_sync(self):
         # Активность показывается по текущему бою площадки.
         conn = site.get_db_connection()
