@@ -794,7 +794,7 @@ async function refreshBattleHeard() {
             players: seated.join(','),
         });
         try {
-            const response = await fetchWithTimeout(
+            const response = await Offline.fetchWithTimeout(
                 '/api/plan/' + gameState.roomId + '/heard?' + params.toString(),
                 {cache: 'no-store'});
             if (!response.ok) continue;
@@ -817,7 +817,7 @@ async function refreshBattleHeard() {
             players: seated.join(','),
         });
         try {
-            const response = await fetchWithTimeout(
+            const response = await Offline.fetchWithTimeout(
                 '/api/plan/' + gameState.roomId + '/heard?' + params.toString(),
                 {cache: 'no-store'});
             if (response.ok) {

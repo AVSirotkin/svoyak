@@ -894,6 +894,19 @@ class ConsoleLayoutTests(unittest.TestCase):
             query += "&players=" + quote(players)
         return self.client.get(BASE + query)
 
+    def test_console_page_has_heard_marks(self):
+        """Пульт спрашивает про темы боя и подсвечивает посаженных игроков."""
+        self._layout()
+        page = self.client.get(BASE + '/room/%d' % self.ROOM)
+        self.assertEqual(page.status_code, 200, page.get_data(as_text=True))
+        text = page.get_data(as_text=True)
+        self.assertIn('refreshBattleHeard', text)
+        self.assertIn('/heard?', text)
+        self.assertIn('knows-theme', text)
+        # Запрос идёт через модуль Offline: голый fetchWithTimeout в пульте
+        # не виден, и подсветка молча не работает.
+        self.assertIn('Offline.fetchWithTimeout', text)
+
     def test_heard_endpoint_marks_themes_and_seated_players(self):
         """Пульт спрашивает перед боем: засвечена ли тема и кто её слышал."""
         packageid, data, theme = self._layout()
