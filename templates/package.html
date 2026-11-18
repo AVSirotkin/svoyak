@@ -107,7 +107,11 @@
                         {% endif %}
                         {% if item.by_title %}
                         <span class="badge bg-light text-dark border"
-                              title="в подробностях этого боя сохранились только названия тем — совпадение по названию">по названию</span>
+                              title="этот бой сохранил только названия тем: пакет опознан по их набору">бой опознан по названиям</span>
+                        {% endif %}
+                        {% if item.marked == 'own' %}
+                        <span class="badge bg-light text-dark border"
+                              title="бой привязан к пакету вручную">привязан вручную</span>
                         {% endif %}</td>
                     <td class="text-end">{{ item.gameindex }}</td>
                     <td class="small">{{ item.when or '—' }}</td>
@@ -116,16 +120,60 @@
                     </td>
                     <td class="text-end">
                         <span title="{{ item.listeners | join(', ') }}">{{ item.listeners | length }}</span>
+                        {% if item.by_title and item.roomid in managed %}
+                        <button type="button" class="btn btn-sm btn-link pkg-battle-mark"
+                                data-roomid="{{ item.roomid }}" data-gameindex="{{ item.gameindex }}"
+                                data-mark="{{ '' if item.marked else 'foreign' }}"
+                                title="{{ 'снять пометку: бой снова оценивает автоматика' if item.marked else 'этим боем играли не этот пакет' }}">
+                            {{ 'снять' if item.marked else 'не наш' }}</button>
+                        {% endif %}
                     </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
+    <div class="card-body border-top small text-muted">
+        Бой опознаётся по всему набору тем: если в пакете нашлись почти все названия тем боя,
+        то это он. Одиночные совпадения названий не считаются. Если бой опознан неверно,
+        нажмите «не наш»; если бой пропущен, привяжите его вручную:
+        <button type="button" class="btn btn-sm btn-link pkg-battle-attach">привязать бой</button>
+    </div>
     {% else %}
     <div class="card-body text-muted small">
         Пока ни один бой этим пакетом не размечен. Раскладка тем делается в пульте комнаты:
-        «Вопросы по боям».
+        «Вопросы по боям». Если бой там не размечен, его можно привязать вручную:
+        <button type="button" class="btn btn-sm btn-link pkg-battle-attach">привязать бой</button>
+    </div>
+    {% endif %}
+    {% if rejected %}
+    <div class="card-body border-top">
+        <details>
+            <summary class="small text-muted">Не наш пакет — {{ rejected | length }} б.</summary>
+            <table class="table table-sm mb-0 align-middle mt-2">
+                <tbody>
+                    {% for item in rejected %}
+                    <tr>
+                        <td><a href="/plan/{{ item.roomid }}">{{ item.roomid }}</a>
+                            {% if item.date %}<span class="text-muted small">{{ item.date }}</span>{% endif %}</td>
+                        <td class="text-end">{{ item.gameindex }}</td>
+                        <td class="small">{{ item.when or '—' }}</td>
+                        <td class="small">
+                            {% for topic in item.topics %}<span class="pkg-chip">{{ topic }}</span>{% endfor %}
+                        </td>
+                        <td class="text-end">
+                            {% if item.roomid in managed %}
+                            <button type="button" class="btn btn-sm btn-link pkg-battle-mark"
+                                    data-roomid="{{ item.roomid }}" data-gameindex="{{ item.gameindex }}"
+                                    data-mark="own"
+                                    title="вернуть бой в пакет">вернуть</button>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </details>
     </div>
     {% endif %}
 </div>
@@ -144,7 +192,7 @@
                         {% endif %}
                         {% if theme.by_title %}
                         <span class="badge bg-light text-dark border"
-                              title="в старых боях сохранились только названия тем, поэтому там совпадение проверено по названию">по названию</span>
+                              title="есть бой, который сохранил только названия тем: тема опознана по названию в составе пакета">бой опознан по названиям</span>
                         {% endif %}
                     </div>
                     {% if theme.elsewhere %}
@@ -286,6 +334,50 @@
         }
         const data = await postJson('/api/packages/library/{{ entry.libraryid }}/reject',
                                     {other: other});
+        if (data) {
+            document.location.reload();
+        }
+    }
+
+    // Пометки боя: «не наш» убирает бой из пакета, «снять» отдаёт его обратно
+    // автоматике, «вернуть» и «привязать бой» привязывают вручную.
+    async function markBattle(roomid, gameindex, status) {
+        if (status === 'foreign' &&
+            !confirm('Убрать бой ' + gameindex + ' комнаты ' + roomid +
+                     ' из этого пакета? Его вопросы больше не будут считаться засвеченными.')) {
+            return;
+        }
+        const data = await postJson('/api/packages/library/{{ entry.libraryid }}/battle',
+                                    {roomid: roomid, gameindex: gameindex, status: status});
+        if (data) {
+            document.location.reload();
+        }
+    }
+
+    document.addEventListener('click', function (event) {
+        const mark = event.target.closest('.pkg-battle-mark');
+        if (mark) {
+            markBattle(parseInt(mark.dataset.roomid, 10),
+                       parseInt(mark.dataset.gameindex, 10), mark.dataset.mark || null);
+            return;
+        }
+        if (event.target.closest('.pkg-battle-attach')) {
+            attachBattle();
+        }
+    });
+
+    async function attachBattle() {
+        const room = prompt('Комната, где играли этот пакет:');
+        if (!room) {
+            return;
+        }
+        const game = prompt('Номер боя в этой комнате:');
+        if (!game) {
+            return;
+        }
+        const data = await postJson('/api/packages/library/{{ entry.libraryid }}/battle',
+                                    {roomid: parseInt(room, 10),
+                                     gameindex: parseInt(game, 10), status: 'own'});
         if (data) {
             document.location.reload();
         }

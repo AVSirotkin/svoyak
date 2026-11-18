@@ -141,12 +141,17 @@
             const entry = usage[index] || {};
             const places = entry.exact || [];
             const near = entry.similar || [];
-            const named = entry.title || [];
+            // Бои, чья запись сохранила только названия тем: тема опознана
+            // по вопросам пакета, но сам бой размечен не был.
+            const named = entry.by_title || [];
             let mark = '';
             if (places.length) {
+                const how = named.length === places.length
+                    ? ' (бой опознан по названиям тем)'
+                    : '';
                 mark += `<span class="badge bg-warning text-dark ms-1"
                                 title="уже игралась: ${places.join('; ')}">уже игралась</span>
-                         <span class="text-muted small">${places.join('; ')}</span>`;
+                         <span class="text-muted small">${places.join('; ')}${how}</span>`;
             }
             if (near.length) {
                 const where = near.map((item) => {
@@ -158,12 +163,6 @@
                 mark += `<span class="badge bg-warning text-dark ms-1"
                                 title="похожая тема игралась: ${where.join('; ')}">похожая тема</span>
                          <span class="text-muted small">${where.join('; ')}</span>`;
-            }
-            if (named.length) {
-                // Старые бои: от темы осталось только название, вопросов нет.
-                mark += `<span class="badge bg-light text-dark border ms-1"
-                                title="в этих боях игралась тема с таким названием — вопросы там не сохранились: ${named.join('; ')}">по названию</span>
-                         <span class="text-muted small">${named.join('; ')}</span>`;
             }
             return `
             <label class="theme-item">
@@ -224,7 +223,6 @@
             const usage = THEME_USE[select.value] || [];
             const repeated = [];
             const near = [];
-            const named = [];
             themes.forEach((index) => {
                 const entry = usage[index] || {};
                 const topic = topics[index];
@@ -238,9 +236,6 @@
                         : 'совпало ' + item.matched + ' из ' + item.total;
                     near.push(name + ' — ' + item.place + ' (' + how + ')');
                 });
-                (entry.title || []).forEach((place) => {
-                    named.push(name + ' — ' + place);
-                });
             });
             let question = '';
             if (repeated.length) {
@@ -249,11 +244,6 @@
             if (near.length) {
                 question += 'Похожие темы уже игрались (текст вопросов поправлен):\n' +
                             near.join('\n') + '\n\n';
-            }
-            if (named.length) {
-                question += 'Темы с такими названиями уже игрались (в старых боях не сохранились\n' +
-                            'тексты вопросов, поэтому совпадение только по названию):\n' +
-                            named.join('\n') + '\n\n';
             }
             if (question) {
                 question += 'Всё равно поставить их в этот бой?';

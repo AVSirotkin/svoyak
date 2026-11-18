@@ -4949,6 +4949,7 @@ def PackagePage(libraryid):
         ).fetchone()
         copies = package_library.library_copies(conn, libraryid)
         usage = package_library.library_usage(conn, libraryid, mode)
+        rejected = package_library.rejected_battles(conn, libraryid)
         listeners = package_library.library_listeners(conn, libraryid, mode)
         themes = package_library.theme_history(conn, libraryid, mode)
         similar = package_library.similar_libraries(conn, libraryid) if access == "admin" else []
@@ -4960,11 +4961,18 @@ def PackagePage(libraryid):
             rooms = [dict(row) for row in conn.execute(
                 "SELECT roomid, date FROM activerooms WHERE ownerid = ? "
                 "ORDER BY roomid DESC LIMIT 200", (user["userid"],))]
+        # Пометки боя ставит тот, кто ведёт эту комнату: список без ограничения длины.
+        if is_admin(user):
+            managed = {row[0] for row in conn.execute("SELECT roomid FROM activerooms")}
+        else:
+            managed = {row[0] for row in conn.execute(
+                "SELECT roomid FROM activerooms WHERE ownerid = ?", (user["userid"],))}
     finally:
         conn.close()
     return render_template(
         "package.html", entry=entry, copies=copies, usage=usage, listeners=listeners,
         themes=themes, similar=similar, mode=mode, access=access, rooms=rooms,
+        rejected=rejected, managed=managed,
         me=user, title="Пакет «%s»" % (entry["name"] if entry else ""),
     )
 
@@ -5063,6 +5071,49 @@ def PackageReject(libraryid):
         package_library.reject_link(
             conn, libraryid, other, "%s (%s)" % (user["name"], user["login"]))
         conn.commit()
+    finally:
+        conn.close()
+    return json.dumps({"status": "ok"}, ensure_ascii=False)
+
+
+@app.route('/api/packages/library/<int:libraryid>/battle', subdomain="svoyak", methods=["POST"])
+@login_required
+def PackageBattleMark(libraryid):
+    """Ведущий поправляет опознание боя: «наш бой» или «не наш».
+
+    Автоматика привязывает старый бой к пакету, если в пакете нашлись почти все
+    названия тем боя. Ошибки исправляются пометкой: status "foreign" убирает бой
+    из пакета, "own" привязывает его вручную, null — снимает пометку.
+    """
+    user = current_user()
+    data = request.get_json(silent=True) or {}
+    try:
+        roomid = int(data.get("roomid"))
+        gameindex = int(data.get("gameindex"))
+    except (TypeError, ValueError):
+        return json.dumps({"status": "error", "message": "Не указан бой"},
+                          ensure_ascii=False), 400
+    status = data.get("status")
+    if status not in ("own", "foreign", None):
+        return json.dumps({"status": "error", "message": "Неизвестная пометка"},
+                          ensure_ascii=False), 400
+    conn = get_db_connection()
+    try:
+        package_library.ensure_library(conn)
+        access = package_library_access(conn, libraryid, user)
+        if access is None:
+            return json.dumps({"status": "error", "message": "Нет доступа к пакету"},
+                              ensure_ascii=False), 403
+        if status is not None and not can_manage_room(roomid, user):
+            return json.dumps({"status": "error", "message": "Нет прав на эту комнату"},
+                              ensure_ascii=False), 403
+        package_library.set_battle_mark(
+            conn, roomid, gameindex, libraryid, status or None,
+            "%s (%s)" % (user["name"], user["login"]))
+        conn.commit()
+    except sqlite3.OperationalError as error:
+        return json.dumps({"status": "error", "message": str(error)},
+                          ensure_ascii=False), 400
     finally:
         conn.close()
     return json.dumps({"status": "ok"}, ensure_ascii=False)

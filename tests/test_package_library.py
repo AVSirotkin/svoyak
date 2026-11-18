@@ -67,6 +67,7 @@ class LibraryGroupingTests(unittest.TestCase):
     """Одинаковый пакет в разных комнатах — одна запись библиотеки."""
 
     def setUp(self):
+        package_library.reset_caches()
         self.conn = db()
         self.addCleanup(self.conn.close)
         self.conn.isolation_level = None
@@ -121,6 +122,7 @@ class ListenerTests(unittest.TestCase):
     """«Слышал» = был в зале, пока шёл бой (режим «зал») или играл в нём."""
 
     def setUp(self):
+        package_library.reset_caches()
         self.conn = db()
         self.addCleanup(self.conn.close)
         self.conn.isolation_level = None
@@ -193,6 +195,7 @@ class SimilarTests(unittest.TestCase):
     """Похожие пакеты подтверждает администратор."""
 
     def setUp(self):
+        package_library.reset_caches()
         self.conn = db()
         self.addCleanup(self.conn.close)
         self.conn.isolation_level = None
@@ -246,6 +249,7 @@ class LibraryPageTests(unittest.TestCase):
     """Страницы библиотеки: кто их видит и что там есть."""
 
     def setUp(self):
+        package_library.reset_caches()
         site.DB_PATH = WORK_DB
         self.owner = self.registered()
         self.other = self.registered()
@@ -352,11 +356,113 @@ class LibraryPageTests(unittest.TestCase):
             json={'other': self.other_library})
         self.assertEqual(response.status_code, 200)
 
+    def _old_battle(self, conn, roomid, gameindex, titles):
+        """Старый бой в логе: подробности с названиями тем, вопросов нет."""
+        detailed = {"players": ["Орлов Илья"], "scores": [0],
+                    "answers": [{"theme": title.upper(), "value": 10,
+                                 "playerAnswers": [None]} for title in titles]}
+        conn.execute(
+            "INSERT INTO log (date, roomid, event, data) VALUES (?, ?, ?, ?)",
+            ("Sat Nov 14 20:30:00 2026", roomid, "save game result",
+             json.dumps({"roomid": roomid, "gameindex": gameindex, "scores": [],
+                         "detailed": detailed}, ensure_ascii=False)))
+
+    def test_battle_mark_from_package_page(self):
+        # Старый бой в комнате владельца и пакет с теми же темами.
+        roomid = 9403
+        titles = ["Тема А", "Тема Б", "Тема В", "Тема Г", "Тема Д", "Тема Е"]
+        conn = db()
+        add_room(conn, roomid, self.owner.userid)
+        self._old_battle(conn, roomid, 1, titles)
+        packageid = add_package(conn, roomid, "Старый пакет", titles)
+        libraryid = conn.execute("SELECT libraryid FROM packages WHERE packageid = ?",
+                                 (packageid,)).fetchone()[0]
+        conn.commit()
+        conn.close()
+        package_library.reset_caches()
+
+        def cleanup():
+            conn = db()
+            conn.execute("DELETE FROM log WHERE roomid = ?", (roomid,))
+            conn.execute("DELETE FROM packages WHERE roomid = ?", (roomid,))
+            conn.execute("DELETE FROM package_battle_marks WHERE roomid = ?", (roomid,))
+            conn.execute("DELETE FROM activerooms WHERE roomid = ?", (roomid,))
+            conn.commit()
+            conn.close()
+            package_library.reset_caches()
+
+        self.addCleanup(cleanup)
+
+        page = self.owner.get(BASE + '/packages/%d' % libraryid).get_data(as_text=True)
+        self.assertIn('не наш', page)
+        conn = db()
+        self.assertEqual(len(package_library.library_usage(conn, libraryid)), 1)
+        conn.close()
+
+        # «Не наш пакет» — бой уходит из пакета и попадает в список исключённых.
+        response = self.owner.post(BASE + '/api/packages/library/%d/battle' % libraryid,
+                                   json={'roomid': roomid, 'gameindex': 1, 'status': 'foreign'})
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        package_library.reset_caches()
+        conn = db()
+        self.assertEqual(package_library.library_usage(conn, libraryid), [])
+        self.assertEqual([(item['roomid'], item['gameindex'])
+                          for item in package_library.rejected_battles(conn, libraryid)],
+                         [(roomid, 1)])
+        conn.close()
+        page = self.owner.get(BASE + '/packages/%d' % libraryid).get_data(as_text=True)
+        self.assertIn('Не наш пакет', page)
+        self.assertIn('вернуть', page)
+
+        # «Снять» — бой снова оценивает автоматика.
+        response = self.owner.post(BASE + '/api/packages/library/%d/battle' % libraryid,
+                                   json={'roomid': roomid, 'gameindex': 1, 'status': None})
+        self.assertEqual(response.status_code, 200)
+        package_library.reset_caches()
+        conn = db()
+        self.assertEqual(len(package_library.library_usage(conn, libraryid)), 1)
+        conn.close()
+
+    def test_battle_mark_checks_room_rights(self):
+        roomid = 9404
+        conn = db()
+        add_room(conn, roomid, self.owner.userid)
+        conn.commit()
+        conn.close()
+
+        def cleanup():
+            conn = db()
+            conn.execute("DELETE FROM package_battle_marks WHERE roomid = ?", (roomid,))
+            conn.execute("DELETE FROM activerooms WHERE roomid = ?", (roomid,))
+            conn.commit()
+            conn.close()
+
+        self.addCleanup(cleanup)
+
+        # Пакет владельца, но бой в чужой комнате: пометку ставить нельзя.
+        response = self.owner.post(
+            BASE + '/api/packages/library/%d/battle' % self.owner_library,
+            json={'roomid': 9402, 'gameindex': 1, 'status': 'own'})
+        self.assertEqual(response.status_code, 403)
+        response = self.other.post(
+            BASE + '/api/packages/library/%d/battle' % self.owner_library,
+            json={'roomid': roomid, 'gameindex': 1, 'status': 'own'})
+        self.assertEqual(response.status_code, 403)
+        response = self.owner.post(
+            BASE + '/api/packages/library/%d/battle' % self.owner_library,
+            json={'roomid': roomid, 'gameindex': 1, 'status': 'что-то'})
+        self.assertEqual(response.status_code, 400)
+        response = self.owner.post(
+            BASE + '/api/packages/library/%d/battle' % self.owner_library,
+            json={'roomid': roomid, 'gameindex': 1, 'status': 'own'})
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+
 
 class ThemeIdentityTests(unittest.TestCase):
     """Тема — это её вопросы. Названия могут совпадать, вопросы — нет."""
 
     def setUp(self):
+        package_library.reset_caches()
         self.conn = db()
         self.addCleanup(self.conn.close)
         self.conn.isolation_level = None
@@ -436,6 +542,7 @@ class FuzzyThemeTests(unittest.TestCase):
     """Правки текста (опечатки, замена пары слов) — та же тема, ответы не в счёт."""
 
     def setUp(self):
+        package_library.reset_caches()
         self.conn = db()
         self.addCleanup(self.conn.close)
         self.conn.isolation_level = None
@@ -522,6 +629,7 @@ class QuestionsPageTests(unittest.TestCase):
     """Раскладка тем: сыгранная тема помечена, но назначить её можно."""
 
     def setUp(self):
+        package_library.reset_caches()
         site.DB_PATH = WORK_DB
         self.admin = self.registered('администратор')
 
@@ -571,7 +679,7 @@ class QuestionsPageTests(unittest.TestCase):
         # Первая тема («Кино») игралась, у второй («Музыка») пусто.
         self.assertEqual(package_use[0]["exact"], ["комната 9500, бой 3"])
         self.assertEqual(package_use[0]["similar"], [])
-        self.assertEqual(package_use[1], {"exact": [], "similar": [], "title": []})
+        self.assertEqual(package_use[1], {"exact": [], "similar": [], "by_title": []})
 
     def test_free_seating_room_gets_layout_page(self):
         # Комната 2030 — свободная посадка: сетки нет, бои идут по порядку.
@@ -608,6 +716,7 @@ class ConsoleLayoutTests(unittest.TestCase):
     LISTENER = 'Илья Орлов'
 
     def setUp(self):
+        package_library.reset_caches()
         site.DB_PATH = WORK_DB
         self.client = self.registered('администратор')
         self.rooms = [self.ROOM, self.OTHER]
@@ -805,18 +914,25 @@ class ConsoleLayoutTests(unittest.TestCase):
 
 
 class LegacyLogTests(unittest.TestCase):
-    """Старые бои: в подробностях сохранились только названия тем."""
+    """Старые бои: в подробностях сохранились только названия тем.
+
+    Бой привязывается к пакету целиком: если в пакете нашлись почти все темы
+    боя, значит играли именно его. Одиночные совпадения названий не в счёт.
+    """
 
     ROOM = 9810
     LISTENER = 'Орлов Илья'
+    THEMES = ["Великая тема", "Дайте мне", "Михаилы разных стран",
+              "От «И» до «Ь»", "Романы ХХ века", "Гласные только «А»"]
+    FOREIGN = ["Учёные", "Быки", "Эпосы", "Ковры", "Сферы", "Горы"]
 
     def setUp(self):
+        package_library.reset_caches()
         site.DB_PATH = WORK_DB
         self.conn = db()
         self.conn.isolation_level = None
         self.conn.execute("BEGIN IMMEDIATE")
         self.addCleanup(self._rollback)
-        package_library._LEGACY_CACHE["key"] = None
 
     def _rollback(self):
         try:
@@ -824,7 +940,7 @@ class LegacyLogTests(unittest.TestCase):
         except sqlite3.Error:
             pass
         self.conn.close()
-        package_library._LEGACY_CACHE["key"] = None
+        package_library.reset_caches()
 
     def _old_game(self, roomid, gameindex, titles, players=None, start='19:00:00',
                   end='20:30:00'):
@@ -836,7 +952,8 @@ class LegacyLogTests(unittest.TestCase):
         detailed = {
             "players": players,
             "scores": [0] * len(players),
-            "answers": [{"theme": title, "value": 10 * (i + 1),
+            # В подробностях названия записаны заглавными.
+            "answers": [{"theme": title.upper(), "value": 10 * (i + 1),
                          "playerAnswers": [None] * len(players)}
                         for title in titles for i in range(5)],
         }
@@ -850,10 +967,10 @@ class LegacyLogTests(unittest.TestCase):
                 "INSERT INTO results (roomid, gameindex, playerid, name, score) "
                 "VALUES (?, ?, 0, ?, 0)", (roomid, gameindex, name))
 
-    def _package(self, topics):
+    def _package(self, topics, name="Вышкафест"):
         cursor = self.conn.execute(
             "INSERT INTO packages (roomid, name, data) VALUES (?, ?, ?)",
-            (self.ROOM, "Вышкафест", json.dumps(package_data(topics), ensure_ascii=False)))
+            (self.ROOM, name, json.dumps(package_data(topics), ensure_ascii=False)))
         packageid = cursor.lastrowid
         package_library.ensure_library(self.conn)
         package_library.link_package(self.conn, packageid)
@@ -861,28 +978,61 @@ class LegacyLogTests(unittest.TestCase):
                                  (packageid,)).fetchone()[0]
         return packageid, data
 
-    def test_old_game_is_recognised_by_title(self):
-        self._old_game(self.ROOM, 1, ["Великая тема", "Дайте мне"])
-        games = package_library.legacy_layouts(self.conn)
-        self.assertEqual(games[(self.ROOM, 1)]["titles"], ["Великая тема", "Дайте мне"])
+    def _libraryid(self, packageid):
+        return self.conn.execute(
+            "SELECT libraryid FROM packages WHERE packageid = ?", (packageid,)).fetchone()[0]
 
-        _, data = self._package(["Великая тема", "Спорт"])
+    def test_old_game_is_linked_to_package_as_a_whole(self):
+        self._old_game(self.ROOM, 1, self.THEMES)
+        games = package_library.legacy_layouts(self.conn)
+        self.assertEqual(games[(self.ROOM, 1)]["titles"],
+                         [title.upper() for title in self.THEMES])
+
+        _, data = self._package(self.THEMES + ["Спорт"])
+        places = package_library.theme_use_by_index(self.conn, data)
+        # Темы опознаны по вопросам пакета, а не по одному названию.
+        self.assertEqual(places[0]["exact"], ["комната 9810, бой 1"])
+        self.assertEqual(places[0]["by_title"], ["комната 9810, бой 1"])
+        self.assertEqual(places[6]["exact"], [])
+
+    def test_single_title_coincidence_is_ignored(self):
+        # В пакете совпало одно название из шести — это случайность, не играли его.
+        self._old_game(self.ROOM, 1, self.THEMES)
+        packageid, data = self._package(["Учёные", "Быки", "Эпосы", "Ковры", "Сферы", "Горы"])
         places = package_library.theme_use_by_index(self.conn, data)
         self.assertEqual(places[0]["exact"], [])
-        self.assertEqual(places[0]["title"], ["комната 9810, бой 1"])
-        self.assertEqual(places[1]["title"], [])
+        self.assertEqual(places[0]["by_title"], [])
+        self.assertEqual(package_library.library_usage(self.conn, self._libraryid(packageid)),
+                         [])
 
-    def test_old_game_warns_the_player(self):
-        self._old_game(self.ROOM, 1, ["Великая тема"])
-        _, data = self._package(["Великая тема"])
-        themes = [topic for topic in package_library.package_topics(data)]
-        heard = package_library.heard_by_themes(self.conn, themes, [self.LISTENER])
-        items = heard[self.LISTENER]
-        self.assertEqual(items[0]["topic"], "Великая тема")
-        self.assertEqual(items[0]["place"], "комната 9810, бой 1")
-        self.assertTrue(items[0]["by_title"])
+    def test_other_package_of_the_room_does_not_get_the_game(self):
+        # В комнате лежало два пакета, играли второй — первый не должен получить бой.
+        self._old_game(self.ROOM, 1, self.THEMES)
+        used_id, used_data = self._package(self.THEMES, name="Играли")
+        unused_id, unused_data = self._package(self.FOREIGN, name="Не играли")
 
-        # И комната, где тема разложена, тоже видит пересечение.
+        played = package_library.library_usage(self.conn, self._libraryid(used_id))
+        self.assertEqual([(item["roomid"], item["gameindex"]) for item in played],
+                         [(self.ROOM, 1)])
+        self.assertTrue(played[0]["by_title"])
+        self.assertEqual(sorted(played[0]["topics"]), sorted(self.THEMES))
+        self.assertEqual(package_library.library_usage(
+            self.conn, self._libraryid(unused_id)), [])
+
+        heard = package_library.heard_by_themes(
+            self.conn, list(package_library.package_topics(used_data)), [self.LISTENER])
+        self.assertEqual(heard[self.LISTENER][0]["place"], "комната 9810, бой 1")
+        self.assertTrue(heard[self.LISTENER][0]["by_title"])
+        # Похожее название из другого пакета никого не пугает.
+        wrong = package_library.heard_by_themes(
+            self.conn, list(package_library.package_topics(unused_data)), [self.LISTENER])
+        self.assertEqual(wrong, {})
+
+    def test_old_game_warns_the_player_in_another_room(self):
+        self._old_game(self.ROOM, 1, self.THEMES)
+        _, data = self._package(self.THEMES)
+        themes = list(package_library.package_topics(data))
+
         add_room(self.conn, self.ROOM + 1)
         self.conn.execute(
             "INSERT INTO game_protocols (roomid, gameindex, payload, revision) "
@@ -894,29 +1044,54 @@ class LegacyLogTests(unittest.TestCase):
         self.assertEqual(before[self.LISTENER][0]["place"], "комната 9810, бой 1")
         self.assertTrue(before[self.LISTENER][0]["by_title"])
 
-    def test_history_lists_old_game(self):
-        self._old_game(self.ROOM, 1, ["Великая тема"])
-        packageid, _ = self._package(["Великая тема"])
-        libraryid = self.conn.execute(
-            "SELECT libraryid FROM packages WHERE packageid = ?", (packageid,)).fetchone()[0]
-        usage = package_library.library_usage(self.conn, libraryid)
-        self.assertEqual(len(usage), 1)
-        self.assertTrue(usage[0]["by_title"])
-        self.assertEqual(usage[0]["topics"], ["Великая тема"])
-        self.assertEqual(usage[0]["listeners"], [self.LISTENER])
-        self.assertEqual(usage[0]["source"], "log")
-
+    def test_theme_history_lists_old_game(self):
+        self._old_game(self.ROOM, 1, self.THEMES)
+        packageid, _ = self._package(self.THEMES)
+        libraryid = self._libraryid(packageid)
         history = package_library.theme_history(self.conn, libraryid)
-        self.assertEqual(len(history), 1)
+        self.assertEqual(len(history), len(self.THEMES))
         self.assertTrue(history[0]["by_title"])
         self.assertEqual([(block["roomid"], block["gameindex"]) for block in history[0]["used"]],
                          [(self.ROOM, 1)])
+        self.assertEqual(history[0]["listeners"], [self.LISTENER])
+
+    def test_manual_marks_fix_wrong_data(self):
+        self._old_game(self.ROOM, 1, self.THEMES)
+        packageid, data = self._package(self.THEMES)
+        libraryid = self._libraryid(packageid)
+
+        # «Это не наш пакет» — бой пропадает из истории и из предупреждений.
+        package_library.set_battle_mark(self.conn, self.ROOM, 1, libraryid, "foreign",
+                                        by="администратор")
+        self.assertEqual(package_library.library_usage(self.conn, libraryid), [])
+        self.assertEqual(package_library.heard_by_themes(
+            self.conn, list(package_library.package_topics(data)), [self.LISTENER]), {})
+
+        # Пометку можно снять.
+        package_library.set_battle_mark(self.conn, self.ROOM, 1, libraryid, None)
+        self.assertEqual(len(package_library.library_usage(self.conn, libraryid)), 1)
+
+    def test_manual_mark_attaches_unrecognised_game(self):
+        # Две темы ведущие назвали иначе: названий слишком мало, чтобы опознать
+        # пакет самому, но ведущий знает, что бой был из него.
+        titles = self.THEMES[:-2] + ["Тема без названия", "Ещё одна тема"]
+        self._old_game(self.ROOM, 1, titles)
+        packageid, _ = self._package(self.THEMES)
+        libraryid = self._libraryid(packageid)
+        self.assertEqual(package_library.library_usage(self.conn, libraryid), [])
+
+        package_library.set_battle_mark(self.conn, self.ROOM, 1, libraryid, "own",
+                                        by="администратор")
+        usage = package_library.library_usage(self.conn, libraryid)
+        self.assertEqual(len(usage), 1)
+        # Опознались те темы, чьи названия сошлись.
+        self.assertEqual(len(usage[0]["topics"]), len(self.THEMES) - 2)
 
     def test_layout_wins_over_old_log(self):
         # Тот же бой уже размечен в плане: подписи вопросов точнее названий.
-        self._old_game(self.ROOM, 1, ["Кино"])
-        packageid, data = self._package(["Кино"])
-        theme = package_library.package_topics(data)[0]
+        self._old_game(self.ROOM, 1, self.THEMES)
+        packageid, data = self._package(self.THEMES)
+        theme = list(package_library.package_topics(data))[0]
         self.conn.execute(
             "INSERT INTO game_questions (roomid, gameindex, packageid, payload) "
             "VALUES (?, ?, ?, ?)",
