@@ -2852,9 +2852,18 @@ function protocolPayload(mid) {
     return payload;
 }
 
+// Последний отправленный протокол по каждому бою: если состояние не
+// изменилось, новую ревизию не гоним. Иначе загрузка страницы чинила бой
+// на сервере без всяких правок, плодя ревизии и конфликты.
+const protocolLastPayload = {};
+
 function queueProtocol(mid) {
     if (!mid) return;
-    Offline.enqueue('protocol', protocolPayload(mid));
+    const payload = protocolPayload(mid);
+    const signature = JSON.stringify(Object.assign({}, payload, {base_revision: undefined}));
+    if (protocolLastPayload[Number(mid)] === signature) return;
+    protocolLastPayload[Number(mid)] = signature;
+    Offline.enqueue('protocol', payload);
 }
 
 // Перенос боя на другое устройство: серверный протокол новее локального —
