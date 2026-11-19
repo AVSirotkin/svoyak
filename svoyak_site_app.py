@@ -4519,14 +4519,21 @@ def ActivePage():
 def detailed(roomid, gameindex, return_json = True):
     conn = get_db_connection()
     #todo: move detailed info into other table
-    play_hist = conn.execute("SELECT data FROM log WHERE roomid = ? and event = 'save game result'", (roomid,)).fetchall()
+    play_hist = conn.execute("SELECT data FROM log WHERE roomid = ? and event = 'save game result'",
+                             (roomid,)).fetchall()
     res = None
     for rs in play_hist:
-        rj = json.loads(rs["data"])
-        if rj["gameindex"] == gameindex:
-            if "detailed" in rj:
-                res = rj["detailed"]    
-            break 
+        try:
+            rj = json.loads(rs["data"])
+        except (TypeError, ValueError):
+            continue
+        if rj.get("gameindex") != gameindex:
+            continue
+        if "detailed" in rj:
+            # Бой могли сохранить повторно (поправили счёт или имена) —
+            # отчёт показываем по последнему сохранению.
+            res = rj["detailed"]
+    conn.close()
     return(json.dumps(res))
 
 
