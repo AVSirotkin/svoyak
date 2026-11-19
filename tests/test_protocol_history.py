@@ -189,6 +189,9 @@ class ProtocolRevisionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
         data = json.loads(response.get_data(as_text=True))
         self.assertEqual(data['status'], 'conflict')
+        # По этой ревизии клиент выравнивает базу: иначе каждое следующее
+        # автосохранение снова и снова падало бы в конфликт.
+        self.assertEqual(data['revision'], 2)
 
         # Текущая версия не тронута, спорная сохранена отдельно.
         self.assertEqual(self.protocol()['marks'], {'0:256': 'plus', '1:256': 'plus'})

@@ -2603,8 +2603,11 @@ function showResetGameOver() {
 
 function getGameResults() {
     const results = {
-        players: gameData.players,
-        scores: gameState.scores,
+        // Копии, а не ссылки: запись уходит в очередь отправки, а очередь
+        // живёт долго. Если ведущий пересядет игроков или поставит ещё
+        // отметки, отчёт не должен поменяться задним числом.
+        players: gameData.players.map((name) => name || ''),
+        scores: gameState.scores.map((score) => Number(score) || 0),
         answers: [],
         halfMinus: gameState.halfMinus,
         date: new Date().toISOString()
@@ -2612,10 +2615,11 @@ function getGameResults() {
     let idx = 0;
     gameData.questionBlocks.forEach(block => {
         block.questions.forEach(q => {
+            const row = gameState.answers[idx] || [];
             results.answers.push({
                 theme: block.theme,
                 value: q.value,
-                playerAnswers: gameState.answers[idx]
+                playerAnswers: row.map((answer) => (answer === true || answer === false ? answer : null))
             });
             idx++;
         });
@@ -3246,6 +3250,10 @@ function AddResult() {
     // Сохраняем локально сразу: сервер не обязателен, отправка пойдёт в очередь.
     const savedIndex = Number(gameindex);
     const detailed = getGameResults();
+    // Имена и счета в отчёте берём ровно те, что сохраняем: внутреннее
+    // состояние могло отстать от полей, а отчёт должен сходиться с результатом.
+    detailed.players = scores.map((item) => item.name);
+    detailed.scores = scores.map((item) => Number(item.score) || 0);
     Offline.saveGameLocal(savedIndex, scores);
     Offline.enqueue('saveGame', { gameindex: savedIndex, scores, detailed });
 
@@ -4926,6 +4934,20 @@ const Offline = (() => {
         return fetchWithTimeout(url, options);
     }
 
+    // В очереди может лежать протокол, собранный до ответа сервера: его
+    // base_revision уже устарел, и сервер посчитал бы это конфликтом.
+    function rebaseQueuedProtocol(gameindex, revision) {
+        const mid = Number(gameindex);
+        const fresh = Number(revision);
+        if (!mid || !fresh) return;
+        protocolRevision[mid] = fresh;
+        outbox.forEach((item) => {
+            if (item.type === 'protocol' && Number(item.payload.gameindex) === mid) {
+                item.payload.base_revision = fresh;
+            }
+        });
+    }
+
     async function flush(force) {
         if (flushing || !outbox.length) { updateBanner(); return; }
         if (mode() === 'autonomous' && !force) { updateBanner(); return; }
@@ -4969,7 +4991,10 @@ const Offline = (() => {
                     try {
                         const data = await response.json();
                         if (data && data.revision) {
-                            protocolRevision[Number(op.payload.gameindex)] = Number(data.revision);
+                            // Следующий протокол из очереди уже собран со
+                            // старым base_revision — без этого он тоже стал бы
+                            // конфликтом.
+                            rebaseQueuedProtocol(op.payload.gameindex, data.revision);
                         }
                     } catch (error) { /* ревизия обновится следующим ответом */ }
                 }
@@ -4979,6 +5004,16 @@ const Offline = (() => {
                 lastError = op.type === 'protocol'
                     ? 'конфликт версий протокола — решает организатор'
                     : 'комната уже завершена на сервере';
+                if (op.type === 'protocol') {
+                    // Берём ревизию из ответа: иначе каждое следующее
+                    // автосохранение снова падало бы в конфликт.
+                    try {
+                        const data = await response.json();
+                        if (data && data.revision) {
+                            rebaseQueuedProtocol(op.payload.gameindex, data.revision);
+                        }
+                    } catch (error) { /* останемся на прежней ревизии */ }
+                }
                 outbox.shift();
                 saveOutbox();
                 continue;
