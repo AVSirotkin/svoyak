@@ -2827,7 +2827,8 @@ function protocolPayload(mid) {
         halfMinus: !!gameState.halfMinus,
         finished: !!gameState.gameFinished,
         mode: Offline.mode(),
-        client: SvoyakSync.clientId()
+        client: SvoyakSync.clientId(),
+        tab: SvoyakSync.tabId()
     };
     if (protocolRevision[Number(mid)] != null) {
         payload.base_revision = protocolRevision[Number(mid)];

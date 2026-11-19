@@ -181,6 +181,30 @@ class ProtocolRevisionTests(unittest.TestCase):
         self.assertEqual(self.save({'0:256': 'plus'}).status_code, 200)
         self.assertEqual(self.protocol()['revision'], 2)
 
+    def test_protocol_remembers_writer(self):
+        # По этим полям видно, какое окно увело ревизию боя.
+        self.save(MARKS, client='c123', tab='t9')
+        payload = self.protocol()
+        self.assertEqual(payload['client'], 'c123')
+        self.assertEqual(payload['tab'], 't9')
+        # Сохранение без этих полей не затирает автора прошлой версии.
+        self.save({'0:256': 'plus'})
+        payload = self.protocol()
+        self.assertEqual(payload['client'], 'c123')
+        self.assertEqual(payload['tab'], 't9')
+
+    def test_same_state_with_stale_base_is_not_a_conflict(self):
+        # Второй пульт ничего не менял: спорить не о чем.
+        self.assertEqual(self.save({'0:256': 'plus'}).status_code, 200)
+        self.assertEqual(self.save({'0:256': 'plus', '1:256': 'plus'}).status_code, 200)  # ревизия 2
+        response = self.save({'0:256': 'plus', '1:256': 'plus'}, base_revision=1)
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        data = json.loads(response.get_data(as_text=True))
+        self.assertEqual(data['status'], 'ok')
+        self.assertEqual(data['revision'], 2)
+        self.assertEqual(self.conflicts()['conflicts'], [])
+        self.assertEqual(self.protocol()['revision'], 2)
+
     def test_stale_version_goes_to_conflicts(self):
         self.save({'0:256': 'plus'})
         self.save({'0:256': 'plus', '1:256': 'plus'})       # ревизия 2

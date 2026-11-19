@@ -715,7 +715,8 @@ function protocolPayload() {
         finished: !!gameState.gameFinished,
         base_revision: REVISION,
         mode: sync.mode(),
-        client: SvoyakSync.clientId()
+        client: SvoyakSync.clientId(),
+        tab: SvoyakSync.tabId()
     };
     if (PLACEHOLDER) {
         // Заглушка: настоящих тем нет, храним только отметки.

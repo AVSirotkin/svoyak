@@ -2005,6 +2005,21 @@ def PlanQuestionsSave(roomid):
     }, ensure_ascii=False)
 
 
+def protocol_state(payload):
+    """Содержание протокола без служебных пометок о том, кто его писал.
+
+    По нему видно, спорят ли две версии по существу или это один и тот же
+    бой, сохранённый дважды (второй пульт ничего не менял).
+    """
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        key: value for key, value in payload.items()
+        if key not in ("client", "tab", "base_revision", "v",
+                       "updated_at", "updated_by", "revision", "mode")
+    }
+
+
 def room_protocol(conn, roomid, gameindex):
     """Текущее состояние протокола боя. None, если протокол ещё не сохраняли."""
     try:
@@ -2560,6 +2575,9 @@ def PlanGameProtocol(roomid, gameindex):
         for key, default in (
             ("players", []), ("scores", {}), ("scoresSource", "marks"),
             ("halfMinus", False), ("finished", False),
+            # Кто писал протокол: браузер и окно. Без этого не разобраться,
+            # откуда взялась чужая ревизия.
+            ("client", None), ("tab", None),
         ):
             if key in data:
                 payload[key] = data[key]
@@ -2580,6 +2598,17 @@ def PlanGameProtocol(roomid, gameindex):
         # Организатор увидит обе и выберет, какая верна.
         if (base_revision is not None and existing is not None
                 and base_revision != current_revision):
+            # Спорить не о чем, если прислали ровно то, что уже лежит: так
+            # выглядит второй пульт, который ничего не менял.
+            if protocol_state(payload) == protocol_state(previous_payload):
+                conn.execute("COMMIT")
+                current = room_protocol(conn, roomid, gameindex)
+                return json.dumps({
+                    "status": "ok",
+                    "message": "Версия уже такая же",
+                    "revision": current_revision,
+                    "protocol": current,
+                }, ensure_ascii=False)
             cursor = conn.execute(
                 "INSERT INTO game_protocol_conflicts "
                 "(roomid, gameindex, payload, revision, author, client) "

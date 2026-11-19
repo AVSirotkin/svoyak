@@ -43,6 +43,23 @@
         return id;
     }
 
+    // id окна: clientId общий на весь браузер (localStorage), а два пульта в
+    // разных вкладках — это два разных писателя. По tabId видно, кто именно
+    // увёл ревизию боя.
+    function tabId() {
+        let id = null;
+        try {
+            id = sessionStorage.getItem('svoyak_tab_id');
+        } catch (error) { /* приватный режим */ }
+        if (!id) {
+            id = 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+            try {
+                sessionStorage.setItem('svoyak_tab_id', id);
+            } catch (error) { /* не страшно: id будет новый */ }
+        }
+        return id;
+    }
+
     function modeKey(roomid, area) {
         return 'svoyak_sync_mode_' + roomid + '_' + area;
     }
@@ -400,6 +417,7 @@
         getMode: getMode,
         setMode: setMode,
         clientId: clientId,
+        tabId: tabId,
         shortStamp: shortStamp,
         createQueue: createQueue
     };
