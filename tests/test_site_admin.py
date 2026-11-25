@@ -294,5 +294,51 @@ class AdminApiTests(unittest.TestCase):
         conn.close()
 
 
+    def test_unfinish_returns_room_to_game(self):
+        conn = db()
+        conn.execute("UPDATE activerooms SET finished = 1 WHERE roomid = 2030")
+        conn.execute(
+            "INSERT OR REPLACE INTO roomhistory (roomid, winerplayerid) VALUES (?, ?)",
+            (2030, 1))
+        conn.commit()
+        conn.close()
+
+        response = self.admin.post(BASE + '/api/admin/rooms/2030/unfinish', json={})
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        conn = db()
+        finished = conn.execute(
+            "SELECT finished FROM activerooms WHERE roomid = 2030").fetchone()['finished']
+        events = conn.execute(
+            "SELECT data FROM log WHERE roomid = 2030 AND event = 'room unfinish'"
+        ).fetchall()
+        conn.close()
+        self.assertFalse(finished)
+        self.assertTrue(events, 'отмена финиша должна попасть в журнал')
+        # Результаты никуда не делись, комната снова играет.
+        conn = db()
+        self.assertGreater(count(conn, 'results', 2030), 0)
+        conn.close()
+
+    def test_unfinish_refuses_running_room(self):
+        response = self.admin.post(BASE + '/api/admin/rooms/2024/unfinish', json={})
+        self.assertEqual(response.status_code, 400)
+
+    def test_unfinish_needs_admin(self):
+        response = self.host.post(BASE + '/api/admin/rooms/2030/unfinish', json={})
+        self.assertEqual(response.status_code, 403)
+
+    def test_admin_page_offers_unfinish(self):
+        conn = db()
+        conn.execute("UPDATE activerooms SET finished = 1 WHERE roomid = 2030")
+        conn.commit()
+        conn.close()
+        text = self.admin.get(BASE + '/admin').get_data(as_text=True)
+        self.assertIn('unfinishRoom(2030)', text)
+        conn = db()
+        conn.execute("UPDATE activerooms SET finished = 0 WHERE roomid = 2030")
+        conn.commit()
+        conn.close()
+
+
 if __name__ == '__main__':
     unittest.main()

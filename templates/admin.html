@@ -72,6 +72,10 @@
                     </td>
                     <td class="admin-row-actions text-end">
                         <a class="btn btn-sm btn-outline-secondary" href="/plan/{{ room.roomid }}">Пульт</a>
+                        {% if room.finished %}
+                        <button class="btn btn-sm btn-outline-success" type="button"
+                                onclick="unfinishRoom({{ room.roomid }})">Вернуть в игру…</button>
+                        {% endif %}
                         <button class="btn btn-sm btn-outline-secondary" type="button"
                                 onclick="renumberRoom({{ room.roomid }})">Номер…</button>
                         <button class="btn btn-sm btn-outline-secondary" type="button"
@@ -219,6 +223,19 @@
                                     {confirm: typed.trim()});
         if (data) {
             alert('Комната ' + roomid + ' удалена. Копия: ' + data.backup);
+            document.location.reload();
+        }
+    }
+
+    async function unfinishRoom(roomid) {
+        if (!confirm('Вернуть комнату ' + roomid + ' в игру?\n' +
+                     'Пульт, правка результатов и план снова откроются. ' +
+                     'Результаты и протоколы останутся на месте.')) {
+            return;
+        }
+        const data = await postJson('/api/admin/rooms/' + roomid + '/unfinish', {});
+        if (data) {
+            alert('Комната ' + roomid + ' снова идёт.');
             document.location.reload();
         }
     }

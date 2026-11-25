@@ -4247,6 +4247,48 @@ def AdminRoomOwner(roomid):
     return json.dumps({"status": "ok", "ownerid": ownerid}, ensure_ascii=False)
 
 
+@app.route('/api/admin/rooms/<int:roomid>/unfinish', subdomain="svoyak",
+           methods=["POST"])
+@api_admin_required
+def AdminUnfinishRoom(roomid):
+    """Возвращает завершённую комнату в игру.
+
+    Ошибочно нажали «Завершить» — комната снова открывается: пульт, правка
+    результатов, план. Результаты, протоколы и победитель в истории остаются;
+    запись о победителе снимаем, иначе завершённая комната видна как сыгранная.
+    """
+    user = current_user()
+    by = f"{user['name']} ({user['login']})"
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        room = conn.execute(
+            "SELECT finished FROM activerooms WHERE roomid = ?", (roomid,)
+        ).fetchone()
+        if room is None:
+            conn.execute("ROLLBACK")
+            return _admin_error(f"Комнаты {roomid} нет", 404)
+        if not room["finished"]:
+            conn.execute("ROLLBACK")
+            return _admin_error(f"Комната {roomid} и не завершена")
+        conn.execute("UPDATE activerooms SET finished = 0 WHERE roomid = ?", (roomid,))
+        cleared = 0
+        try:
+            cleared = conn.execute(
+                "UPDATE roomhistory SET winerplayerid = NULL WHERE roomid = ?",
+                (roomid,)).rowcount
+        except sqlite3.OperationalError:
+            # Таблицы истории может не быть в старой базе — это не помеха.
+            cleared = 0
+        log_game_events(roomid, "room unfinish",
+                        {"by": by, "winner_cleared": bool(cleared)}, conn=conn)
+        conn.execute("COMMIT")
+    finally:
+        conn.close()
+    return json.dumps({"status": "ok", "roomid": roomid, "finished": False},
+                      ensure_ascii=False)
+
+
 @app.route('/admin/backups/<path:name>', subdomain="svoyak")
 @admin_required
 def AdminBackupFile(name):
