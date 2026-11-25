@@ -2103,6 +2103,15 @@ def PlanQuestionsPage(roomid):
                 started[row["gameindex"]] = row["updated_at"]
         except sqlite3.OperationalError:
             started = {}
+        # С какого боя раскладывать пакет целиком: с первого, у которого ещё
+        # нет раскладки. Уже разложенные бои так не перезаписываются.
+        spread_from = None
+        for game in games:
+            if game["gameindex"] not in assigned:
+                spread_from = game["gameindex"]
+                break
+        if spread_from is None:
+            spread_from = (games[-1]["gameindex"] + 1) if games else 1
         # Что из этих пакетов уже игралось где-то: админ видит пометку у темы.
         # Тема опознаётся по своим вопросам, поэтому пометка — по номеру темы.
         theme_use = {}
@@ -2129,7 +2138,7 @@ def PlanQuestionsPage(roomid):
         "plan_questions.html", roomid=roomid, overview=overview, games=games,
         free_seating=free_seating, packages=packages, assigned=assigned, started=started,
         package_layouts=package_layouts, package_presets=package_presets,
-        extra=extra,
+        extra=extra, spread_from=spread_from,
         theme_use=theme_use, title=f"Вопросы турнира {roomid}",
     )
 

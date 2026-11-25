@@ -50,6 +50,49 @@
 </div>
 {% endif %}
 
+{% if packages %}
+<div class="card mb-3" id="spread-card">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+            <div>
+                <strong>Разложить пакет целиком</strong>
+                <div class="small text-muted">
+                    Бои раскладки встанут подряд, начиная с указанного боя. Бои, где уже
+                    что-то назначено, не трогаются — их можно разложить по одному ниже.
+                </div>
+            </div>
+            <div class="d-flex gap-2 align-items-end flex-wrap">
+                <div>
+                    <label class="form-label small mb-1">Пакет</label>
+                    <select class="form-select form-select-sm" id="spread-package"
+                            onchange="fillSpreadLayouts()" style="width: 15rem">
+                        <option value="">— выберите пакет —</option>
+                        {% for package in packages %}
+                        <option value="{{ package.packageid }}">{{ package.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label small mb-1">Раскладка</label>
+                    <select class="form-select form-select-sm" id="spread-layout" disabled
+                            style="width: 17rem">
+                        <option value="">— сначала пакет —</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label small mb-1">с боя</label>
+                    <input class="form-control form-control-sm" id="spread-from" type="number"
+                           min="1" value="{{ spread_from }}" style="width: 5rem">
+                </div>
+                <button class="btn btn-sm btn-primary" id="spread-go" type="button"
+                        onclick="spreadPackage()">Разложить</button>
+            </div>
+        </div>
+        <div class="small mt-2" id="spread-status"></div>
+    </div>
+</div>
+{% endif %}
+
 {% for game in games|sort(attribute='order') %}
 {% set binding = assigned.get(game.gameindex) %}
 <div class="game-card" id="game-{{ game.gameindex }}" data-game="{{ game.gameindex }}">
@@ -128,7 +171,17 @@
 
 {% block scripts %}
 <script>
-    function init_page() {}
+    function init_page() {
+        // Один пакет с раскладками — сразу подставляем его в «разложить целиком»,
+        // чтобы не выбирать из списка ради одного варианта.
+        const packages = Array.from(new Set(
+            Object.keys(LAYOUTS).concat(Object.keys(PRESETS))));
+        const select = document.getElementById('spread-package');
+        if (select && packages.length === 1) {
+            select.value = packages[0];
+            fillSpreadLayouts();
+        }
+    }
 
     const ROOMID = {{ roomid }};
     const CACHE = {};
@@ -290,6 +343,143 @@
             return data && data.status === 'ok' ? data : null;
         } catch (error) {
             return null;
+        }
+    }
+
+    // ============================================================
+    // РАЗЛОЖИТЬ ПАКЕТ ЦЕЛИКОМ
+    // ============================================================
+    // В раскладке пакет уже разрезан на бои: остаётся поставить их подряд,
+    // не выбирая шесть тем в каждом бою руками.
+    function fillSpreadLayouts() {
+        const packageid = document.getElementById('spread-package').value;
+        const select = document.getElementById('spread-layout');
+        const status = document.getElementById('spread-status');
+        if (!select) return;
+        select.innerHTML = '';
+        select.disabled = true;
+        if (status) status.textContent = '';
+        if (!packageid) {
+            select.innerHTML = '<option value="">— сначала пакет —</option>';
+            return;
+        }
+        const layouts = LAYOUTS[String(packageid)] || [];
+        const presets = (PRESETS[String(packageid)] || {}).items || [];
+        if (!layouts.length && !presets.length) {
+            select.innerHTML = '<option value="">— нет раскладок —</option>';
+            if (status) {
+                status.textContent = 'У пакета нет раскладок: соберите её на странице пакета.';
+            }
+            return;
+        }
+        select.innerHTML = '<option value="">— выберите раскладку —</option>';
+        layouts.forEach((layout) => {
+            const parts = layout.parts || [];
+            const option = document.createElement('option');
+            option.value = 'layout:' + layout.layoutid;
+            option.textContent = `${layout.name} (${parts.length} боёв)`;
+            option.dataset.parts = JSON.stringify(parts);
+            option.dataset.layoutid = layout.layoutid;
+            option.dataset.name = layout.name;
+            select.appendChild(option);
+        });
+        if (presets.length) {
+            const group = document.createElement('optgroup');
+            group.label = 'пресеты — сохранятся при раскладке';
+            presets.forEach((preset) => {
+                const parts = preset.parts || [];
+                const option = document.createElement('option');
+                option.value = 'preset:' + preset.key;
+                option.textContent = `${preset.name} (${parts.length} боёв)`;
+                option.dataset.parts = JSON.stringify(parts);
+                option.dataset.preset = preset.key;
+                option.dataset.name = preset.name;
+                group.appendChild(option);
+            });
+            select.appendChild(group);
+        }
+        select.disabled = false;
+    }
+
+    async function spreadPackage() {
+        const packageid = Number(document.getElementById('spread-package').value);
+        const select = document.getElementById('spread-layout');
+        const option = select && select.options[select.selectedIndex];
+        const from = Math.max(1, Number(document.getElementById('spread-from').value) || 1);
+        const status = document.getElementById('spread-status');
+        const button = document.getElementById('spread-go');
+        if (!packageid) {
+            status.textContent = 'Выберите пакет.';
+            return;
+        }
+        if (!option || !option.value) {
+            status.textContent = 'Выберите раскладку.';
+            return;
+        }
+        let parts = [];
+        try {
+            parts = JSON.parse(option.dataset.parts || '[]');
+        } catch (error) {
+            parts = [];
+        }
+        if (!parts.length) {
+            status.textContent = 'В этой раскладке нет боёв.';
+            return;
+        }
+
+        // Пресет в пакете ещё не сохранён: сохраняем, чтобы бои ссылались на
+        // раскладку, а не на «какие-то темы».
+        let layoutid = option.dataset.layoutid ? Number(option.dataset.layoutid) : null;
+        if (!layoutid && option.dataset.preset) {
+            const saved = await savePresetLayout(packageid, option.dataset.preset);
+            if (saved && saved.layoutid) layoutid = Number(saved.layoutid);
+        }
+
+        const free = parts.filter((part, index) => !ASSIGNED[from + index]);
+        if (!free.length) {
+            status.textContent = 'Эти бои уже разложены — начните с другого боя.';
+            return;
+        }
+        if (!confirm(`Разложить «${option.dataset.name}»: ${free.length} боёв, начиная с боя ${from}?`)) {
+            return;
+        }
+
+        button.disabled = true;
+        let done = 0;
+        const problems = [];
+        for (let index = 0; index < parts.length; index++) {
+            const gameindex = from + index;
+            if (ASSIGNED[gameindex]) {
+                problems.push(`бой ${gameindex} пропущен: уже разложен`);
+                continue;
+            }
+            status.textContent = `Раскладываю: бой ${gameindex} (${done + 1} из ${free.length})…`;
+            try {
+                const response = await fetch('/api/plan/' + ROOMID + '/questions', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+                    body: JSON.stringify({
+                        gameindex: gameindex, packageid: packageid, themes: parts[index],
+                        layoutid: layoutid, part: index, force: true, ack_heard: true
+                    })
+                });
+                const data = await response.json().catch(() => ({}));
+                if (response.status === 200 && data.status === 'ok') {
+                    done += 1;
+                } else {
+                    problems.push(`бой ${gameindex}: ${data.message || response.status}`);
+                    break;
+                }
+            } catch (error) {
+                problems.push(`бой ${gameindex}: сеть недоступна`);
+                break;
+            }
+        }
+        button.disabled = false;
+        status.textContent = `Разложено боёв: ${done}.` +
+            (problems.length ? ' ' + problems.join('; ') : '');
+        if (!problems.length) {
+            document.location.reload();
         }
     }
 

@@ -281,5 +281,78 @@ class HorizonTests(EveningBase):
             self.assertIn('data-game="%d"' % gameindex, text)
 
 
+class SpreadTests(EveningBase):
+    """«Разложить пакет целиком»: бои раскладки встают подряд одним действием."""
+
+    def parts_of(self, layoutid):
+        conn = db()
+        try:
+            row = conn.execute("SELECT parts FROM package_layouts WHERE layoutid = ?",
+                               (layoutid,)).fetchone()
+            return json.loads(row[0])
+        finally:
+            conn.close()
+
+    def topics_of(self, packageid):
+        conn = db()
+        try:
+            row = conn.execute("SELECT data FROM packages WHERE packageid = ?",
+                               (packageid,)).fetchone()
+            return json.loads(row[0])["topics"]
+        finally:
+            conn.close()
+
+    def spread(self, start, packageid, layoutid):
+        """То же, что делает кнопка: бои раскладки подряд, по одному запросу."""
+        for part, indexes in enumerate(self.parts_of(layoutid)):
+            response = self.holder.post(
+                BASE + '/api/plan/%d/questions' % self.room,
+                json={'gameindex': start + part, 'packageid': packageid,
+                      'themes': indexes, 'layoutid': layoutid, 'part': part,
+                      'force': True, 'ack_heard': True})
+            self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+
+    def test_page_has_spread_card(self):
+        text = self.plan_page()
+        self.assertIn('Разложить пакет целиком', text)
+        self.assertIn('id="spread-package"', text)
+        self.assertIn('id="spread-layout"', text)
+        self.assertIn('onclick="spreadPackage()"', text)
+
+    def test_spread_starts_at_first_free_battle(self):
+        self.assign(1, self.first_id, self.first_layout, 0, [0, 2, 4, 6, 8, 10])
+        self.assign(2, self.first_id, self.first_layout, 1, [1, 3, 5, 7, 9, 11])
+        text = self.plan_page()
+        start = text.find('id="spread-from"')
+        self.assertGreater(start, 0)
+        self.assertIn('value="3"', text[start:start + 200])
+
+    def test_spread_lays_out_whole_package(self):
+        # Двенадцать тем — два боя по шесть; оба встают одним действием.
+        self.spread(1, self.first_id, self.first_layout)
+        parts = self.parts_of(self.first_layout)
+        self.assertEqual(len(parts), 2)
+        topics = self.topics_of(self.first_id)
+        for part, indexes in enumerate(parts, 1):
+            plan = self.plan_battle(part)
+            self.assertIsNotNone(plan, part)
+            self.assertEqual([theme['topic'] for theme in plan['topics']],
+                             [topics[index]['topic'] for index in indexes], part)
+            self.assertEqual(plan['packageid'], self.first_id)
+        self.assertIsNone(self.plan_battle(3))
+
+    def test_spread_second_package_after_first(self):
+        self.spread(1, self.first_id, self.first_layout)
+        self.spread(3, self.second_id, self.second_layout)
+        topics = self.topics_of(self.second_id)
+        plan = self.plan_battle(3)
+        self.assertEqual([theme['topic'] for theme in plan['topics']],
+                         [topics[index]['topic'] for index in self.parts_of(
+                             self.second_layout)[0]])
+        self.assertEqual(plan['packageid'], self.second_id)
+        # Оба пакета легли подряд, ничего не потерялось.
+        self.assertIsNone(self.plan_battle(5))
+
+
 if __name__ == '__main__':
     unittest.main()
