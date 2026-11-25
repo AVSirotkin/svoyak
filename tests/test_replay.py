@@ -568,6 +568,23 @@ class PlayedBattleTests(ReplayBase):
         self.assertEqual(payload['marks'], {'0:1': 'plus'})
         self.assertIn('protocol themes kept', events)
 
+    def test_history_takes_protocol_themes_for_played_battle(self):
+        self.save_protocol(2, [0, 1, 2, 3, 4, 5])
+        self.play(2, ['Аня', 'Боря'], [0, 1, 2, 3, 4, 5])
+        self.write_plan(2, [6, 7, 8, 9, 10, 11])
+        package_library.reset_caches()
+        conn = db()
+        try:
+            layouts = {layout["gameindex"]: layout
+                       for layout in package_library.theme_layouts(conn)
+                       if layout["roomid"] == self.room}
+        finally:
+            conn.close()
+        self.assertEqual(layouts[2]["source"], "protocol")
+        self.assertEqual([theme["topic"] for theme in layouts[2]["themes"]],
+                         ["Тема %s %s" % (number, self.suffix)
+                          for number in (1, 2, 3, 4, 5, 6)])
+
     def test_played_battle_themes_feed_replays(self):
         # Повтор берёт темы протокола, а не подменённого плана.
         self.save_protocol(1, [0, 1, 2, 3, 4, 5])

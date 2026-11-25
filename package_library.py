@@ -1640,6 +1640,14 @@ def theme_layouts(conn):
             "packageid": payload.get("packageid"), "themes": themes,
             "source": "protocol", "updated": row["updated_at"],
         })
+    # Бои с результатами: их темы — то, что читали за столом. План к такому
+    # бою могли перепривязать задним числом, поэтому верим протоколу.
+    played = set()
+    try:
+        for row in conn.execute("SELECT DISTINCT roomid, gameindex FROM results"):
+            played.add((row[0], row[1]))
+    except sqlite3.OperationalError:
+        played = set()
     # Если бой есть и в плане, и в пульте — берём тот, где тем больше: так
     # сохраняется и плановая раскладка, и то, что ведущий реально играл.
     best = {}
@@ -1648,7 +1656,13 @@ def theme_layouts(conn):
         current = best.get(key)
         if current is None or len(layout["themes"]) > len(current["themes"]):
             best[key] = layout
-        elif len(layout["themes"]) == len(current["themes"]) and layout["source"] == "plan":
+            continue
+        if len(layout["themes"]) != len(current["themes"]):
+            continue
+        if key in played:
+            if layout["source"] == "protocol":
+                best[key] = layout
+        elif layout["source"] == "plan":
             best[key] = layout
     # Старый бой знает только названия тем. Чтобы не ловить случайные совпадения
     # (тема «Учёные» есть во многих пакетах), бой привязывается к пакету целиком:
