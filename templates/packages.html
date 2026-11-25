@@ -7,6 +7,8 @@
     <div class="text-muted small">
         Один пакет может играться в разных комнатах и в разные дни. Здесь видно,
         в каких боях игрались его темы и кто мог их слышать.
+        Пакеты, к которым у вас нет доступа, показаны карточкой — содержимое
+        открывает правообладатель.
     </div>
 </div>
 
@@ -17,12 +19,60 @@
 </div>
 {% endif %}
 
-<form class="d-flex gap-2 mb-3" method="get" action="/packages">
-    <input class="form-control form-control-sm" style="max-width: 22rem" type="search"
-           name="q" value="{{ query }}" placeholder="название пакета">
-    <button class="btn btn-sm btn-outline-secondary" type="submit">Найти</button>
-    {% if query %}<a class="btn btn-sm btn-link" href="/packages">сбросить</a>{% endif %}
-</form>
+<div class="d-flex gap-2 mb-3 flex-wrap align-items-center">
+    <form class="d-flex gap-2" method="get" action="/packages">
+        <input class="form-control form-control-sm" style="max-width: 22rem" type="search"
+               name="q" value="{{ query }}" placeholder="название, турнир или автор">
+        {% if mine_only %}<input type="hidden" name="mine" value="1">{% endif %}
+        <button class="btn btn-sm btn-outline-secondary" type="submit">Найти</button>
+        {% if query %}<a class="btn btn-sm btn-link" href="/packages">сбросить</a>{% endif %}
+    </form>
+    <a class="btn btn-sm {% if mine_only %}btn-secondary{% else %}btn-outline-secondary{% endif %}"
+       href="/packages?mine={{ 0 if mine_only else 1 }}{% if query %}&q={{ query|urlencode }}{% endif %}">
+        {% if mine_only %}все пакеты{% else %}только мои{% endif %}
+    </a>
+    <span class="ms-auto"></span>
+    <button class="btn btn-sm btn-primary" type="button" data-bs-toggle="collapse"
+            data-bs-target="#upload-package">Загрузить пакет</button>
+</div>
+
+<div class="collapse mb-3" id="upload-package">
+    <div class="card">
+        <div class="card-body">
+            <div class="text-muted small mb-2">
+                Пакет — это JSON с полем <code>topics</code>. Загрузивший становится
+                правообладателем: содержимое видят только те, кому он разрешит.
+            </div>
+            <div class="row g-2">
+                <div class="col-12 col-md-4">
+                    <input class="form-control form-control-sm" id="upload-name"
+                           placeholder="название пакета">
+                </div>
+                <div class="col-6 col-md-3">
+                    <input class="form-control form-control-sm" id="upload-tournament"
+                           placeholder="турнир, где игрался">
+                </div>
+                <div class="col-6 col-md-3">
+                    <input class="form-control form-control-sm" id="upload-author"
+                           placeholder="автор (если не вы)">
+                </div>
+                <div class="col-12 col-md-2">
+                    <input class="form-control form-control-sm" id="upload-date" placeholder="дата">
+                </div>
+            </div>
+            <div class="mt-2">
+                <input class="form-control form-control-sm" id="upload-file" type="file"
+                       accept="application/json,.json">
+            </div>
+            <div class="mt-2 d-flex gap-2 align-items-center">
+                <button class="btn btn-sm btn-primary" type="button" onclick="uploadPackage()">
+                    Загрузить
+                </button>
+                <span class="small text-muted" id="upload-status"></span>
+            </div>
+        </div>
+    </div>
+</div>
 
 {% if items %}
 <div class="table-responsive">
@@ -30,6 +80,7 @@
         <thead>
             <tr>
                 <th>Пакет</th>
+                <th>Доступ</th>
                 <th class="text-end">Тем</th>
                 <th class="text-end">Копий</th>
                 <th class="text-end">Комнат</th>
@@ -40,8 +91,42 @@
         <tbody>
             {% for item in items %}
             <tr>
-                <td><a href="/packages/{{ item.libraryid }}">{{ item.name or 'без названия' }}</a></td>
-                <td class="text-end">{{ item.topics }}</td>
+                <td>
+                    <a href="/packages/{{ item.libraryid }}">{{ item.name or 'без названия' }}</a>
+                    {% if item.community %}
+                    <span class="badge bg-info text-dark" title="Открыт любому вошедшему">открытый</span>
+                    {% endif %}
+                    {% if item.deleted %}
+                    <span class="badge bg-danger">удалён</span>
+                    {% endif %}
+                    {% if item.tournament %}
+                    <div class="small text-muted">{{ item.tournament }}{% if item.origin_date %} · {{ item.origin_date }}{% endif %}</div>
+                    {% endif %}
+                    {% if item.author %}
+                    <div class="small text-muted">автор: {{ item.author }}</div>
+                    {% endif %}
+                    {% if item.theme_names %}
+                    <div class="small text-muted">
+                        {% for theme in item.theme_names[:6] %}{{ theme }}{% if not loop.last %} · {% endif %}{% endfor %}{% if item.theme_names|length > 6 %} · …{% endif %}
+                    </div>
+                    {% elif item.preview == 'none' %}
+                    <div class="small text-muted">темы скрыты</div>
+                    {% endif %}
+                </td>
+                <td class="small">
+                    {% if item.role %}
+                    <span class="badge bg-primary">{{ roles[item.role] }}</span>
+                    {% elif item.community %}
+                    <span class="badge bg-info text-dark">открытый</span>
+                    {% elif item.host_rooms %}
+                    <span class="badge bg-secondary">ведущий в турнире {{ item.host_rooms|join(', ') }}</span>
+                    {% elif item.content %}
+                    <span class="badge bg-secondary">своя площадка</span>
+                    {% else %}
+                    <span class="text-muted">нет доступа</span>
+                    {% endif %}
+                </td>
+                <td class="text-end">{{ item.topics if item.content else '—' }}</td>
                 <td class="text-end">{{ item.copies }}</td>
                 <td class="text-end">{{ item.rooms }}</td>
                 <td class="text-end">
@@ -57,6 +142,7 @@
 {% else %}
 <div class="alert alert-secondary">
     {% if query %}По запросу «{{ query }}» ничего не нашлось.
+    {% elif mine_only %}Пакетов, доступных вам, пока нет.
     {% else %}Пакетов пока нет: они появляются, когда ведущий загружает их в пульте комнаты.{% endif %}
 </div>
 {% endif %}
@@ -65,5 +151,43 @@
 {% block scripts %}
 <script>
     function init_page() {}
+
+    function uploadPackage() {
+        var file = document.getElementById('upload-file').files[0];
+        var status = document.getElementById('upload-status');
+        if (!file) {
+            status.textContent = 'Выберите файл JSON';
+            return;
+        }
+        var reader = new FileReader();
+        reader.onload = function () {
+            var payload = {
+                data: String(reader.result),
+                name: document.getElementById('upload-name').value,
+                tournament: document.getElementById('upload-tournament').value,
+                author: document.getElementById('upload-author').value,
+                origin_date: document.getElementById('upload-date').value
+            };
+            status.textContent = 'Загружаю…';
+            fetch('/api/packages/library', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            }).then(function (response) {
+                return response.json().then(function (data) {
+                    return {ok: response.ok, data: data};
+                });
+            }).then(function (result) {
+                if (!result.ok) {
+                    status.textContent = (result.data && result.data.message) || 'Не получилось';
+                    return;
+                }
+                window.location.href = '/packages/' + result.data.libraryid;
+            }).catch(function () {
+                status.textContent = 'Сеть недоступна';
+            });
+        };
+        reader.readAsText(file, 'utf-8');
+    }
 </script>
 {% endblock %}

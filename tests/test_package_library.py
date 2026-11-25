@@ -255,11 +255,17 @@ class LibraryPageTests(unittest.TestCase):
         self.owner = self.registered()
         self.other = self.registered()
         self.admin = self.registered(role="администратор")
+        # Содержимое уникально: одинаковый пакет из другого теста — это тот же
+        # пакет, и его правообладателем был бы уже не наш пользователь.
+        suffix = uuid.uuid4().hex[:6]
+        self.suffix = suffix
+        self.owner_themes = ["Кино-" + suffix, "Музыка-" + suffix]
+        self.other_theme = "Спорт-" + suffix
         conn = db()
         add_room(conn, 9401, self.owner.userid)
         add_room(conn, 9402, self.other.userid)
-        self.owner_package = add_package(conn, 9401, "Пакет владельца", ["Кино", "Музыка"])
-        self.other_package = add_package(conn, 9402, "Чужой пакет", ["Спорт"])
+        self.owner_package = add_package(conn, 9401, "Пакет владельца", self.owner_themes)
+        self.other_package = add_package(conn, 9402, "Чужой пакет", [self.other_theme])
         self.owner_library = conn.execute(
             "SELECT libraryid FROM packages WHERE packageid = ?",
             (self.owner_package,)).fetchone()[0]
@@ -289,16 +295,32 @@ class LibraryPageTests(unittest.TestCase):
         response = site.app.test_client().get(BASE + '/packages')
         self.assertEqual(response.status_code, 302)
 
-    def test_owner_sees_own_package_only(self):
+    def test_owner_sees_own_package_with_content(self):
         page = self.owner.get(BASE + '/packages')
         self.assertEqual(page.status_code, 200, page.get_data(as_text=True))
         text = page.get_data(as_text=True)
         self.assertIn('Пакет владельца', text)
-        self.assertNotIn('Чужой пакет', text)
+        self.assertIn(self.owner_themes[0], text)
 
-    def test_other_user_cannot_open_foreign_package(self):
+    def test_foreign_package_is_card_only(self):
+        # Чужой пакет виден как карточка: название есть, содержимого нет.
+        page = self.owner.get(BASE + '/packages')
+        text = page.get_data(as_text=True)
+        self.assertIn('Чужой пакет', text)
+        self.assertNotIn(self.other_theme, text)
+
+    def test_other_user_gets_card_without_content(self):
         response = self.other.get(BASE + '/packages/%d' % self.owner_library)
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        text = response.get_data(as_text=True)
+        self.assertIn('Пакет владельца', text)
+        self.assertIn('Содержимое пакета открыто только тем', text)
+        self.assertNotIn(self.owner_themes[0], text)
+
+    def test_other_user_cannot_peek_with_room_context(self):
+        response = self.other.get(BASE + '/packages/%d?room=9401' % self.owner_library)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(self.owner_themes[0], response.get_data(as_text=True))
 
     def test_admin_sees_everything(self):
         page = self.admin.get(BASE + '/packages')
@@ -310,7 +332,7 @@ class LibraryPageTests(unittest.TestCase):
         page = self.owner.get(BASE + '/packages/%d' % self.owner_library)
         self.assertEqual(page.status_code, 200, page.get_data(as_text=True))
         text = page.get_data(as_text=True)
-        self.assertIn('Кино', text)
+        self.assertIn(self.owner_themes[0], text)
         self.assertIn('9401', text)
         self.assertIn('весь зал', text)
 
@@ -336,7 +358,8 @@ class LibraryPageTests(unittest.TestCase):
     def test_similar_block_is_admin_only(self):
         # Второй пакет владельца с общими темами — кандидат на связывание.
         conn = db()
-        add_package(conn, 9401, "Пакет владельца, черновик", ["Кино", "Наука"])
+        add_package(conn, 9401, "Пакет владельца, черновик",
+                    [self.owner_themes[0], "Наука-" + self.suffix])
         conn.commit()
         conn.close()
         owner_page = self.owner.get(BASE + '/packages/%d' % self.owner_library

@@ -5335,23 +5335,9 @@ def sync_packages(roomid):
     return json.dumps({"status": "ok", "results": results}, ensure_ascii=False)
 
 
-def package_library_access(conn, libraryid, user):
-    """Кому открыт пакет: администратору — любой, иначе своему владельцу."""
-    row = conn.execute(
-        "SELECT libraryid, ownerid FROM package_library WHERE libraryid = ?", (libraryid,)
-    ).fetchone()
-    if row is None:
-        return None
-    if is_admin(user):
-        return "admin"
-    if row["ownerid"] == user["userid"]:
-        return "owner"
-    # Пакет из комнаты, которая сейчас принадлежит этому человеку.
-    own = conn.execute(
-        "SELECT 1 FROM packages p JOIN activerooms r ON r.roomid = p.roomid "
-        "WHERE p.libraryid = ? AND r.ownerid = ?", (libraryid, user["userid"])
-    ).fetchone()
-    return "owner" if own is not None else None
+def package_library_access(conn, libraryid, user, roomid=None, manages=None):
+    """Права на пакет: словарь из package_library.package_access (см. там)."""
+    return package_library.package_access(conn, libraryid, user, roomid, manages)
 
 
 @app.route('/packages', subdomain="svoyak")
@@ -5360,17 +5346,22 @@ def PackagesPage():
     """Библиотека пакетов: где игрались и кто мог их слышать."""
     user = current_user()
     query = (request.args.get("q") or "").strip()
+    mine_only = request.args.get("mine") == "1"
     conn = get_db_connection()
     try:
         package_library.ensure_library(conn)
         conn.commit()
         items = package_library.library_rows(
-            conn, None if is_admin(user) else user["userid"], query or None)
+            conn, user, query or None,
+            manages=lambda roomid: can_manage_room(roomid, user))
         pending = package_library.pending_links(conn) if is_admin(user) else 0
     finally:
         conn.close()
+    if mine_only:
+        items = [item for item in items if item["mine"]]
     return render_template(
         "packages.html", items=items, query=query, pending=pending, me=user,
+        mine_only=mine_only, roles=package_library.ROLE_TITLES,
         title="Библиотека пакетов",
     )
 
@@ -5387,39 +5378,63 @@ def PackagePage(libraryid):
     try:
         package_library.ensure_library(conn)
         conn.commit()
-        access = package_library_access(conn, libraryid, user)
-        if access is None:
-            abort(403)
-        entry = conn.execute(
-            "SELECT libraryid, name, ownerid, hash, created_at FROM package_library "
-            "WHERE libraryid = ?", (libraryid,)
-        ).fetchone()
-        copies = package_library.library_copies(conn, libraryid)
-        usage = package_library.library_usage(conn, libraryid, mode)
-        rejected = package_library.rejected_battles(conn, libraryid)
-        listeners = package_library.library_listeners(conn, libraryid, mode)
-        themes = package_library.theme_history(conn, libraryid, mode)
-        similar = package_library.similar_libraries(conn, libraryid) if access == "admin" else []
+        context_room = request.args.get("room")
+        try:
+            context_room = int(context_room) if context_room not in (None, "") else None
+        except (TypeError, ValueError):
+            context_room = None
+        access = package_library_access(
+            conn, libraryid, user, context_room,
+            manages=lambda roomid: can_manage_room(roomid, user))
+        if access is None or not access["card"]:
+            abort(404)
+        entry = package_library.library_entry(conn, libraryid)
+        copies = package_library.library_copies(conn, libraryid) if access["content"] else []
+        usage = package_library.library_usage(conn, libraryid, mode) if access["content"] else []
+        rejected = package_library.rejected_battles(conn, libraryid) if access["content"] else []
+        listeners = package_library.library_listeners(conn, libraryid, mode) if access["content"] else []
+        themes = package_library.theme_history(conn, libraryid, mode) if access["content"] else []
+        similar = package_library.similar_libraries(conn, libraryid) if access["admin"] else []
+        # Ревизии и их содержимое: показываем только тем, кому виден пакет.
+        revisions = package_library.package_revisions(conn, libraryid) if access["content"] else []
+        rights = (package_library.package_rights_view(conn, libraryid)
+                  if access["content"] or access["can_grant_host"] else [])
+        holders = package_library.package_holders(conn, libraryid)
+        theme_names = (package_library.package_theme_names(conn, libraryid)
+                       if access["content"] or access["preview"] == "themes" else [])
         # Куда можно положить копию: комнаты, которыми человек управляет.
         if is_admin(user):
             rooms = [dict(row) for row in conn.execute(
                 "SELECT roomid, date FROM activerooms ORDER BY roomid DESC LIMIT 200")]
+            grant_rooms = rooms
         else:
             rooms = [dict(row) for row in conn.execute(
                 "SELECT roomid, date FROM activerooms WHERE ownerid = ? "
                 "ORDER BY roomid DESC LIMIT 200", (user["userid"],))]
+            grant_rooms = rooms
+            if access["can_grant"]:
+                # Правообладатель назначает ведущих в любой турнир, не только свой.
+                grant_rooms = [dict(row) for row in conn.execute(
+                    "SELECT roomid, date FROM activerooms ORDER BY roomid DESC LIMIT 200")]
         # Пометки боя ставит тот, кто ведёт эту комнату: список без ограничения длины.
         if is_admin(user):
             managed = {row[0] for row in conn.execute("SELECT roomid FROM activerooms")}
         else:
             managed = {row[0] for row in conn.execute(
                 "SELECT roomid FROM activerooms WHERE ownerid = ?", (user["userid"],))}
+        grantable = []
+        if access["can_grant_host"]:
+            grantable = [dict(row) for row in conn.execute(
+                "SELECT userid, name, login FROM users ORDER BY name")]
     finally:
         conn.close()
     return render_template(
         "package.html", entry=entry, copies=copies, usage=usage, listeners=listeners,
         themes=themes, similar=similar, mode=mode, access=access, rooms=rooms,
-        rejected=rejected, managed=managed,
+        rejected=rejected, managed=managed, revisions=revisions, rights=rights,
+        holders=holders, theme_names=theme_names, grantable=grantable,
+        grant_rooms=grant_rooms,
+        context_room=context_room, roles=package_library.ROLE_TITLES,
         me=user, title="Пакет «%s»" % (entry["name"] if entry else ""),
     )
 
@@ -5442,17 +5457,38 @@ def PackageTakeToRoom(libraryid):
     try:
         conn.execute("BEGIN IMMEDIATE")
         package_library.ensure_library(conn)
+        access = package_library.package_access(
+            conn, libraryid, user, roomid,
+            manages=lambda room: can_manage_room(room, user))
+        if access is None:
+            conn.execute("ROLLBACK")
+            return json.dumps({"status": "error", "message": "Пакета нет"},
+                              ensure_ascii=False), 404
+        if not access["can_take"]:
+            conn.execute("ROLLBACK")
+            return json.dumps(
+                {"status": "error",
+                 "message": "Пакет доступен только в своём турнире или по правам"},
+                ensure_ascii=False), 403
         source = conn.execute(
-            "SELECT name, data FROM packages WHERE libraryid = ? ORDER BY packageid DESC LIMIT 1",
-            (libraryid,),
+            "SELECT data FROM package_revisions WHERE libraryid = ? "
+            "ORDER BY revision DESC LIMIT 1", (libraryid,),
         ).fetchone()
+        if source is None:
+            source = conn.execute(
+                "SELECT data FROM packages WHERE libraryid = ? "
+                "ORDER BY packageid DESC LIMIT 1", (libraryid,),
+            ).fetchone()
         if source is None:
             conn.execute("ROLLBACK")
             return json.dumps({"status": "error", "message": "Пакета нет"},
                               ensure_ascii=False), 404
+        card = package_library.library_entry(conn, libraryid) or {}
+        revision = int(card.get("revision") or 0)
         cursor = conn.execute(
-            "INSERT INTO packages (roomid, name, data, libraryid) VALUES (?, ?, ?, ?)",
-            (roomid, source["name"], source["data"], libraryid),
+            "INSERT INTO packages (roomid, name, data, libraryid, revision) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (roomid, card.get("name") or "Без названия", source[0], libraryid, revision),
         )
         packageid = cursor.lastrowid
         conn.execute("COMMIT")
@@ -5466,6 +5502,306 @@ def PackageTakeToRoom(libraryid):
         conn.close()
     return json.dumps({"status": "ok", "packageid": packageid, "roomid": roomid},
                       ensure_ascii=False)
+
+
+@app.route('/api/packages/library/<int:libraryid>/rights', subdomain="svoyak",
+           methods=["POST", "DELETE"])
+@login_required
+def PackageRights(libraryid):
+    """Выдача и отзыв прав на пакет.
+
+    Правообладатель распоряжается любыми ролями, организатор — только ведущими
+    и только с указанием турнира. Себе роль не выдаёт никто: правообладателей
+    назначает действующий правообладатель или администратор.
+    """
+    user = current_user()
+    data = request.get_json(silent=True) or {}
+    role = data.get("role")
+    if role not in package_library.ROLES:
+        return json.dumps({"status": "error", "message": "Неизвестная роль"},
+                          ensure_ascii=False), 400
+    try:
+        userid = int(data.get("userid"))
+    except (TypeError, ValueError):
+        return json.dumps({"status": "error", "message": "Не указан пользователь"},
+                          ensure_ascii=False), 400
+    roomid = package_library.SCOPE_ALL
+    if role == package_library.ROLE_HOST:
+        try:
+            roomid = int(data.get("roomid"))
+        except (TypeError, ValueError):
+            return json.dumps(
+                {"status": "error", "message": "Ведущему нужно указать турнир"},
+                ensure_ascii=False), 400
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        package_library.ensure_library(conn)
+        access = package_library.package_access(conn, libraryid, user)
+        if access is None:
+            conn.execute("ROLLBACK")
+            return json.dumps({"status": "error", "message": "Пакета нет"},
+                              ensure_ascii=False), 404
+        if not package_library.can_grant_role(access, role):
+            conn.execute("ROLLBACK")
+            message = ("Ведущих назначает организатор или правообладатель"
+                       if role == package_library.ROLE_HOST
+                       else "Права передаёт только правообладатель")
+            return json.dumps({"status": "error", "message": message},
+                              ensure_ascii=False), 403
+        person = conn.execute(
+            "SELECT userid, name FROM users WHERE userid = ?", (userid,)
+        ).fetchone()
+        if person is None:
+            conn.execute("ROLLBACK")
+            return json.dumps({"status": "error", "message": "Такого пользователя нет"},
+                              ensure_ascii=False), 404
+        if (role == package_library.ROLE_HOST and not access["can_grant"]
+                and not can_manage_room(roomid, user)):
+            conn.execute("ROLLBACK")
+            return json.dumps({"status": "error", "message": "Нет прав на эту комнату"},
+                              ensure_ascii=False), 403
+        if request.method == "DELETE":
+            package_library.revoke_package_right(conn, libraryid, userid, role, roomid)
+        else:
+            package_library.grant_package_right(
+                conn, libraryid, userid, role, roomid, user["userid"])
+        conn.execute("COMMIT")
+    except package_library.LibraryError as error:
+        conn.execute("ROLLBACK")
+        return json.dumps({"status": "error", "message": str(error)},
+                          ensure_ascii=False), 400
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+    return json.dumps({"status": "ok"}, ensure_ascii=False)
+
+
+@app.route('/api/packages/library/<int:libraryid>/meta', subdomain="svoyak",
+           methods=["POST"])
+@login_required
+def PackageMeta(libraryid):
+    """Карточка пакета и режим показа: правообладатель решает, что видно без права."""
+    user = current_user()
+    data = request.get_json(silent=True) or {}
+    fields = {}
+    for key, column in (("name", "name"), ("author", "author_name"),
+                        ("tournament", "tournament"), ("origin_date", "origin_date"),
+                        ("description", "description")):
+        if key in data:
+            fields[column] = (str(data.get(key) or "")).strip() or None
+    preview = data.get("preview")
+    if preview is not None and preview not in package_library.PREVIEWS:
+        return json.dumps({"status": "error", "message": "Неизвестный режим показа"},
+                          ensure_ascii=False), 400
+    access_mode = data.get("access")
+    if access_mode is not None and access_mode not in package_library.ACCESS_MODES:
+        return json.dumps({"status": "error", "message": "Неизвестный статус"},
+                          ensure_ascii=False), 400
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        package_library.ensure_library(conn)
+        access = package_library.package_access(conn, libraryid, user)
+        if access is None:
+            conn.execute("ROLLBACK")
+            return json.dumps({"status": "error", "message": "Пакета нет"},
+                              ensure_ascii=False), 404
+        if not access["can_edit"]:
+            conn.execute("ROLLBACK")
+            return json.dumps({"status": "error", "message": "Нет прав на правку"},
+                              ensure_ascii=False), 403
+        # Статус «открытый» и режим показа меняет только правообладатель.
+        if (preview is not None or access_mode is not None) and not access["can_grant"]:
+            conn.execute("ROLLBACK")
+            return json.dumps(
+                {"status": "error", "message": "Это решает правообладатель"},
+                ensure_ascii=False), 403
+        sets, params = [], []
+        for column, value in fields.items():
+            sets.append("%s = ?" % column)
+            params.append(value)
+        if preview is not None:
+            sets.append("preview = ?")
+            params.append(preview)
+        if access_mode is not None:
+            sets.append("access = ?")
+            params.append(access_mode)
+        if sets:
+            params.append(libraryid)
+            conn.execute(
+                "UPDATE package_library SET %s WHERE libraryid = ?" % ", ".join(sets), params
+            )
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+    return json.dumps({"status": "ok"}, ensure_ascii=False)
+
+
+@app.route('/api/packages/library/<int:libraryid>/revision', subdomain="svoyak",
+           methods=["POST"])
+@login_required
+def PackageRevision(libraryid):
+    """Новая ревизия из JSON: правка канона не меняет копию в идущем бою."""
+    user = current_user()
+    data = request.get_json(silent=True) or {}
+    payload = data.get("data")
+    if isinstance(payload, dict):
+        payload = json.dumps(payload, ensure_ascii=False)
+    if not payload or not str(payload).strip():
+        return json.dumps({"status": "error", "message": "Пустой пакет"},
+                          ensure_ascii=False), 400
+    try:
+        parsed = json.loads(payload)
+    except (TypeError, ValueError):
+        return json.dumps({"status": "error", "message": "Это не JSON"},
+                          ensure_ascii=False), 400
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("topics"), list):
+        return json.dumps(
+            {"status": "error", "message": "В пакете нет списка тем (topics)"},
+            ensure_ascii=False), 400
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        package_library.ensure_library(conn)
+        access = package_library.package_access(conn, libraryid, user)
+        if access is None:
+            conn.execute("ROLLBACK")
+            return json.dumps({"status": "error", "message": "Пакета нет"},
+                              ensure_ascii=False), 404
+        if not access["can_edit"]:
+            conn.execute("ROLLBACK")
+            return json.dumps({"status": "error", "message": "Нет прав на правку"},
+                              ensure_ascii=False), 403
+        revision = package_library.add_revision(
+            conn, libraryid, payload, note=(data.get("note") or "").strip() or None,
+            created_by=user["userid"], name=(str(data.get("name") or "").strip() or None))
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+    return json.dumps({"status": "ok", "revision": revision}, ensure_ascii=False)
+
+
+@app.route('/api/packages/library/<int:libraryid>/delete', subdomain="svoyak",
+           methods=["POST"])
+@login_required
+def PackageDelete(libraryid):
+    """Мягкое удаление: пакет исчезает у всех, кроме администратора."""
+    user = current_user()
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        package_library.ensure_library(conn)
+        access = package_library.package_access(conn, libraryid, user)
+        if access is None:
+            conn.execute("ROLLBACK")
+            return json.dumps({"status": "error", "message": "Пакета нет"},
+                              ensure_ascii=False), 404
+        if not access["can_delete"]:
+            conn.execute("ROLLBACK")
+            return json.dumps({"status": "error", "message": "Удаляет правообладатель"},
+                              ensure_ascii=False), 403
+        conn.execute(
+            "UPDATE package_library SET deleted_at = CURRENT_TIMESTAMP WHERE libraryid = ?",
+            (libraryid,),
+        )
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+    return json.dumps({"status": "ok"}, ensure_ascii=False)
+
+
+@app.route('/api/packages/library', subdomain="svoyak", methods=["POST"])
+@login_required
+def PackageUpload():
+    """Загрузка нового пакета JSON: карточка + ревизия 1, загрузивший — правообладатель."""
+    user = current_user()
+    data = request.get_json(silent=True) or {}
+    payload = data.get("data")
+    if isinstance(payload, dict):
+        payload = json.dumps(payload, ensure_ascii=False)
+    try:
+        parsed = json.loads(payload or "")
+    except (TypeError, ValueError):
+        return json.dumps({"status": "error", "message": "Это не JSON"},
+                          ensure_ascii=False), 400
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("topics"), list):
+        return json.dumps(
+            {"status": "error", "message": "В пакете нет списка тем (topics)"},
+            ensure_ascii=False), 400
+    name = (str(data.get("name") or "").strip()
+            or str(parsed.get("name") or "").strip() or "Без названия")
+    meta = {
+        "author_name": (str(data.get("author") or "").strip() or None),
+        "tournament": (str(data.get("tournament") or "").strip() or None),
+        "origin_date": (str(data.get("origin_date") or "").strip() or None),
+        "description": (str(data.get("description") or "").strip() or None),
+    }
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        package_library.ensure_library(conn)
+        digest = package_library.content_hash(payload)
+        # Такой же пакет уже загружали? Если он наш — это новая ревизия, а не
+        # второй пакет. Чужой трогать нельзя: его заведёт администратор связкой.
+        own = conn.execute(
+            "SELECT l.libraryid FROM package_library l "
+            "JOIN package_rights r ON r.libraryid = l.libraryid "
+            "WHERE l.hash = ? AND l.deleted_at IS NULL AND r.userid = ? AND r.role = ? "
+            "ORDER BY l.libraryid LIMIT 1",
+            (digest, user["userid"], package_library.ROLE_HOLDER),
+        ).fetchone()
+        if own is not None:
+            libraryid = own[0]
+            revision = package_library.add_revision(
+                conn, libraryid, payload,
+                note=(str(data.get("note") or "").strip() or "повторная загрузка"),
+                created_by=user["userid"], name=name, **meta)
+            twins = []
+        else:
+            twins = [row[0] for row in conn.execute(
+                "SELECT libraryid FROM package_library WHERE hash = ? AND deleted_at IS NULL",
+                (digest,))]
+            libraryid = package_library.create_package(
+                conn, name, payload, user["userid"],
+                author_name=meta["author_name"], tournament=meta["tournament"],
+                origin_date=meta["origin_date"], description=meta["description"],
+                note=(str(data.get("note") or "").strip() or None))
+            revision = 1
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+    return json.dumps({"status": "ok", "libraryid": libraryid, "revision": revision,
+                       "twins": twins}, ensure_ascii=False)
 
 
 @app.route('/api/packages/library/<int:libraryid>/merge', subdomain="svoyak", methods=["POST"])
@@ -5547,8 +5883,10 @@ def PackageBattleMark(libraryid):
     conn = get_db_connection()
     try:
         package_library.ensure_library(conn)
-        access = package_library_access(conn, libraryid, user)
-        if access is None:
+        access = package_library_access(
+            conn, libraryid, user, roomid,
+            manages=lambda room: can_manage_room(room, user))
+        if access is None or not access["content"]:
             return json.dumps({"status": "error", "message": "Нет доступа к пакету"},
                               ensure_ascii=False), 403
         if status is not None and not can_manage_room(roomid, user):

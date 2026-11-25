@@ -15,11 +15,186 @@
     <div class="text-muted small">
         <a href="/packages">Библиотека пакетов</a> · пакет №{{ entry.libraryid }}
     </div>
-    <h2 class="mb-1">{{ entry.name or 'без названия' }}</h2>
+    <h2 class="mb-1">{{ entry.name or 'без названия' }}
+        {% if access.community %}<span class="badge bg-info text-dark">открытый</span>{% endif %}
+        {% if access.deleted %}<span class="badge bg-danger">удалён</span>{% endif %}
+        {% if access.role %}<span class="badge bg-primary">{{ access.role_title }}</span>{% endif %}
+        {% if access.admin %}<span class="badge bg-secondary">вид администратора</span>{% endif %}
+    </h2>
     <div class="text-muted small">
-        Копий в комнатах: {{ copies | length }}.
-        Записей о раскладке тем: {{ usage | length }}.
-        {% if access == 'admin' %}<span class="badge bg-secondary">вид администратора</span>{% endif %}
+        {% if entry.tournament %}турнир: {{ entry.tournament }}{% if entry.origin_date %} · {{ entry.origin_date }}{% endif %} · {% endif %}
+        {% if entry.author_name %}автор: {{ entry.author_name }} · {% endif %}
+        {% if entry.revision %}ревизия {{ entry.revision }}{% endif %}
+        {% if access.content %}
+        · копий в комнатах: {{ copies | length }} · записей о раскладке тем: {{ usage | length }}
+        {% endif %}
+    </div>
+    {% if entry.description %}
+    <div class="small mt-1">{{ entry.description }}</div>
+    {% endif %}
+    {% if access.host_rooms and not access.role %}
+    <div class="small mt-1">
+        Доступен вам как ведущему в турнирах:
+        {% for room in access.host_rooms %}<a href="/plan/{{ room }}">{{ room }}</a>{% if not loop.last %}, {% endif %}{% endfor %}.
+        Открыть содержимое: <a href="/packages/{{ entry.libraryid }}?room={{ access.host_rooms[0] }}">в контексте турнира</a>.
+    </div>
+    {% endif %}
+</div>
+
+{% if access.can_grant_host or access.can_edit %}
+<div class="card mb-3">
+    <div class="card-header fw-semibold">Доступ к пакету</div>
+    <div class="card-body">
+        {% if access.can_grant_host %}
+        <div class="small text-muted mb-2">
+            {% if access.can_grant %}
+            Вы правообладатель: можете назначить организатора или ведущего.
+            Ведущий получает пакет только в том турнире, который указан.
+            {% else %}
+            Вы организатор: можете назначить ведущего в конкретный турнир.
+            {% endif %}
+        </div>
+        <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
+            <select class="form-select form-select-sm" id="rightUser" style="width: 14rem">
+                {% for person in grantable %}
+                <option value="{{ person.userid }}">{{ person.name or person.login }}</option>
+                {% endfor %}
+            </select>
+            <select class="form-select form-select-sm" id="rightRole" style="width: 11rem"
+                    onchange="updateRightForm()">
+                {% if access.can_grant %}
+                <option value="organizer">организатор</option>
+                {% endif %}
+                <option value="host">ведущий</option>
+                {% if access.can_grant %}
+                <option value="holder">правообладатель</option>
+                {% endif %}
+            </select>
+            <select class="form-select form-select-sm" id="rightRoom" style="width: 12rem">
+                {% for room in grant_rooms %}
+                <option value="{{ room.roomid }}">{{ room.roomid }}{% if room.date %} · {{ room.date }}{% endif %}</option>
+                {% endfor %}
+            </select>
+            <button class="btn btn-sm btn-outline-primary" type="button" onclick="grantRight()">
+                Выдать
+            </button>
+        </div>
+        {% endif %}
+        {% if rights %}
+        <table class="table table-sm mb-0 align-middle">
+            <thead><tr><th>Кому</th><th>Роль</th><th>Где</th><th>Когда</th><th></th></tr></thead>
+            <tbody>
+                {% for item in rights %}
+                <tr>
+                    <td>{{ item.name or ('пользователь ' ~ item.userid) }}</td>
+                    <td>{{ item.role_title }}</td>
+                    <td class="small">{{ item.room or 'в любом турнире' }}</td>
+                    <td class="small text-muted">{{ item.granted_at }}</td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-link" type="button"
+                                onclick="revokeRight({{ item.userid }}, '{{ item.role }}', {{ item.roomid }})">
+                            отозвать</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="small text-muted">Права пока никому не выданы, кроме правообладателя.</div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{% if access.can_edit %}
+<div class="card mb-3">
+    <div class="card-header fw-semibold">Карточка и ревизии</div>
+    <div class="card-body">
+        <div class="row g-2 mb-2">
+            <div class="col-12 col-md-4">
+                <input class="form-control form-control-sm" id="metaName"
+                       value="{{ entry.name or '' }}" placeholder="название">
+            </div>
+            <div class="col-6 col-md-3">
+                <input class="form-control form-control-sm" id="metaTournament"
+                       value="{{ entry.tournament or '' }}" placeholder="турнир, где игрался">
+            </div>
+            <div class="col-6 col-md-3">
+                <input class="form-control form-control-sm" id="metaAuthor"
+                       value="{{ entry.author_name or '' }}" placeholder="автор">
+            </div>
+            <div class="col-4 col-md-2">
+                <input class="form-control form-control-sm" id="metaDate"
+                       value="{{ entry.origin_date or '' }}" placeholder="дата">
+            </div>
+            <div class="col-12">
+                <input class="form-control form-control-sm" id="metaDescription"
+                       value="{{ entry.description or '' }}" placeholder="короткое описание">
+            </div>
+        </div>
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+            <button class="btn btn-sm btn-outline-primary" type="button" onclick="saveMeta()">
+                Сохранить карточку
+            </button>
+            {% if access.can_grant %}
+            <span class="text-muted small">Кто видит название и темы без доступа:</span>
+            <select class="form-select form-select-sm" id="metaPreview" style="width: 15rem">
+                <option value="none" {% if access.preview == 'none' %}selected{% endif %}>ничего</option>
+                <option value="card" {% if access.preview == 'card' %}selected{% endif %}>карточку</option>
+                <option value="themes" {% if access.preview == 'themes' %}selected{% endif %}>карточку и темы</option>
+            </select>
+            <span class="text-muted small">Статус:</span>
+            <select class="form-select form-select-sm" id="metaAccess" style="width: 13rem">
+                <option value="private" {% if not access.community %}selected{% endif %}>закрытый</option>
+                <option value="community" {% if access.community %}selected{% endif %}>открытый всем</option>
+            </select>
+            {% endif %}
+            {% if access.can_delete %}
+            <button class="btn btn-sm btn-outline-danger ms-auto" type="button" onclick="deletePackage()">
+                Удалить пакет
+            </button>
+            {% endif %}
+        </div>
+        <hr>
+        <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
+            <span class="small text-muted">Новая ревизия из JSON (идущие бои не меняются):</span>
+            <input class="form-control form-control-sm" id="revisionFile" type="file"
+                   accept="application/json,.json" style="width: 16rem">
+            <input class="form-control form-control-sm" id="revisionNote" placeholder="что изменилось"
+                   style="width: 14rem">
+            <button class="btn btn-sm btn-outline-primary" type="button" onclick="uploadRevision()">
+                Загрузить ревизию
+            </button>
+            <span class="small text-muted" id="revisionStatus"></span>
+        </div>
+        <table class="table table-sm mb-0 align-middle">
+            <thead><tr><th>Ревизия</th><th>Когда</th><th>Кто</th><th>Заметка</th>
+                <th class="text-end">Тем</th></tr></thead>
+            <tbody>
+                {% for revision in revisions %}
+                <tr>
+                    <td>{{ revision.revision }}</td>
+                    <td class="small text-muted">{{ revision.created_at }}</td>
+                    <td class="small">{{ revision.author }}</td>
+                    <td class="small">{{ revision.note }}</td>
+                    <td class="text-end">{{ revision.themes }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="small text-muted">Ревизий пока нет.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% if access.content %}
+<div class="card mb-3">
+    <div class="card-header fw-semibold">Состав пакета</div>
+    <div class="card-body">
+        {% for theme in theme_names %}<span class="pkg-chip">{{ theme }}</span>{% else %}
+        <div class="small text-muted">В пакете нет тем.</div>
+        {% endfor %}
     </div>
 </div>
 
@@ -27,10 +202,10 @@
     <span class="text-muted small">Кто мог слышать:</span>
     <div class="btn-group btn-group-sm" role="group">
         <a class="btn btn-outline-secondary {% if mode == 'hall' %}active{% endif %}"
-           href="/packages/{{ entry.libraryid }}?mode=hall"
+           href="/packages/{{ entry.libraryid }}?mode=hall{% if context_room %}&room={{ context_room }}{% endif %}"
            title="все, кто был в комнате, пока шёл бой">весь зал</a>
         <a class="btn btn-outline-secondary {% if mode == 'game' %}active{% endif %}"
-           href="/packages/{{ entry.libraryid }}?mode=game"
+           href="/packages/{{ entry.libraryid }}?mode=game{% if context_room %}&room={{ context_room }}{% endif %}"
            title="только участники боя">участники боя</a>
     </div>
     {% if similar %}<span class="badge bg-warning text-dark">похожих пакетов: {{ similar | length }}</span>{% endif %}
@@ -284,15 +459,41 @@
     </div>
 </div>
 {% endif %}
+
+{% else %}
+<div class="card">
+    <div class="card-body">
+        <div class="text-muted small">
+            Содержимое пакета открыто только тем, кому разрешил правообладатель.
+            {% if access.preview == 'themes' %}Ниже — названия тем, без вопросов.{% endif %}
+        </div>
+        {% if theme_names %}
+        <div class="mt-2">
+            {% for theme in theme_names %}<span class="pkg-chip">{{ theme }}</span>{% endfor %}
+        </div>
+        {% elif access.preview == 'none' %}
+        <div class="mt-2 text-muted small">Названия тем скрыты.</div>
+        {% endif %}
+        {% if holders %}
+        <div class="mt-2 small text-muted">
+            Правообладатель: {% for person in holders %}{{ person.name }}{% if not loop.last %}, {% endif %}{% endfor %}.
+            Доступ к содержимому выдаёт он.
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script>
     function init_page() {}
 
-    async function postJson(url, body) {
+    const packageId = {{ entry.libraryid }};
+
+    async function postJson(url, body, method) {
         const response = await fetch(url, {
-            method: 'POST',
+            method: method || 'POST',
             headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
             body: JSON.stringify(body || {}),
         });
@@ -303,6 +504,102 @@
         }
         return data;
     }
+
+    function updateRightForm() {
+        const role = document.getElementById('rightRole');
+        const room = document.getElementById('rightRoom');
+        if (!role || !room) {
+            return;
+        }
+        // Ведущему обязателен турнир; организатору и правообладателю — нет.
+        const needsRoom = role.value === 'host';
+        room.disabled = !needsRoom;
+        room.classList.toggle('opacity-50', !needsRoom);
+    }
+
+    async function grantRight() {
+        const role = document.getElementById('rightRole').value;
+        const body = {
+            userid: parseInt(document.getElementById('rightUser').value, 10),
+            role: role
+        };
+        if (role === 'host') {
+            body.roomid = parseInt(document.getElementById('rightRoom').value, 10);
+        }
+        const data = await postJson('/api/packages/library/' + packageId + '/rights', body);
+        if (data) {
+            document.location.reload();
+        }
+    }
+
+    async function revokeRight(userid, role, roomid) {
+        if (!confirm('Отозвать это право?')) {
+            return;
+        }
+        const data = await postJson('/api/packages/library/' + packageId + '/rights',
+                                    {userid: userid, role: role, roomid: roomid}, 'DELETE');
+        if (data) {
+            document.location.reload();
+        }
+    }
+
+    async function saveMeta() {
+        const body = {
+            name: document.getElementById('metaName').value,
+            tournament: document.getElementById('metaTournament').value,
+            author: document.getElementById('metaAuthor').value,
+            origin_date: document.getElementById('metaDate').value,
+            description: document.getElementById('metaDescription').value
+        };
+        const preview = document.getElementById('metaPreview');
+        if (preview) {
+            body.preview = preview.value;
+        }
+        const accessSelect = document.getElementById('metaAccess');
+        if (accessSelect) {
+            body.access = accessSelect.value;
+        }
+        const data = await postJson('/api/packages/library/' + packageId + '/meta', body);
+        if (data) {
+            document.location.reload();
+        }
+    }
+
+    async function deletePackage() {
+        if (!confirm('Удалить пакет? Он исчезнет у всех, кроме администратора.')) {
+            return;
+        }
+        const data = await postJson('/api/packages/library/' + packageId + '/delete', {});
+        if (data) {
+            window.location.href = '/packages';
+        }
+    }
+
+    function uploadRevision() {
+        const file = document.getElementById('revisionFile').files[0];
+        const status = document.getElementById('revisionStatus');
+        if (!file) {
+            status.textContent = 'Выберите файл JSON';
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = async function () {
+            status.textContent = 'Загружаю…';
+            const data = await postJson('/api/packages/library/' + packageId + '/revision', {
+                data: String(reader.result),
+                note: document.getElementById('revisionNote').value
+            });
+            if (data) {
+                status.textContent = 'Готово: ревизия ' + data.revision;
+                setTimeout(function () { document.location.reload(); }, 400);
+            } else {
+                status.textContent = '';
+            }
+        };
+        reader.readAsText(file, 'utf-8');
+    }
+
+    document.addEventListener('DOMContentLoaded', updateRightForm);
 
     async function takeToRoom() {
         const select = document.getElementById('takeRoom');

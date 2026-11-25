@@ -1,13 +1,26 @@
 """Библиотека пакетов: одна и та же колода в разных комнатах — один пакет.
 
-Пакет по-прежнему хранится в комнате: содержимое видит только владелец комнаты
-и администратор. Поверх этого библиотека связывает одинаковые пакеты из разных
+Пакет по-прежнему хранится в комнате: содержимое видят те, кому это разрешил
+правообладатель. Поверх этого библиотека связывает одинаковые пакеты из разных
 комнат в одну запись, чтобы видеть всю историю: в каких боях игрались темы,
 когда и кто мог их слышать.
 
 Связь — по содержимому: загрузили тот же файл в другую комнату, и это тот же
 пакет. Похожие, но не совпадающие пакеты библиотека показывает
 администратору как кандидатов: подтвердить, что это один пакет, может он.
+
+Права (этап 0):
+
+  * правообладатель — один или несколько пользователей; по умолчанию тот, кто
+    загрузил. Он распоряжается пакетом: выдаёт доступы, правит, удаляет;
+  * организатор — работает с пакетом и может назначить ведущих, но не может
+    передавать другие права;
+  * ведущий — видит и берёт пакет только в том турнире, куда его назначили;
+  * открытый пакет (community) — доступен любому вошедшему для любых целей.
+
+Ревизии: содержимое пакета не переписывается молча. Правка — это новая
+ревизия, а копия в комнате помнит, из какой ревизии она сделана, поэтому
+идущий бой не меняется под ведущим.
 """
 
 import datetime
@@ -23,6 +36,34 @@ import time as _time
 EXPOSURE_HALL = "hall"
 EXPOSURE_GAME = "game"
 EXPOSURE_MODES = (EXPOSURE_HALL, EXPOSURE_GAME)
+
+# Роли на пакет. Правообладателей и организаторов может быть несколько,
+# ведущий всегда привязан к турниру: в другом турнире тот же пакет ему не виден.
+ROLE_HOLDER = "holder"
+ROLE_ORGANIZER = "organizer"
+ROLE_HOST = "host"
+ROLES = (ROLE_HOLDER, ROLE_ORGANIZER, ROLE_HOST)
+ROLE_WEIGHT = {ROLE_HOLDER: 3, ROLE_ORGANIZER: 2, ROLE_HOST: 1}
+ROLE_TITLES = {
+    ROLE_HOLDER: "правообладатель",
+    ROLE_ORGANIZER: "организатор",
+    ROLE_HOST: "ведущий",
+}
+
+# Привязка права к турниру: 0 — без привязки (правообладатель, организатор).
+SCOPE_ALL = 0
+
+# Что видит посторонний: ничего, карточку (название, турнир, автор) или карточку
+# с названиями тем. Содержимое вопросов не показывается никогда без права.
+PREVIEW_NONE = "none"
+PREVIEW_CARD = "card"
+PREVIEW_THEMES = "themes"
+PREVIEWS = (PREVIEW_NONE, PREVIEW_CARD, PREVIEW_THEMES)
+
+# Статус пакета: закрытый (по правам) или открытый всем вошедшим.
+ACCESS_PRIVATE = "private"
+ACCESS_COMMUNITY = "community"
+ACCESS_MODES = (ACCESS_PRIVATE, ACCESS_COMMUNITY)
 
 # Насколько поздно ведущий может внести пришедшего: отметка в пределах этого
 # времени после конца боя относится к тому бою. Дольше — считаем, что это уже
@@ -470,6 +511,18 @@ def content_hash(data):
 
 # ------------------------------------------------------------------ таблицы
 
+def _columns(conn, table):
+    return {row[1] for row in conn.execute("PRAGMA table_info(%s)" % table)}
+
+
+def add_column(conn, table, name, declaration):
+    """Добавляет колонку, если её ещё нет. True — если поменяли схему."""
+    if not has_table(conn, table) or name in _columns(conn, table):
+        return False
+    conn.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, name, declaration))
+    return True
+
+
 def ensure_library(conn):
     """Таблицы библиотеки и колонка packages.libraryid. Возвращает True, если что-то поменяли."""
     changed = False
@@ -482,6 +535,19 @@ def ensure_library(conn):
         " created_at TEXT DEFAULT CURRENT_TIMESTAMP)"
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_library_hash ON package_library(hash)")
+    # Карточка канона: то, что видно даже без права на содержимое, и то, по чему
+    # правообладатель решает, кому пакет открыт.
+    for name, declaration in (
+        ("revision", "INTEGER DEFAULT 0"),
+        ("author_name", "TEXT"),
+        ("tournament", "TEXT"),
+        ("origin_date", "TEXT"),
+        ("description", "TEXT"),
+        ("preview", "TEXT DEFAULT 'card'"),
+        ("access", "TEXT DEFAULT 'private'"),
+        ("deleted_at", "TEXT"),
+    ):
+        changed = add_column(conn, "package_library", name, declaration) or changed
     conn.execute(
         "CREATE TABLE IF NOT EXISTS package_links ("
         " libraryid_a INTEGER NOT NULL,"
@@ -491,11 +557,136 @@ def ensure_library(conn):
         " created_at TEXT DEFAULT CURRENT_TIMESTAMP,"
         " PRIMARY KEY (libraryid_a, libraryid_b))"
     )
-    if has_table(conn, "packages") and "libraryid" not in table_columns(conn, "packages"):
-        conn.execute("ALTER TABLE packages ADD COLUMN libraryid INTEGER")
-        changed = True
+    if has_table(conn, "packages"):
+        changed = add_column(conn, "packages", "libraryid", "INTEGER") or changed
+        changed = add_column(conn, "packages", "revision", "INTEGER") or changed
     ensure_battle_marks(conn)
     changed = backfill(conn) or changed
+    changed = ensure_rights(conn) or changed
+    changed = ensure_revisions(conn) or changed
+    changed = ensure_copy_revisions(conn) or changed
+    return changed
+
+
+def ensure_rights(conn):
+    """Таблица прав и раздача правообладателей уже существующим пакетам."""
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS package_rights ("
+        " libraryid INTEGER NOT NULL,"
+        " userid INTEGER NOT NULL,"
+        " role TEXT NOT NULL,"
+        " roomid INTEGER NOT NULL DEFAULT 0,"
+        " granted_by INTEGER,"
+        " granted_at TEXT DEFAULT CURRENT_TIMESTAMP,"
+        " PRIMARY KEY (libraryid, userid, role, roomid))"
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_rights_user ON package_rights(userid)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_rights_room ON package_rights(roomid)")
+    changed = False
+    admin = None
+    for row in conn.execute("SELECT libraryid, ownerid FROM package_library"):
+        holder = conn.execute(
+            "SELECT 1 FROM package_rights WHERE libraryid = ? AND role = ?",
+            (row[0], ROLE_HOLDER),
+        ).fetchone()
+        if holder is not None:
+            continue
+        owner = row[1]
+        if owner is None:
+            # Владельца нет: правообладателем становится владелец комнаты, где
+            # лежит копия, иначе администратор — иначе пакет останется без хозяина.
+            found = conn.execute(
+                "SELECT r.ownerid FROM packages p JOIN activerooms r ON r.roomid = p.roomid "
+                "WHERE p.libraryid = ? AND r.ownerid IS NOT NULL "
+                "ORDER BY p.packageid LIMIT 1", (row[0],),
+            ).fetchone() if has_table(conn, "packages") else None
+            owner = found[0] if found is not None else None
+        if owner is None:
+            if admin is None:
+                admin = 0
+                if has_table(conn, "users"):
+                    row_admin = conn.execute(
+                        "SELECT userid FROM users WHERE role = 'администратор' "
+                        "ORDER BY userid LIMIT 1"
+                    ).fetchone()
+                    if row_admin is not None:
+                        admin = row_admin[0]
+            owner = admin or None
+        if not owner:
+            continue
+        conn.execute(
+            "INSERT INTO package_rights (libraryid, userid, role, roomid) VALUES (?, ?, ?, ?)",
+            (row[0], owner, ROLE_HOLDER, SCOPE_ALL),
+        )
+        changed = True
+    return changed
+
+
+def ensure_revisions(conn):
+    """Таблица ревизий; уже лежащим пакетам выдаём ревизию 1 из копии."""
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS package_revisions ("
+        " libraryid INTEGER NOT NULL,"
+        " revision INTEGER NOT NULL,"
+        " data TEXT NOT NULL,"
+        " hash TEXT NOT NULL,"
+        " note TEXT,"
+        " created_by INTEGER,"
+        " created_at TEXT DEFAULT CURRENT_TIMESTAMP,"
+        " PRIMARY KEY (libraryid, revision))"
+    )
+    changed = False
+    for row in conn.execute("SELECT libraryid, revision FROM package_library"):
+        latest = conn.execute(
+            "SELECT MAX(revision) FROM package_revisions WHERE libraryid = ?", (row[0],)
+        ).fetchone()[0]
+        if latest:
+            if int(row[1] or 0) != int(latest):
+                conn.execute(
+                    "UPDATE package_library SET revision = ? WHERE libraryid = ?",
+                    (int(latest), row[0]),
+                )
+                changed = True
+            continue
+        if not has_table(conn, "packages"):
+            continue
+        copy = conn.execute(
+            "SELECT data FROM packages WHERE libraryid = ? ORDER BY packageid DESC LIMIT 1",
+            (row[0],),
+        ).fetchone()
+        if copy is None or not copy[0]:
+            continue
+        digest = content_hash(copy[0])
+        conn.execute(
+            "INSERT INTO package_revisions (libraryid, revision, data, hash, note) "
+            "VALUES (?, 1, ?, ?, ?)",
+            (row[0], copy[0], digest, "перенесено из копии в комнате"),
+        )
+        conn.execute(
+            "UPDATE package_library SET revision = 1, hash = ? WHERE libraryid = ?",
+            (digest, row[0]),
+        )
+        changed = True
+    return changed
+
+
+def ensure_copy_revisions(conn):
+    """Копия в комнате помнит ревизию канона."""
+    if not has_table(conn, "packages") or "revision" not in _columns(conn, "packages"):
+        return False
+    changed = False
+    for row in conn.execute(
+        "SELECT packageid, libraryid FROM packages "
+        "WHERE libraryid IS NOT NULL AND revision IS NULL"
+    ):
+        current = conn.execute(
+            "SELECT revision FROM package_library WHERE libraryid = ?", (row[1],)
+        ).fetchone()
+        revision = int(current[0]) if current is not None and current[0] else 1
+        conn.execute(
+            "UPDATE packages SET revision = ? WHERE packageid = ?", (revision, row[0])
+        )
+        changed = True
     return changed
 
 
@@ -560,25 +751,340 @@ def link_package(conn, packageid):
             (row[2], digest, ownerid),
         )
         libraryid = cursor.lastrowid
+        # Загрузивший сразу становится правообладателем: не ждём следующего
+        # открытия страницы, иначе пакет на минуту останется без хозяина.
+        if ownerid and has_table(conn, "package_rights"):
+            grant_package_right(conn, libraryid, ownerid, ROLE_HOLDER, SCOPE_ALL, ownerid)
     conn.execute("UPDATE packages SET libraryid = ? WHERE packageid = ?", (libraryid, packageid))
     return libraryid
 
 
 # ---------------------------------------------------------------- просмотр
 
-def visible_clause(ownerid):
-    """Пакет видит его владелец и тот, у кого в комнате этот пакет лежит."""
-    return (
-        "(l.ownerid = ? OR EXISTS (SELECT 1 FROM packages p "
-        "JOIN activerooms r ON r.roomid = p.roomid "
-        "WHERE p.libraryid = l.libraryid AND r.ownerid = ?))"
+def library_entry(conn, libraryid):
+    """Карточка канона: то, что не зависит от прав."""
+    if not has_table(conn, "package_library"):
+        return None
+    row = conn.execute(
+        "SELECT libraryid, name, ownerid, hash, created_at, revision, author_name, "
+        "tournament, origin_date, description, preview, access, deleted_at "
+        "FROM package_library WHERE libraryid = ?", (libraryid,)
+    ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def package_roles(conn, libraryid, userid):
+    """Все права человека на пакет: {роль: [турниры]} (0 — без привязки)."""
+    roles = {}
+    if userid is None or not has_table(conn, "package_rights"):
+        return roles
+    for row in conn.execute(
+        "SELECT role, roomid FROM package_rights WHERE libraryid = ? AND userid = ?",
+        (libraryid, int(userid)),
+    ):
+        roles.setdefault(row[0], []).append(int(row[1] or 0))
+    return roles
+
+
+def copy_rooms(conn, libraryid):
+    """Турниры, в которых уже лежит копия пакета."""
+    if not has_table(conn, "packages"):
+        return set()
+    return {
+        int(row[0]) for row in conn.execute(
+            "SELECT DISTINCT roomid FROM packages WHERE libraryid = ?", (libraryid,)
+        ) if row[0] is not None
+    }
+
+
+def package_access(conn, libraryid, user, roomid=None, manages=None):
+    """Права на пакет в контексте турнира (roomid=None — вне турнира).
+
+    Ведущий видит содержимое только в своём турнире: на странице пакета без
+    контекста ему показывается карточка и список турниров, где пакет доступен.
+
+    manages(roomid) — «веду ли я эту комнату»: копия в своей комнате уже даёт
+    право ведущего, даже если отдельного права на пакет нет.
+    """
+    entry = library_entry(conn, libraryid)
+    if entry is None:
+        return None
+    admin = False
+    userid = None
+    if user is not None:
+        try:
+            admin = user["role"] == "администратор"
+            userid = user["userid"]
+        except (KeyError, IndexError, TypeError):
+            admin, userid = False, None
+    deleted = bool(entry.get("deleted_at"))
+    community = (entry.get("access") or ACCESS_PRIVATE) == ACCESS_COMMUNITY
+    preview = entry.get("preview") or PREVIEW_CARD
+    if preview not in PREVIEWS:
+        preview = PREVIEW_CARD
+    roles = package_roles(conn, libraryid, userid)
+    host_rooms = sorted(roles.get(ROLE_HOST, []))
+    if ROLE_HOLDER in roles:
+        role = ROLE_HOLDER
+    elif ROLE_ORGANIZER in roles:
+        role = ROLE_ORGANIZER
+    elif roomid is not None and int(roomid) in host_rooms:
+        role = ROLE_HOST
+    else:
+        role = None
+    copied = copy_rooms(conn, libraryid) if userid is not None else set()
+    # Копия в комнате, которой человек управляет, — уже сложившееся право.
+    if roomid is None:
+        usable = bool(copied) and manages is not None and any(manages(room) for room in copied)
+    else:
+        usable = int(roomid) in host_rooms or (
+            int(roomid) in copied and (manages is None or manages(int(roomid))))
+    allowed_role = role in (ROLE_HOLDER, ROLE_ORGANIZER)
+    live = not deleted or admin
+    content = bool(live and (admin or allowed_role or community or usable))
+    # Карточка видна тем, кому пакет хоть как-то интересен; «ничего» скрывает
+    # пакет от посторонних совсем.
+    mine = bool(admin or allowed_role or host_rooms or community or usable)
+    card = bool(live and (mine or preview != PREVIEW_NONE))
+    can_take = bool(live and (admin or community or allowed_role
+                              or (roomid is None and (host_rooms or usable))
+                              or (roomid is not None and usable)))
+    return {
+        "libraryid": libraryid,
+        "entry": entry,
+        "role": role,
+        "role_title": ROLE_TITLES.get(role or ""),
+        "admin": admin,
+        "community": community,
+        "preview": preview,
+        "host_rooms": host_rooms,
+        "deleted": deleted,
+        "card": card,
+        "mine": mine,
+        "content": content,
+        "can_take": can_take,
+        "can_edit": bool(live and (admin or allowed_role)),
+        "can_delete": bool(live and (admin or role == ROLE_HOLDER)),
+        "can_grant": bool(live and (admin or role == ROLE_HOLDER)),
+        "can_grant_host": bool(live and (admin or role in (ROLE_HOLDER, ROLE_ORGANIZER))),
+    }
+
+
+def grant_package_right(conn, libraryid, userid, role, roomid=SCOPE_ALL, granted_by=None):
+    """Выдаёт право. Проверку «кто вправе выдавать» делает вызывающий код."""
+    if role not in ROLES:
+        raise LibraryError("Неизвестная роль: %s" % role)
+    roomid = int(roomid or SCOPE_ALL)
+    if role == ROLE_HOST and roomid == SCOPE_ALL:
+        raise LibraryError("Ведущему нужно указать турнир")
+    if role != ROLE_HOST:
+        roomid = SCOPE_ALL
+    conn.execute(
+        "INSERT INTO package_rights (libraryid, userid, role, roomid, granted_by) "
+        "VALUES (?, ?, ?, ?, ?) "
+        "ON CONFLICT(libraryid, userid, role, roomid) DO UPDATE SET "
+        "granted_by = excluded.granted_by, granted_at = CURRENT_TIMESTAMP",
+        (libraryid, int(userid), role, roomid, granted_by),
     )
 
 
-def library_rows(conn, ownerid=None, query=None, limit=200):
-    """Список пакетов библиотеки: сколько комнат, боёв и тем."""
+def revoke_package_right(conn, libraryid, userid, role, roomid=SCOPE_ALL):
+    """Отзывает право. Последнего правообладателя отозвать нельзя."""
+    roomid = int(roomid or SCOPE_ALL)
+    if role == ROLE_HOLDER:
+        holders = conn.execute(
+            "SELECT COUNT(*) FROM package_rights WHERE libraryid = ? AND role = ?",
+            (libraryid, ROLE_HOLDER),
+        ).fetchone()[0]
+        mine = conn.execute(
+            "SELECT 1 FROM package_rights WHERE libraryid = ? AND userid = ? AND role = ? "
+            "AND roomid = ?", (libraryid, int(userid), ROLE_HOLDER, SCOPE_ALL),
+        ).fetchone()
+        if holders <= 1 and mine is not None:
+            raise LibraryError("У пакета должен остаться правообладатель")
+    conn.execute(
+        "DELETE FROM package_rights WHERE libraryid = ? AND userid = ? AND role = ? AND roomid = ?",
+        (libraryid, int(userid), role, roomid),
+    )
+
+
+def package_holders(conn, libraryid):
+    """Правообладатели пакета: [{userid, name}]."""
+    if not has_table(conn, "package_rights"):
+        return []
+    rows = conn.execute(
+        "SELECT r.userid, COALESCE(u.name, u.login, '') AS name FROM package_rights r "
+        "LEFT JOIN users u ON u.userid = r.userid "
+        "WHERE r.libraryid = ? AND r.role = ? ORDER BY r.userid",
+        (libraryid, ROLE_HOLDER),
+    ).fetchall()
+    return [{"userid": row[0], "name": row[1]} for row in rows]
+
+
+def package_rights_view(conn, libraryid):
+    """Все выданные права: [{userid, name, role, role_title, roomid, room, granted_at}]."""
+    if not has_table(conn, "package_rights"):
+        return []
+    rows = conn.execute(
+        "SELECT r.userid, COALESCE(u.name, u.login, '') AS name, r.role, r.roomid, "
+        "r.granted_at, COALESCE(v.venuename, '') AS venue, ar.date "
+        "FROM package_rights r "
+        "LEFT JOIN users u ON u.userid = r.userid "
+        "LEFT JOIN activerooms ar ON ar.roomid = r.roomid "
+        "LEFT JOIN venues v ON v.venueid = ar.venueid "
+        "WHERE r.libraryid = ? ORDER BY r.role DESC, r.roomid, r.userid",
+        (libraryid,),
+    ).fetchall()
+    items = []
+    for row in rows:
+        room = None
+        if row[3]:
+            room = "турнир %s" % row[3]
+            if row[5]:
+                room += " · " + row[5]
+            if row[6]:
+                room += " · " + str(row[6])
+        items.append({
+            "userid": row[0],
+            "name": row[1],
+            "role": row[2],
+            "role_title": ROLE_TITLES.get(row[2], row[2]),
+            "roomid": int(row[3] or 0),
+            "room": room,
+            "granted_at": row[4],
+        })
+    return items
+
+
+def can_grant_role(access, role):
+    """Кто какие роли выдаёт: правообладатель — любые, организатор — ведущих."""
+    if access is None:
+        return False
+    if access.get("admin"):
+        return True
+    if role == ROLE_HOST:
+        return bool(access.get("can_grant_host"))
+    return bool(access.get("can_grant"))
+
+
+def current_package_data(conn, libraryid):
+    """Содержимое действующей ревизии; для старых записей — из копии в комнате."""
+    row = conn.execute(
+        "SELECT data FROM package_revisions WHERE libraryid = ? "
+        "ORDER BY revision DESC LIMIT 1", (libraryid,)
+    ).fetchone()
+    if row is not None and row[0]:
+        return row[0]
+    if not has_table(conn, "packages"):
+        return None
+    copy = conn.execute(
+        "SELECT data FROM packages WHERE libraryid = ? ORDER BY packageid DESC LIMIT 1",
+        (libraryid,),
+    ).fetchone()
+    return copy[0] if copy is not None else None
+
+
+def package_theme_names(conn, libraryid):
+    """Названия тем действующей ревизии (для карточки и превью)."""
+    data = current_package_data(conn, libraryid)
+    if data is None:
+        return []
+    return [theme_title(theme) for theme in package_topics(data)]
+
+
+def package_revisions(conn, libraryid):
+    """История ревизий: номер, когда, кто, заметка, сколько тем."""
+    rows = conn.execute(
+        "SELECT r.revision, r.created_at, r.note, r.hash, "
+        "COALESCE(u.name, u.login, '') AS author, r.data "
+        "FROM package_revisions r LEFT JOIN users u ON u.userid = r.created_by "
+        "WHERE r.libraryid = ? ORDER BY r.revision DESC", (libraryid,)
+    ).fetchall()
+    items = []
+    for row in rows:
+        items.append({
+            "revision": int(row[0]),
+            "created_at": str(row[1] or "")[:16],
+            "note": row[2] or "",
+            "hash": row[3],
+            "author": row[4] or "",
+            "themes": len(package_topics(row[5])),
+        })
+    return items
+
+
+def add_revision(conn, libraryid, data, note=None, created_by=None, name=None,
+                 author_name=None, tournament=None, origin_date=None,
+                 description=None):
+    """Сохраняет новую ревизию и обновляет карточку пакета.
+
+    data — уже JSON-строка или словарь. Возвращает номер новой ревизии.
+    """
+    if isinstance(data, (dict, list)):
+        data = json.dumps(data, ensure_ascii=False)
+    digest = content_hash(data)
+    row = conn.execute(
+        "SELECT MAX(revision) FROM package_revisions WHERE libraryid = ?", (libraryid,)
+    ).fetchone()
+    revision = int(row[0] or 0) + 1
+    conn.execute(
+        "INSERT INTO package_revisions (libraryid, revision, data, hash, note, created_by) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (libraryid, revision, data, digest, note, created_by),
+    )
+    fields = ["revision = ?", "hash = ?"]
+    params = [revision, digest]
+    for column, value in (("name", name), ("author_name", author_name),
+                          ("tournament", tournament), ("origin_date", origin_date),
+                          ("description", description)):
+        if value is not None:
+            fields.append("%s = ?" % column)
+            params.append(value)
+    params.append(libraryid)
+    conn.execute(
+        "UPDATE package_library SET %s WHERE libraryid = ?" % ", ".join(fields), params
+    )
+    return revision
+
+
+def create_package(conn, name, data, ownerid, author_name=None, tournament=None,
+                   origin_date=None, description=None, note=None):
+    """Новый пакет: карточка + ревизия 1 + правообладатель. Возвращает libraryid."""
+    if isinstance(data, (dict, list)):
+        data = json.dumps(data, ensure_ascii=False)
+    digest = content_hash(data)
+    cursor = conn.execute(
+        "INSERT INTO package_library (name, hash, ownerid, revision, author_name, "
+        "tournament, origin_date, description, preview, access) "
+        "VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?)",
+        (name, digest, ownerid, author_name, tournament, origin_date, description,
+         PREVIEW_CARD, ACCESS_PRIVATE),
+    )
+    libraryid = cursor.lastrowid
+    conn.execute(
+        "INSERT INTO package_revisions (libraryid, revision, data, hash, note, created_by) "
+        "VALUES (?, 1, ?, ?, ?, ?)",
+        (libraryid, data, digest, note or "первая загрузка", ownerid),
+    )
+    if ownerid:
+        grant_package_right(conn, libraryid, ownerid, ROLE_HOLDER, SCOPE_ALL, ownerid)
+    return libraryid
+
+
+def library_rows(conn, user=None, query=None, limit=200, manages=None):
+    """Список пакетов: свои с содержимым, остальные — карточками.
+
+    Правообладатель и организатор видят пакет целиком, ведущий — только в тех
+    турнирах, куда назначен, посторонний — карточку (название, турнир, автор) и,
+    если правообладатель разрешил, названия тем.
+
+    manages(roomid) — «веду ли я эту комнату»: копия в своей комнате уже даёт
+    право ведущего, даже если отдельного права на пакет нет.
+    """
     sql = (
-        "SELECT l.libraryid, l.name, l.ownerid, l.hash, "
+        "SELECT l.libraryid, l.name, l.ownerid, l.hash, l.revision, "
+        "l.preview, l.access, l.author_name, l.tournament, l.origin_date, "
+        "l.deleted_at, "
         "(SELECT COUNT(*) FROM packages p WHERE p.libraryid = l.libraryid) AS copies, "
         "(SELECT COUNT(DISTINCT p.roomid) FROM packages p "
         " WHERE p.libraryid = l.libraryid) AS rooms, "
@@ -587,32 +1093,105 @@ def library_rows(conn, ownerid=None, query=None, limit=200):
         "FROM package_library l "
     )
     where, params = [], []
-    if ownerid is not None:
-        where.append(visible_clause(ownerid))
-        params.extend([ownerid, ownerid])
+    admin = _role_of(user) == "администратор"
+    if not admin:
+        where.append("l.deleted_at IS NULL")
     if query:
-        where.append("l.name LIKE ?")
-        params.append("%" + query + "%")
+        where.append("(l.name LIKE ? OR l.tournament LIKE ? OR l.author_name LIKE ?)")
+        params.extend(["%" + query + "%"] * 3)
     if where:
         sql += "WHERE " + " AND ".join(where) + " "
     sql += "ORDER BY l.libraryid DESC LIMIT ?"
     params.append(limit)
+    userid = _userid_of(user)
+    rights = {}
+    if userid is not None and has_table(conn, "package_rights"):
+        for row in conn.execute(
+            "SELECT libraryid, role, roomid FROM package_rights WHERE userid = ?", (userid,)
+        ):
+            rights.setdefault(row[0], {}).setdefault(row[1], []).append(int(row[2] or 0))
+    copies_by_library = {}
+    if has_table(conn, "packages"):
+        for row in conn.execute(
+            "SELECT DISTINCT libraryid, roomid FROM packages WHERE libraryid IS NOT NULL"
+        ):
+            copies_by_library.setdefault(row[0], set()).add(int(row[1] or 0))
+    if manages is None:
+        managed = set()
+        if userid is not None and has_table(conn, "activerooms"):
+            managed = {int(row[0]) for row in conn.execute(
+                "SELECT roomid FROM activerooms WHERE ownerid = ?", (userid,))}
+        manages = managed.__contains__
     rows = []
     for row in conn.execute(sql, params):
+        libraryid = row[0]
+        mine = rights.get(libraryid, {})
+        host_rooms = sorted(mine.get(ROLE_HOST, []))
+        copied = copies_by_library.get(libraryid, set())
+        # Копия в комнате, которой человек управляет, — уже сложившееся право.
+        usable = any(manages(room) for room in copied)
+        community = (row[6] or ACCESS_PRIVATE) == ACCESS_COMMUNITY
+        deleted = bool(row[10])
+        role = ROLE_HOLDER if ROLE_HOLDER in mine else (
+            ROLE_ORGANIZER if ROLE_ORGANIZER in mine else None)
+        content = bool(admin or role or community or usable)
         item = {
-            "libraryid": row[0], "name": row[1], "ownerid": row[2], "hash": row[3],
-            "copies": row[4], "rooms": row[5], "games": row[6], "topics": 0,
-            "updated": "",
+            "libraryid": libraryid, "name": row[1], "ownerid": row[2], "hash": row[3],
+            "revision": int(row[4] or 0),
+            "preview": row[5] or PREVIEW_CARD,
+            "community": community,
+            "author": row[7], "tournament": row[8], "origin_date": row[9],
+            "deleted": deleted,
+            "copies": row[11], "rooms": row[12], "games": row[13],
+            "topics": 0, "theme_names": [], "updated": "",
+            "role": role,
+            "host_rooms": host_rooms,
+            "content": content,
+            "usable": usable,
+            "mine": bool(admin or role or community or host_rooms or usable),
         }
         first = conn.execute(
             "SELECT packageid, data, updated_at, created_at FROM packages "
-            "WHERE libraryid = ? ORDER BY packageid DESC LIMIT 1", (item["libraryid"],)
+            "WHERE libraryid = ? ORDER BY packageid DESC LIMIT 1", (libraryid,)
         ).fetchone()
         if first is not None:
+            topics = package_topics(first[1])
             item["packageid"] = first[0]
-            item["topics"] = len(package_topics(first[1]))
+            item["topics"] = len(topics)
+            item["theme_names"] = [theme_title(theme) for theme in topics]
             item["updated"] = (first[2] or first[3] or "")[:16]
+        else:
+            revision = conn.execute(
+                "SELECT data FROM package_revisions WHERE libraryid = ? "
+                "ORDER BY revision DESC LIMIT 1", (libraryid,)
+            ).fetchone()
+            if revision is not None:
+                topics = package_topics(revision[0])
+                item["topics"] = len(topics)
+                item["theme_names"] = [theme_title(theme) for theme in topics]
+        # Названия тем — по разрешению: содержимое или превью «только темы».
+        visible_themes = item["content"] or item["preview"] == PREVIEW_THEMES
+        if not visible_themes:
+            item["theme_names"] = []
+        if not item["mine"] and item["preview"] == PREVIEW_NONE and not admin:
+            continue
         rows.append(item)
+    rows.sort(key=lambda item: (0 if item["mine"] else 1, -item["libraryid"]))
+    return rows
+
+
+def _userid_of(user):
+    try:
+        return user["userid"] if user is not None else None
+    except (KeyError, IndexError, TypeError):
+        return None
+
+
+def _role_of(user):
+    try:
+        return user["role"] if user is not None else None
+    except (KeyError, IndexError, TypeError):
+        return None
     return rows
 
 
