@@ -4784,6 +4784,7 @@ const Offline = (() => {
     let lastAttempt = null;
     let failureDelay = 0;
     let lastError = '';
+    let denied = false;   // сервер ответил 401/403: права отобрали
 
     function loadState() {
         try {
@@ -4869,6 +4870,10 @@ const Offline = (() => {
         }
         if (pending) {
             const count = pending + ' ' + plural(pending, 'изменение', 'изменения', 'изменений');
+            if (denied) {
+                text.textContent = 'Нет прав на этот бой · ' + count + ' остались на этом устройстве';
+                return;
+            }
             if (current === 'autonomous') {
                 text.textContent = 'Автономно · ' + count + ' только на этом устройстве';
                 return;
@@ -5142,6 +5147,8 @@ const Offline = (() => {
     async function flush(force) {
         if (flushing || !outbox.length) { updateBanner(); return; }
         if (mode() === 'autonomous' && !force) { updateBanner(); return; }
+        if (denied && !force) { updateBanner(); return; }
+        if (force) denied = false;
         flushing = true;
         lastError = '';
         lastAttempt = Date.now();
@@ -5153,6 +5160,15 @@ const Offline = (() => {
                 response = await send(op);
             } catch (error) {
                 noteFailure(true);
+                break;
+            }
+            if (response.status === 401 || response.status === 403) {
+                // Права отобрали (например, отключили ссылку управления):
+                // изменения остаются на устройстве, ждём возврата прав.
+                denied = true;
+                lastError = response.status === 403
+                    ? 'нет прав на этот бой — изменения остались на устройстве'
+                    : 'нужно войти заново — изменения остались на устройстве';
                 break;
             }
             if (response.ok) {

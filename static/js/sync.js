@@ -153,6 +153,7 @@
         let lastAttempt = null;
         let failureDelay = 0;
         let error = '';
+        let denied = false;   // сервер ответил 403: права отобрали
         let banner = null;
 
         function loadOutbox() {
@@ -348,6 +349,12 @@
                 publish();
                 return;
             }
+            if (denied && !force) {
+                // Права отобрали: не тратим попытки и не теряем изменения.
+                publish();
+                return;
+            }
+            if (force) denied = false;
             if (isAutonomous() && !force) {
                 publish();
                 return;
@@ -375,6 +382,13 @@
                 }
                 if (result.status === 401) {
                     window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
+                    break;
+                }
+                if (result.status === 403) {
+                    // Ссылку управления отключили или площадку передали другому:
+                    // держим изменения в очереди, пока права не вернут.
+                    denied = true;
+                    error = 'нет прав на эту площадку';
                     break;
                 }
                 if (result.ok) {

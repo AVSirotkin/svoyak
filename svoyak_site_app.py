@@ -441,6 +441,7 @@ def set_area_host(roomid, area, userid, actor=None):
 # правит бой. Ключ живёт в сессии браузера, после первого открытия адрес
 # работает без него.
 CONTROL_AREA_ALL = 0   # ключ на комнату целиком (свободная посадка)
+CONTROL_SESSION_LIMIT = 12   # сколько открытых ссылок помнит сессия
 
 
 def control_link(roomid, area):
@@ -627,7 +628,11 @@ def control_session_for_room(roomid):
 def grant_control_session(roomid, area, token):
     """Запоминает открытую ссылку: дальше адрес работает без ключа."""
     granted = dict(session.get("control_tokens") or {})
+    granted.pop(f"{int(roomid)}:{int(area)}", None)
     granted[f"{int(roomid)}:{int(area)}"] = token
+    # Старые площадки не копим: в сессии живут последние открытые ссылки.
+    while len(granted) > CONTROL_SESSION_LIMIT:
+        granted.pop(next(iter(granted)))
     session["control_tokens"] = granted
     try:
         g._control_links = {int(roomid): control_room_links(roomid)}
