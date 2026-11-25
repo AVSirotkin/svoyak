@@ -813,6 +813,7 @@ async function refreshBattleHeard() {
         if (!pkg || !pkg.serverId) continue;
         asked = true;
         const params = new URLSearchParams({
+            gameindex: String(gameindex),
             packageid: String(pkg.serverId),
             themes: segment.themeIndices.join(','),
             players: seated.join(','),

@@ -2070,8 +2070,35 @@ def PlanQuestionsPage(roomid):
                     layouts[layout["gameindex"]] = layout
         except sqlite3.Error:
             layouts = {}
+        played_games = set()
+        try:
+            for row in conn.execute(
+                    "SELECT DISTINCT gameindex FROM results WHERE roomid = ?", (roomid,)):
+                played_games.add(int(row[0]))
+        except (sqlite3.OperationalError, TypeError, ValueError):
+            played_games = set()
+
         assigned = {}
         for game in games:
+            if game["gameindex"] in played_games:
+                protocol_themes = [
+                    theme for theme in (protocol_payload(
+                        conn, roomid, game["gameindex"]).get("themes") or [])
+                    if isinstance(theme, dict)]
+                if protocol_themes:
+                    assigned[game["gameindex"]] = {
+                        "packageid": room_package_for_themes(
+                            conn, packages, protocol_themes),
+                        "topics": [package_library.theme_title(theme)
+                                   for theme in protocol_themes],
+                        "indexes": [],
+                        "layoutid": None,
+                        "part": None,
+                        "replay_of": None,
+                        "source": "protocol",
+                        "played": True,
+                    }
+                    continue
             payload = room_questions(conn, roomid, game["gameindex"])
             if payload:
                 assigned[game["gameindex"]] = {
@@ -2095,12 +2122,17 @@ def PlanQuestionsPage(roomid):
                 "topics": [package_library.theme_title(theme) for theme in layout["themes"]],
                 "source": "protocol",
             }
+        # Идёт только тот бой, в котором уже есть отметки или счёт: у сыгранных
+        # протокол — это история, а у будущих он пустая заготовка.
         started = {}
         try:
             for row in conn.execute(
-                "SELECT gameindex, updated_at FROM game_protocols WHERE roomid = ?", (roomid,)
-            ):
-                started[row["gameindex"]] = row["updated_at"]
+                "SELECT gameindex, payload, updated_at FROM game_protocols "
+                "WHERE roomid = ?", (roomid,)):
+                if int(row["gameindex"]) in played_games:
+                    continue
+                if protocol_progress(package_library.load_json(row["payload"])):
+                    started[row["gameindex"]] = row["updated_at"]
         except sqlite3.OperationalError:
             started = {}
         # С какого боя раскладывать пакет целиком: с первого, у которого ещё
@@ -2139,12 +2171,30 @@ def PlanQuestionsPage(roomid):
         free_seating=free_seating, packages=packages, assigned=assigned, started=started,
         package_layouts=package_layouts, package_presets=package_presets,
         extra=extra, spread_from=spread_from,
-        theme_use=theme_use, title=f"Вопросы турнира {roomid}",
+        theme_use=theme_use, can_backfill=is_admin(),
+        title=f"Вопросы турнира {roomid}",
     )
 
 
+def battle_played(conn, roomid, gameindex):
+    """Бой уже сыгран: по нему есть результаты."""
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM results WHERE roomid = ? AND gameindex = ? LIMIT 1",
+            (roomid, gameindex)).fetchone()
+    except sqlite3.Error:
+        return False
+    return row is not None
+
+
 def battle_themes_for(conn, roomid, gameindex):
-    """Темы боя, как они записаны: сначала план, потом раскладка из пульта."""
+    """Темы боя: у сыгранного боя верим протоколу, иначе — плану и раскладке."""
+    if battle_played(conn, roomid, gameindex):
+        protocol = protocol_payload(conn, roomid, gameindex)
+        themes = [theme for theme in (protocol.get("themes") or [])
+                  if isinstance(theme, dict)]
+        if themes:
+            return themes
     payload = room_questions(conn, roomid, gameindex)
     if payload and payload.get("themes"):
         return list(payload["themes"])
@@ -2296,7 +2346,11 @@ def PlanHeard(roomid):
         for name in seated:
             if name not in names:
                 names.append(name)
-        heard = package_library.heard_by_themes(conn, chosen, names) if chosen else {}
+        # Сам бой, для которого подбираются темы, слышанным не бывает: иначе
+        # пульт, вернувшись к прошлому бою, ругается на его же темы.
+        skip = {(roomid, gameindex)} if gameindex is not None else None
+        heard = (package_library.heard_by_themes(conn, chosen, names, skip=skip)
+                 if chosen else {})
     finally:
         conn.close()
     return json.dumps({
@@ -2685,6 +2739,25 @@ def PlanQuestionsSave(roomid):
             {package_library.theme_signature(theme) for theme in protocol_themes} ==
             {package_library.theme_signature(theme) for theme in chosen})
 
+        # Сыгранный бой: его темы — то, что реально читали за столом. План
+        # мог разойтись с протоколом (перепривязка задним числом), и менять
+        # запись нельзя: восстановить прочитанное будет нечем.
+        if battle_played(conn, roomid, gameindex):
+            recorded = protocol_themes or [
+                theme for theme in battle_themes_for(conn, roomid, gameindex)
+                if isinstance(theme, dict)]
+            same_as_played = bool(chosen) and len(recorded) == len(chosen) and (
+                {package_library.theme_signature(theme) for theme in recorded} ==
+                {package_library.theme_signature(theme) for theme in chosen})
+            if not same_as_played and not (is_admin(user) and data.get("backfill")):
+                conn.execute("ROLLBACK")
+                return json.dumps({
+                    "status": "played",
+                    "message": "Бой %s уже сыгран: его темы — те, что читали за столом, "
+                               "и менять их нельзя. Задним числом это может сделать "
+                               "только администратор сайта." % gameindex,
+                }, ensure_ascii=False), 409
+
         # Начатый бой уже идёт по своему протоколу. Менять ему темы можно
         # только с явного согласия: протокол при этом стирается.
         has_protocol = protocol_row is not None
@@ -2714,7 +2787,8 @@ def PlanQuestionsSave(roomid):
                     "SELECT name FROM activeplayers WHERE roomid = ?", (roomid,)
                 ).fetchall()
                 heard = package_library.heard_by_themes(
-                    conn, chosen, [row["name"] for row in player_rows])
+                    conn, chosen, [row["name"] for row in player_rows],
+                    skip={(roomid, gameindex)})
             except sqlite3.Error:
                 heard = {}
             warnings = []
@@ -3346,6 +3420,21 @@ def PlanGameProtocol(roomid, gameindex):
                     {"status": "error", "message": "Нужны themes"}, ensure_ascii=False
                 ), 400
             themes = previous_payload.get("themes") or []
+
+        # Сыгранный бой: темы — это то, что читали за столом. Отметки и счёт
+        # править можно, а подменить темы нельзя: иначе история пакета и
+        # подсказки о повторах начнут врать.
+        if battle_played(conn, roomid, gameindex):
+            recorded = [theme for theme in (previous_payload.get("themes") or [])
+                        if isinstance(theme, dict)]
+            incoming = [theme for theme in (themes or []) if isinstance(theme, dict)]
+            if recorded and (
+                    {package_library.theme_signature(theme) for theme in recorded} !=
+                    {package_library.theme_signature(theme) for theme in incoming}):
+                themes = recorded
+                log_game_events(
+                    roomid, "protocol themes kept",
+                    {"gameindex": gameindex, "by": author}, conn=conn)
 
         payload = {
             "v": 2,

@@ -1960,12 +1960,15 @@ def similar_plays(theme, played, skip=()):
     return found
 
 
-def heard_by_themes(conn, themes, names, mode=EXPOSURE_HALL):
+def heard_by_themes(conn, themes, names, mode=EXPOSURE_HALL, skip=None):
     """Кто из названных игроков уже слышал эти темы и где.
 
     Возвращает {имя: [{topic, place, changed}]}. Мелкие правки текста тему не
     меняют: повторы с исправленным текстом тоже считаются услышанными.
+    skip — места (roomid, gameindex), которые считать не надо: сам бой, для
+    которого подбираются темы, слышанным не бывает.
     """
+    skip = set(skip or ())
     names = [name for name in (names or []) if name]
     themes = [theme for theme in (themes or []) if isinstance(theme, dict)]
     if not names or not themes:
@@ -2017,6 +2020,8 @@ def heard_by_themes(conn, themes, names, mode=EXPOSURE_HALL):
     for layout in theme_layouts(conn):
         if not is_finished(layout["roomid"], layout["gameindex"]):
             continue
+        if (layout["roomid"], layout["gameindex"]) in skip:
+            continue
         by_title = layout["source"] == "log"
         topics = []
         for theme in layout["themes"]:
@@ -2055,9 +2060,9 @@ def room_themes(conn, roomid):
     return themes
 
 
-def heard_before(conn, roomid, names, mode=EXPOSURE_HALL):
+def heard_before(conn, roomid, names, mode=EXPOSURE_HALL, skip=None):
     """Что из разложенного в этой комнате её игроки уже слышали."""
-    return heard_by_themes(conn, room_themes(conn, roomid), names, mode)
+    return heard_by_themes(conn, room_themes(conn, roomid), names, mode, skip)
 
 
 def theme_use_by_index(conn, data, libraryid=None, played=None):

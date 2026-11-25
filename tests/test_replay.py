@@ -395,5 +395,188 @@ class ReplayInsertTests(ReplayBase):
         self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
 
 
+class PlayedBattleTests(ReplayBase):
+    """Сыгранный бой: темы из протокола, план его не переписывает."""
+
+    def setUp(self):
+        super().setUp()
+        self.assign(1, [6, 7, 8, 9, 10, 11])
+        self.assign(2, [0, 1, 2, 3, 4, 5])
+
+    def save_protocol(self, gameindex, indexes, marks=None, players=('Аня', 'Боря')):
+        conn = db()
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO game_protocols (roomid, gameindex, payload, revision) "
+                "VALUES (?, ?, ?, 1)",
+                (self.room, gameindex, json.dumps({
+                    "themes": [self.topics[index] for index in indexes],
+                    "players": [{"name": name, "place": position}
+                                for position, name in enumerate(players, 1)],
+                    "marks": marks or {},
+                    "scores": {},
+                    "finished": False,
+                }, ensure_ascii=False)))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def write_plan(self, gameindex, indexes):
+        """План перепривязали в обход страницы — так и вышло в комнате 483."""
+        conn = db()
+        try:
+            conn.execute(
+                "UPDATE game_questions SET payload = ? WHERE roomid = ? AND gameindex = ?",
+                (json.dumps({"themes": [self.topics[index] for index in indexes],
+                             "package": self.package_name}, ensure_ascii=False),
+                 self.room, gameindex))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def card(self, text, gameindex):
+        start = text.find('id="game-%d"' % gameindex)
+        rest = text[start:]
+        end = rest.find('id="game-%d"' % (gameindex + 1))
+        return rest if end < 0 else rest[:end]
+
+    def test_heard_does_not_count_the_battle_itself(self):
+        self.save_protocol(2, [0, 1, 2, 3, 4, 5])
+        self.play(2, ['Аня', 'Боря'], [0, 1, 2, 3, 4, 5])
+        themes = ','.join(str(index) for index in (0, 1, 2, 3, 4, 5))
+        base = BASE + '/api/plan/%d/heard?packageid=%d&themes=%s&players=Аня'
+        own = json.loads(self.holder.get(
+            (base + '&gameindex=2') % (self.room, self.packageid, themes)
+        ).get_data(as_text=True))
+        self.assertEqual(own['players'], {})
+        # Без номера боя Аня по-прежнему слышала этот бой: подсказка о повторе
+        # и пометки работают как раньше.
+        anywhere = json.loads(self.holder.get(
+            base % (self.room, self.packageid, themes)
+        ).get_data(as_text=True))
+        self.assertIn('Аня', anywhere['players'])
+
+    def test_played_battle_is_not_in_progress(self):
+        self.save_protocol(2, [0, 1, 2, 3, 4, 5], marks={"0:1": "plus"})
+        self.play(2, ['Аня', 'Боря'], [0, 1, 2, 3, 4, 5])
+        text = self.holder.get(
+            BASE + '/plan/%d/questions' % self.room).get_data(as_text=True)
+        self.assertIn('сыгран', self.card(text, 2))
+        self.assertNotIn('идёт бой', self.card(text, 2))
+
+    def test_battle_with_marks_is_in_progress(self):
+        self.save_protocol(2, [0, 1, 2, 3, 4, 5], marks={"0:1": "plus"})
+        text = self.holder.get(
+            BASE + '/plan/%d/questions' % self.room).get_data(as_text=True)
+        self.assertIn('идёт бой', self.card(text, 2))
+        # Отметки — не повод считать бой сыгранным.
+        self.assertNotIn('сыгран', self.card(text, 2))
+
+    def test_seating_alone_is_not_in_progress(self):
+        # Посаженные игроки — ещё не начатый бой.
+        self.save_protocol(2, [0, 1, 2, 3, 4, 5])
+        text = self.holder.get(
+            BASE + '/plan/%d/questions' % self.room).get_data(as_text=True)
+        self.assertNotIn('идёт бой', self.card(text, 2))
+
+    def test_played_battle_shows_protocol_themes(self):
+        self.save_protocol(2, [0, 1, 2, 3, 4, 5])
+        self.play(2, ['Аня', 'Боря'], [0, 1, 2, 3, 4, 5])
+        self.write_plan(2, [6, 7, 8, 9, 10, 11])
+        text = self.holder.get(
+            BASE + '/plan/%d/questions' % self.room).get_data(as_text=True)
+        card = self.card(text, 2)
+        self.assertIn("Тема 1 %s" % self.suffix, card)
+        self.assertNotIn("Тема 7 %s" % self.suffix, card)
+        # Формы для правки нет: темы уже прочитаны.
+        self.assertNotIn('назначить темы', card)
+        self.assertNotIn('изменить задним числом', card)
+
+    def test_played_battle_refuses_new_themes(self):
+        self.play(2, ['Аня', 'Боря'], [0, 1, 2, 3, 4, 5])
+        response = self.holder.post(
+            BASE + '/api/plan/%d/questions' % self.room,
+            json={'gameindex': 2, 'packageid': self.packageid,
+                  'themes': [6, 7, 8, 9, 10, 11],
+                  'force': True, 'ack_heard': True})
+        self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
+        data = json.loads(response.get_data(as_text=True))
+        self.assertEqual(data['status'], 'played')
+        self.assertIn('уже сыгран', data['message'])
+        # План не тронут: в нём остались темы, которые играли.
+        self.assertEqual(self.stored_themes(2),
+                         ["Тема %s %s" % (number, self.suffix)
+                          for number in (1, 2, 3, 4, 5, 6)])
+
+    def test_played_battle_refuses_clearing(self):
+        self.play(2, ['Аня', 'Боря'], [0, 1, 2, 3, 4, 5])
+        response = self.holder.post(
+            BASE + '/api/plan/%d/questions' % self.room,
+            json={'gameindex': 2, 'themes': [], 'force': True, 'ack_heard': True})
+        self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
+        self.assertIsNotNone(self.stored(2))
+
+    def test_same_themes_on_played_battle_are_allowed(self):
+        self.play(2, ['Аня', 'Боря'], [0, 1, 2, 3, 4, 5])
+        response = self.holder.post(
+            BASE + '/api/plan/%d/questions' % self.room,
+            json={'gameindex': 2, 'packageid': self.packageid,
+                  'themes': [0, 1, 2, 3, 4, 5],
+                  'force': True, 'ack_heard': True})
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+
+    def test_admin_may_backfill_played_battle(self):
+        self.play(2, ['Аня', 'Боря'], [0, 1, 2, 3, 4, 5])
+        conn = db()
+        try:
+            conn.execute("UPDATE users SET role = 'администратор' WHERE userid = ?",
+                         (self.holder.userid,))
+            conn.commit()
+        finally:
+            conn.close()
+        response = self.holder.post(
+            BASE + '/api/plan/%d/questions' % self.room,
+            json={'gameindex': 2, 'packageid': self.packageid,
+                  'themes': [6, 7, 8, 9, 10, 11],
+                  'force': True, 'ack_heard': True, 'backfill': True})
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(self.stored_themes(2),
+                         ["Тема %s %s" % (number, self.suffix)
+                          for number in (7, 8, 9, 10, 11, 12)])
+
+    def test_protocol_keeps_themes_of_played_battle(self):
+        self.save_protocol(2, [0, 1, 2, 3, 4, 5])
+        self.play(2, ['Аня', 'Боря'], [0, 1, 2, 3, 4, 5])
+        response = self.holder.post(
+            BASE + '/api/plan/%d/game/2/protocol' % self.room,
+            json={'themes': [self.topics[index] for index in (6, 7, 8, 9, 10, 11)],
+                  'marks': {'0:1': 'plus'}, 'players': [{'name': 'Аня', 'place': 1}]})
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        conn = db()
+        try:
+            payload = json.loads(conn.execute(
+                "SELECT payload FROM game_protocols WHERE roomid = ? AND gameindex = 2",
+                (self.room,)).fetchone()[0])
+            events = [row[0] for row in conn.execute(
+                "SELECT event FROM log WHERE roomid = ?", (self.room,))]
+        finally:
+            conn.close()
+        self.assertEqual([theme['topic'] for theme in payload['themes']],
+                         ["Тема %s %s" % (number, self.suffix)
+                          for number in (1, 2, 3, 4, 5, 6)])
+        # Отметка при этом сохранилась.
+        self.assertEqual(payload['marks'], {'0:1': 'plus'})
+        self.assertIn('protocol themes kept', events)
+
+    def test_played_battle_themes_feed_replays(self):
+        # Повтор берёт темы протокола, а не подменённого плана.
+        self.save_protocol(1, [0, 1, 2, 3, 4, 5])
+        self.play(1, ['Аня', 'Боря'], [0, 1, 2, 3, 4, 5])
+        self.write_plan(1, [6, 7, 8, 9, 10, 11])
+        data = self.replays(['Вова', 'Гоша'])
+        self.assertEqual([item['gameindex'] for item in data['replays']], [1])
+        self.assertIn("Тема 1 %s" % self.suffix, data['replays'][0]['titles'])
+
+
 if __name__ == '__main__':
     unittest.main()
