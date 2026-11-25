@@ -197,6 +197,26 @@ class ControlLinkTests(unittest.TestCase):
         self.assertIn('control-link-input', body)
         self.assertIn(url, body)
 
+    def test_plan_games_lists_battles(self):
+        """Пульт перед автономной работой забирает список боёв схемы."""
+        response = self.owner.get(BASE + '/api/plan/%s/games' % ROOM)
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        data = json.loads(response.get_data(as_text=True))
+        games = data['games']
+        self.assertTrue(games)
+        self.assertEqual(sorted(item['table'] for item in games)[0], 1)
+        self.assertTrue(all(item['gameindex'] for item in games))
+
+    def test_plan_games_empty_for_free_seating(self):
+        conn = db()
+        # Свободная посадка: схемы у комнаты нет.
+        conn.execute("UPDATE rules SET brackets = NULL WHERE roomid = 2030")
+        conn.commit()
+        conn.close()
+        response = self.owner.get(BASE + '/api/plan/2030/games')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(json.loads(response.get_data(as_text=True))['games'], [])
+
 
 if __name__ == '__main__':
     unittest.main()

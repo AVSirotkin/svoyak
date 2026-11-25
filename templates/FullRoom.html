@@ -2943,10 +2943,45 @@ function syncPointerNow() {
 
 // Перенос боя на другое устройство: серверный протокол новее локального —
 // значит, бой вели не здесь. Берём серверную версию.
+// Протоколы боёв, снятые с сервера до автономной работы: без них офлайн
+// переключение на неоткрытый бой показало бы пустое поле.
+function protocolCacheKey(mid) {
+    return 'svoyak_protocol_' + gameState.roomId + '_' + mid;
+}
+
+function cacheProtocol(mid, protocol) {
+    try {
+        localStorage.setItem(protocolCacheKey(mid), JSON.stringify({
+            timestamp: Date.now(),
+            protocol
+        }));
+    } catch (error) { /* хранилище переполнено — обойдёмся без кэша */ }
+}
+
+function loadCachedProtocol(mid) {
+    try {
+        const saved = JSON.parse(localStorage.getItem(protocolCacheKey(mid)) || 'null');
+        if (!saved || !saved.protocol) return null;
+        // Своя правка свежее серверной — её и показываем.
+        const local = matchStorage.getMatchState(gameState.roomId, mid);
+        const localStamp = local && local.timestamp ? Date.parse(local.timestamp) : 0;
+        if (localStamp > (saved.timestamp || 0)) return null;
+        return saved.protocol;
+    } catch (error) {
+        return null;
+    }
+}
+
 async function loadProtocolFromServer() {
-    // Автономный режим: серверную версию не запрашиваем, работаем своей.
-    if (Offline.isAutonomous()) return;
     const mid = getCurrentMatchId();
+    // Автономный режим: к серверу не ходим, берём снятую копию.
+    if (Offline.isAutonomous()) {
+        const cached = loadCachedProtocol(mid);
+        if (!cached) return;
+        protocolRevision[Number(mid)] = Number(cached.revision) || 0;
+        if (!Offline.pending()) applyProtocol(cached);
+        return;
+    }
     try {
         const response = await Offline.fetchWithTimeout(
             '/api/plan/' + gameState.roomId + '/game/' + mid + '/protocol',
@@ -2957,6 +2992,7 @@ async function loadProtocolFromServer() {
         const protocol = data && data.protocol;
         if (!protocol) return;
         protocolRevision[Number(mid)] = Number(protocol.revision) || 0;
+        cacheProtocol(mid, protocol);
         const local = matchStorage.getMatchState(gameState.roomId, mid);
         const serverStamp = Date.parse(String(protocol.updated_at || '').replace(' ', 'T') + 'Z') || 0;
         const localStamp = local && local.timestamp ? Date.parse(local.timestamp) : 0;
@@ -4214,7 +4250,51 @@ function autonomousReport() {
     lines.push(roomPlayers
         ? '· игроков в списке комнаты: ' + roomPlayers
         : '· список игроков комнаты пуст');
+    lines.push(prefetchedBattles
+        ? '· протоколов боёв сохранено: ' + prefetchedBattles
+        : '⚠ протоколы боёв не сохранились — переключение на другой бой будет пустым');
     return lines.join('\n');
+}
+
+// Перед автономной работой забираем протоколы всех боёв схемы: переключение
+// между ними офлайн должно показывать бой, а не пустое поле.
+let prefetchedBattles = 0;
+
+async function prefetchProtocols() {
+    const known = Object.keys(matchStorage.getAllRoomMatches(gameState.roomId))
+        .map((key) => Number(key))
+        .filter((value) => Number.isFinite(value));
+    let games = [];
+    try {
+        const response = await Offline.fetchWithTimeout(
+            '/api/plan/' + gameState.roomId + '/games', { cache: 'no-store' }
+        );
+        if (response.ok) {
+            const data = await response.json();
+            if (data && Array.isArray(data.games)) {
+                games = data.games.map((item) => Number(item.gameindex));
+            }
+        }
+    } catch (error) { /* останутся уже открытые бои */ }
+    const queue = games.concat(known).concat([Number(getCurrentMatchId())])
+        .filter((value, index, list) => Number.isFinite(value) && list.indexOf(value) === index);
+    let saved = 0;
+    for (const mid of queue) {
+        try {
+            const response = await Offline.fetchWithTimeout(
+                '/api/plan/' + gameState.roomId + '/game/' + mid + '/protocol',
+                { cache: 'no-store' }
+            );
+            if (!response.ok) continue;
+            const data = await response.json();
+            const protocol = data && data.protocol;
+            if (!protocol) continue;
+            cacheProtocol(mid, protocol);
+            saved += 1;
+        } catch (error) { /* не успели — не критично */ }
+    }
+    prefetchedBattles = saved;
+    return saved;
 }
 
 function init_page() {
@@ -4251,10 +4331,12 @@ function init_page() {
             const previous = Offline.mode();
             if (next === previous) return;
             if (next === 'autonomous') {
-                // Пока связь есть, доводим дела: досылаем накопленное и
-                // подтягиваем свежие списки — дальше устройство само по себе.
+                // Пока связь есть, доводим дела: досылаем накопленное,
+                // подтягиваем свежие списки и протоколы всех боёв схемы —
+                // дальше устройство само по себе.
                 await Offline.flush(true);
                 await Offline.syncFromServer(true);
+                await prefetchProtocols();
                 update_weight();
                 const agreed = confirm(
                     'Автономный режим: пульт перестаёт обращаться к серверу.\n\n' +

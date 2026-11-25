@@ -1604,6 +1604,30 @@ def PlanControlLink(roomid):
     )
 
 
+@app.route('/api/plan/<int:roomid>/games', subdomain="svoyak")
+@api_login_or_open_room
+def PlanGames(roomid):
+    """Бои схемы комнаты: что пульт забирает перед автономной работой.
+
+    Свободная посадка схемы не имеет — тогда список пуст, и пульт живёт
+    своим номером боя.
+    """
+    ensure_auth_tables()
+    conn = get_db_connection()
+    try:
+        plan = build_room_plan(conn, roomid)
+    finally:
+        conn.close()
+    games = []
+    if plan is not None:
+        games = [
+            {"gameindex": game.gameindex, "table": game.table,
+             "stage": game.stage, "status": game.status}
+            for game in plan.games
+        ]
+    return json.dumps({"status": "ok", "games": games}, ensure_ascii=False)
+
+
 @app.route('/api/plan/<int:roomid>/order', subdomain="svoyak", methods=["POST"])
 @api_login_or_open_room
 def PlanOrderRule(roomid):
