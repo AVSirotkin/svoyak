@@ -250,6 +250,30 @@ class PlanAndConsoleTests(LayoutBase):
         self.assertIn('По раундам', text)
         self.assertIn('бой 1', text)
 
+    def test_plan_page_offers_presets_without_saving(self):
+        packageid = self.take_to_room()
+        page = self.holder.get(BASE + '/plan/%d/questions' % self.room)
+        text = page.get_data(as_text=True)
+        start = text.find('const PRESETS = ')
+        self.assertGreater(start, 0, text[:200])
+        line = text[start:text.find('\n', start)]
+        presets = json.loads(line[len('const PRESETS = '):].rstrip(';'))
+        info = presets[str(packageid)]
+        self.assertEqual(info['libraryid'], self.libraryid)
+        self.assertEqual([item['key'] for item in info['items']],
+                         ['flat', 'alternate', 'halves'])
+
+    def test_saved_layout_replaces_its_preset(self):
+        packageid = self.take_to_room()
+        self.make_layout(self.holder, 'alternate')
+        page = self.holder.get(BASE + '/plan/%d/questions' % self.room)
+        text = page.get_data(as_text=True)
+        start = text.find('const PRESETS = ')
+        line = text[start:text.find('\n', start)]
+        presets = json.loads(line[len('const PRESETS = '):].rstrip(';'))
+        self.assertEqual([item['key'] for item in presets[str(packageid)]['items']],
+                         ['flat', 'halves'])
+
     def test_console_takes_planned_themes(self):
         packageid = self.take_to_room()
         layoutid = self.make_layout(self.holder, 'halves')

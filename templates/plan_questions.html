@@ -123,6 +123,8 @@
     const ASSIGNED = {{ assigned|tojson }};
     // Раскладки пакетов: { packageid: [{layoutid, name, parts, view}] }.
     const LAYOUTS = {{ package_layouts|tojson }};
+    // Готовые пресеты раскладок: { packageid: {libraryid, items: [{key, name, hint, parts}]} }.
+    const PRESETS = {{ package_presets|tojson }};
 
     async function loadPackage(packageid) {
         if (CACHE[packageid]) return CACHE[packageid];
@@ -207,6 +209,14 @@
         }).join('');
     }
 
+    function addLayoutOption(parent, value, part, text) {
+        const option = document.createElement('option');
+        option.value = value;
+        option.dataset.themes = JSON.stringify(part);
+        option.textContent = text;
+        parent.appendChild(option);
+    }
+
     function fillLayouts(card, packageid, selectedLayout) {
         const select = card.querySelector('.layout-select');
         const hint = card.querySelector('.layout-hint');
@@ -214,22 +224,31 @@
         select.innerHTML = '<option value="">— по номерам —</option>';
         select.disabled = true;
         const layouts = LAYOUTS[String(packageid)] || [];
-        if (!layouts.length) {
+        const presets = (PRESETS[String(packageid)] || {}).items || [];
+        if (!layouts.length && !presets.length) {
             if (hint) {
-                hint.textContent = 'У пакета нет раскладок: отметьте темы руками или соберите раскладку на странице пакета.';
+                hint.textContent = 'Отметьте темы руками или соберите раскладку на странице пакета.';
             }
             return;
         }
         select.disabled = false;
         layouts.forEach((layout) => {
             (layout.parts || []).forEach((part, index) => {
-                const option = document.createElement('option');
-                option.value = layout.layoutid + ':' + index;
-                option.dataset.themes = JSON.stringify(part);
-                option.textContent = `${layout.name} · бой ${index + 1} (${part.length} тем)`;
-                select.appendChild(option);
+                addLayoutOption(select, layout.layoutid + ':' + index, part,
+                                `${layout.name} · бой ${index + 1} (${part.length} тем)`);
             });
         });
+        if (presets.length) {
+            const group = document.createElement('optgroup');
+            group.label = 'пресеты — сохранятся при выборе';
+            presets.forEach((preset) => {
+                (preset.parts || []).forEach((part, index) => {
+                    addLayoutOption(group, 'preset:' + preset.key + ':' + index, part,
+                                    `${preset.name} · бой ${index + 1} (${part.length} тем)`);
+                });
+            });
+            select.appendChild(group);
+        }
         if (selectedLayout && selectedLayout.layoutid != null) {
             const value = selectedLayout.layoutid + ':' + (selectedLayout.part || 0);
             if (Array.from(select.options).some((item) => item.value === value)) {
@@ -237,6 +256,26 @@
             }
         }
         if (hint) hint.textContent = 'Выберите бой из раскладки — темы отметятся сами.';
+    }
+
+    // Пресет в плане ещё не сохранён в пакете: сохраняем, чтобы бой ссылался
+    // на раскладку, а не на «какие-то темы».
+    async function savePresetLayout(packageid, key) {
+        const info = PRESETS[String(packageid)] || {};
+        if (!info.libraryid) return null;
+        try {
+            const response = await fetch(
+                '/api/packages/library/' + info.libraryid + '/layouts', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json',
+                              'Accept': 'application/json'},
+                    body: JSON.stringify({preset: key})
+                });
+            const data = await response.json().catch(() => ({}));
+            return data && data.status === 'ok' ? data : null;
+        } catch (error) {
+            return null;
+        }
     }
 
     function applyLayout(card) {
@@ -308,8 +347,16 @@
             const layoutSelect = card.querySelector('.layout-select');
             if (layoutSelect && layoutSelect.value) {
                 const pieces = layoutSelect.value.split(':');
-                layoutid = Number(pieces[0]);
-                part = Number(pieces[1]);
+                if (pieces[0] === 'preset') {
+                    const saved = await savePresetLayout(select.value, pieces[1]);
+                    if (saved && saved.layoutid) {
+                        layoutid = saved.layoutid;
+                        part = Number(pieces[2]);
+                    }
+                } else {
+                    layoutid = Number(pieces[0]);
+                    part = Number(pieces[1]);
+                }
             }
             themes = Array.from(card.querySelectorAll('.theme-check:checked')).map((box) => Number(box.value));
             if (!themes.length) {

@@ -2026,21 +2026,33 @@ def PlanQuestionsPage(roomid):
         # Раскладки пакетов: готовый набор тем на бой, чтобы не отмечать шесть
         # тем из тридцати шести руками. Пакет без раскладок сюда не попадает.
         package_layouts = {}
+        package_presets = {}
         for package in packages:
             libraryid = package.get("libraryid")
             if not libraryid:
                 continue
+            data = package_library.current_package_data(conn, libraryid)
+            topics = package_library.package_topics(data) if data else []
             try:
                 rows = package_library.package_layouts(conn, libraryid)
             except sqlite3.Error:
                 rows = []
-            if not rows:
-                continue
-            data = package_library.current_package_data(conn, libraryid)
-            topics = package_library.package_topics(data) if data else []
-            package_layouts[str(package["packageid"])] = [
-                dict(row, view=package_library.layout_parts_view(row, topics))
-                for row in rows]
+            if rows:
+                package_layouts[str(package["packageid"])] = [
+                    dict(row, view=package_library.layout_parts_view(row, topics))
+                    for row in rows]
+            # Пресеты считаем всегда: раскладку можно взять, не заходя в пакет.
+            # Уже сохранённую раскладку второй раз не предлагаем.
+            saved_names = {row["name"] for row in rows}
+            presets = [preset for preset in package_library.layout_presets(topics, 6)
+                       if preset["name"] not in saved_names]
+            if presets:
+                package_presets[str(package["packageid"])] = {
+                    "libraryid": libraryid,
+                    "items": [{"key": preset["key"], "name": preset["name"],
+                               "hint": preset["hint"], "parts": preset["parts"]}
+                              for preset in presets],
+                }
         layouts = {}
         try:
             for layout in package_library.theme_layouts(conn):
@@ -2105,7 +2117,7 @@ def PlanQuestionsPage(roomid):
     return render_template(
         "plan_questions.html", roomid=roomid, overview=overview, games=games,
         free_seating=free_seating, packages=packages, assigned=assigned, started=started,
-        package_layouts=package_layouts,
+        package_layouts=package_layouts, package_presets=package_presets,
         theme_use=theme_use, title=f"Вопросы турнира {roomid}",
     )
 
