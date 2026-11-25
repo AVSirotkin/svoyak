@@ -13,6 +13,7 @@ import telegram_link
 import site_admin
 import package_library
 import secrets
+import hmac
 import pandas as pd
 from statistics import median
 from collections import defaultdict
@@ -194,11 +195,15 @@ def api_login_required(view):
 
 
 def api_login_or_open_room(view):
-    """JSON-ручка комнаты: гостю можно, если у комнаты нет владельца."""
+    """JSON-ручка комнаты: гостю можно, если у комнаты нет владельца
+    или он пришёл по ссылке управления."""
 
     @functools.wraps(view)
     def wrapper(*args, **kwargs):
-        if current_user() is None and not room_is_open(kwargs.get("roomid")):
+        roomid = kwargs.get("roomid")
+        if current_user() is None and not room_is_open(roomid) \
+                and not control_session_for_room(roomid) \
+                and not control_key_for_room(roomid, request.args.get("key")):
             return json.dumps(
                 {"status": "error", "needs_login": True, "message": "Нужно войти в систему"},
                 ensure_ascii=False,
@@ -249,18 +254,22 @@ def room_is_open(roomid):
 
 
 def room_access_required(view=None, allow_finished=False):
-    """К пульту комнаты: владелец, администратор или комната без владельца."""
+    """К пульту комнаты: владелец, администратор, комната без владельца или
+    владелец ссылки управления."""
 
     def decorator(function):
         @functools.wraps(function)
         def wrapper(*args, **kwargs):
             user = current_user()
             roomid = kwargs.get("roomid")
+            opened = take_control_key(roomid, CONTROL_AREA_ALL)
+            if opened is not None:
+                return opened
             if user is None:
                 # Старый консольный адрес завершённого турнира уводит на витрину.
                 if allow_finished and roomid is not None and room_is_finished(roomid):
                     return function(*args, **kwargs)
-                if room_is_open(roomid):
+                if room_is_open(roomid) or control_session_for_room(roomid):
                     return function(*args, **kwargs)
                 return redirect("/login?next=" + request.path)
             if not can_manage_room(roomid, user):
@@ -280,14 +289,16 @@ def api_room_access_required(view):
     @functools.wraps(view)
     def wrapper(*args, **kwargs):
         user = current_user()
+        roomid = kwargs.get("roomid")
         if user is None:
-            if room_is_open(kwargs.get("roomid")):
+            if room_is_open(roomid) or control_session_for_room(roomid) \
+                    or control_key_for_room(roomid, request.args.get("key")):
                 return view(*args, **kwargs)
             return json.dumps(
                 {"status": "error", "needs_login": True, "message": "Нужно войти в систему"},
                 ensure_ascii=False,
             ), 401
-        if not can_manage_room(kwargs.get("roomid"), user):
+        if not can_manage_room(roomid, user) and not control_session_for_room(roomid):
             return json.dumps(
                 {"status": "error", "message": "Нет прав на эту комнату"}, ensure_ascii=False
             ), 403
@@ -335,8 +346,11 @@ def can_manage_room(roomid, user=None):
     user = user if user is not None else current_user()
     if user is None:
         # Гость управляет только комнатой без владельца: такие создают без входа.
-        return room_is_open(roomid)
+        # Либо если он открыл ссылку управления этой комнатой.
+        return room_is_open(roomid) or control_session_granted(roomid, CONTROL_AREA_ALL)
     if user["role"] == ROLE_ADMIN:
+        return True
+    if control_session_granted(roomid, CONTROL_AREA_ALL):
         return True
     conn = get_db_connection()
     try:
@@ -416,6 +430,231 @@ def set_area_host(roomid, area, userid, actor=None):
     finally:
         conn.close()
     notify_area_assigned(roomid, area, userid)
+
+
+# ---------------------------------------------------------------
+# Ссылка управления: единственный пульт на бой
+# ---------------------------------------------------------------
+# Площадка с назначенным ведущим уже закрыта для остальных. Свободная посадка
+# так закрыться не может: у неё нет площадок. Для неё и для площади, которую
+# делят ведущий с ассистентом, есть ссылка с ключом: кто открыл её, тот и
+# правит бой. Ключ живёт в сессии браузера, после первого открытия адрес
+# работает без него.
+CONTROL_AREA_ALL = 0   # ключ на комнату целиком (свободная посадка)
+
+
+def control_link(roomid, area):
+    """Действующая ссылка управления: {token, created_at, created_by}."""
+    ensure_auth_tables()
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT token, created_at, created_by FROM control_links "
+            "WHERE roomid = ? AND area = ?",
+            (roomid, int(area)),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    finally:
+        conn.close()
+    return dict(row) if row is not None else None
+
+
+def control_room_links(roomid):
+    """Ссылки управления комнаты: {номер площадки: token}."""
+    ensure_auth_tables()
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT area, token FROM control_links WHERE roomid = ?", (roomid,)
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    finally:
+        conn.close()
+    return {int(row["area"]): row["token"] for row in rows}
+
+
+def control_link_path(roomid, area):
+    if int(area) == CONTROL_AREA_ALL:
+        return f"/room/{roomid}"
+    return f"/room/{roomid}/{int(area)}"
+
+
+def control_link_url(roomid, area, token):
+    return f"{control_link_path(roomid, area)}?key={token}"
+
+
+def issue_control_link(roomid, area, actor=None):
+    """Создаёт или перевыпускает ключ площадки, возвращает токен."""
+    token = secrets.token_urlsafe(18)
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            "INSERT INTO control_links (roomid, area, token, created_by) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(roomid, area) DO UPDATE SET token = excluded.token, "
+            "created_by = excluded.created_by, created_at = CURRENT_TIMESTAMP",
+            (roomid, int(area), token, actor["userid"] if actor else None),
+        )
+        log_game_events(
+            roomid,
+            "control link",
+            {"area": int(area), "action": "issued",
+             "by": actor["name"] if actor else None},
+            conn=conn,
+        )
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+    return token
+
+
+def revoke_control_link(roomid, area, actor=None):
+    """Отключает ключ площадки: старые ссылки перестают работать."""
+    ensure_auth_tables()
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            "DELETE FROM control_links WHERE roomid = ? AND area = ?",
+            (roomid, int(area)),
+        )
+        log_game_events(
+            roomid,
+            "control link",
+            {"area": int(area), "action": "revoked",
+             "by": actor["name"] if actor else None},
+            conn=conn,
+        )
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+
+
+def control_key_matches(roomid, area, key):
+    """Подходит ли ключ к этой площадке."""
+    if not key:
+        return False
+    link = control_link(roomid, area)
+    if link is None:
+        return False
+    return hmac.compare_digest(str(key), str(link["token"]))
+
+
+def control_key_grants(roomid, area, key):
+    """Ключ площадки или общий ключ комнаты."""
+    return (control_key_matches(roomid, area, key)
+            or control_key_matches(roomid, CONTROL_AREA_ALL, key))
+
+
+def control_key_for_room(roomid, key):
+    """Ключ подходит хоть к одной площадке комнаты."""
+    if not key:
+        return False
+    return any(hmac.compare_digest(str(key), str(token))
+               for token in control_room_links(roomid).values())
+
+
+def _control_links_cached(roomid):
+    """Ссылки комнаты на время запроса: проверки прав идут часто."""
+    try:
+        store = getattr(g, "_control_links", None)
+        if store is None:
+            store = {}
+            g._control_links = store
+        if roomid not in store:
+            store[roomid] = control_room_links(roomid)
+        return store[roomid]
+    except RuntimeError:   # вне контекста приложения
+        return control_room_links(roomid)
+
+
+def control_session_granted(roomid, area):
+    """Ссылка открыта в этом браузере и ещё действует.
+
+    В сессии лежит сам ключ: перевыпуск ссылки сразу закрывает доступ у всех,
+    кому досталась старая.
+    """
+    try:
+        granted = session.get("control_tokens") or {}
+    except RuntimeError:   # вне запроса
+        return False
+    for candidate in (f"{int(roomid)}:{int(area)}",
+                      f"{int(roomid)}:{CONTROL_AREA_ALL}"):
+        token = granted.get(candidate)
+        if not token:
+            continue
+        current = _control_links_cached(roomid).get(int(candidate.split(":")[1]))
+        if current and hmac.compare_digest(str(token), str(current)):
+            return True
+    return False
+
+
+def control_session_for_room(roomid):
+    """В сессии есть действующий ключ хоть одной площадки комнаты."""
+    try:
+        granted = session.get("control_tokens") or {}
+    except RuntimeError:
+        return False
+    prefix = f"{int(roomid)}:"
+    current = _control_links_cached(roomid)
+    for key, token in granted.items():
+        if not str(key).startswith(prefix):
+            continue
+        try:
+            area = int(str(key).split(":")[1])
+        except (IndexError, ValueError):
+            continue
+        if current.get(area) and hmac.compare_digest(str(token), str(current[area])):
+            return True
+    return False
+
+
+def grant_control_session(roomid, area, token):
+    """Запоминает открытую ссылку: дальше адрес работает без ключа."""
+    granted = dict(session.get("control_tokens") or {})
+    granted[f"{int(roomid)}:{int(area)}"] = token
+    session["control_tokens"] = granted
+    try:
+        g._control_links = {int(roomid): control_room_links(roomid)}
+    except RuntimeError:
+        pass
+
+
+def take_control_key(roomid, area):
+    """Открывает ссылку управления и уводит на тот же адрес без ключа.
+
+    Возвращает редирект, если ключ подошёл, иначе None — пусть решает
+    обычная проверка прав.
+    """
+    key = request.args.get("key")
+    if not key:
+        return None
+    granted_area = int(area)
+    token = key
+    if not control_key_matches(roomid, area, key):
+        if not control_key_matches(roomid, CONTROL_AREA_ALL, key):
+            return None
+        granted_area = CONTROL_AREA_ALL
+        token = key
+    grant_control_session(roomid, granted_area, token)
+    app.logger.info("ссылка управления: комната %s, площадка %s открыта",
+                    roomid, granted_area)
+    return redirect(control_link_path(roomid, area), code=302)
 
 
 # ---------------------------------------------------------------
@@ -526,12 +765,15 @@ def user_areas(roomid, user=None):
 
 
 def can_manage_area(roomid, area, user=None):
-    """Пульт площадки: администратор, владелец комнаты или её ведущий.
+    """Пульт площадки: администратор, владелец комнаты, её ведущий или
+    владелец ссылки управления этой площадкой.
 
     Комната без владельца остаётся открытой всем вошедшим — так работали
     старые турниры и так они продолжают работать.
     """
     user = user if user is not None else current_user()
+    if area is not None and control_session_granted(roomid, area):
+        return True
     if user is None:
         # Гость работает только с комнатой без владельца.
         return room_is_open(roomid)
@@ -587,19 +829,24 @@ def game_area(roomid, gameindex):
 
 
 def area_access_required(view):
-    """Пульт площадки: организатор или назначенный ведущий этой площадки."""
+    """Пульт площадки: организатор, назначенный ведущий этой площадки
+    или владелец её ссылки управления."""
 
     @functools.wraps(view)
     def wrapper(*args, **kwargs):
         user = current_user()
         roomid = kwargs.get("roomid")
         area = kwargs.get("area")
-        if user is None:
-            if room_is_open(roomid):
-                return view(*args, **kwargs)
-            return redirect("/login?next=" + request.path)
+        opened = take_control_key(roomid, area)
+        if opened is not None:
+            return opened
         if can_manage_area(roomid, area, user):
             return view(*args, **kwargs)
+        if user is None:
+            front = f"/login?next={request.path}"
+            if request.query_string:
+                front += "%3F" + request.query_string.decode("utf-8")
+            return redirect(front)
         own = user_areas(roomid, user)
         if own:
             # Ведущий открыл чужую площадку — возвращаем на свою.
@@ -1018,6 +1265,13 @@ def log_text(event, payload):
         area = data.get("area")
         who = data.get("by") or "гость"
         return f"ведущий площадки {area} — {who}" if area is not None else f"ведущий — {who}"
+    if event == "control link":
+        area = data.get("area")
+        who = data.get("by") or "гость"
+        where = "комнаты" if area in (0, None) else f"площадки {area}"
+        if data.get("action") == "revoked":
+            return f"ссылка управления {where} отключена — {who}"
+        return f"выдана ссылка управления {where} — {who}"
     if event == "draw":
         places = data.get("places") or []
         return f"жеребьёвка, мест: {len(places)}" if places else "жеребьёвка"
@@ -1105,6 +1359,14 @@ def PlanPage(roomid):
             ).fetchall())
     finally:
         conn.close()
+    # Ссылки управления: организатору показываем действующие адреса, чтобы
+    # можно было передать пульт ассистенту или закрыть свободную площадку.
+    control_links = {}
+    if manage:
+        control_links = {
+            area: control_link_url(roomid, area, token)
+            for area, token in control_room_links(roomid).items()
+        }
     return render_template(
         "plan.html", roomid=roomid, overview=overview, plan=plan, seed=seed,
         stages=plan_view(plan) if plan is not None else [],
@@ -1112,6 +1374,7 @@ def PlanPage(roomid):
         if plan is not None else [],
         hosts=hosts,
         area_hosts=room_area_hosts(roomid),
+        control_links=control_links,
         activity=activity,
         free=free,
         manage=manage,
@@ -1288,6 +1551,51 @@ def PlanAreaHost(roomid, area):
             "host": room_area_hosts(roomid).get(area),
         },
         ensure_ascii=False,
+    )
+
+
+@app.route('/api/plan/<int:roomid>/control-link', subdomain="svoyak", methods=["POST", "DELETE"])
+@api_login_or_open_room
+def PlanControlLink(roomid):
+    """Ссылка управления площадкой: выдать, перевыпустить или отключить.
+
+    Выдаёт организатор турнира (для любой площадки) или ведущий этой
+    площадки — например, чтобы позвать ассистента. Ссылка одноразовая в том
+    смысле, что старый ключ перестаёт работать после перевыпуска.
+    """
+    data = request.get_json(silent=True) or {}
+    if "area" not in data:
+        return json.dumps(
+            {"status": "error", "message": "Не указана площадка"}, ensure_ascii=False
+        ), 400
+    try:
+        area = int(data.get("area") or 0)
+    except (TypeError, ValueError):
+        return json.dumps(
+            {"status": "error", "message": "Некорректная площадка"}, ensure_ascii=False
+        ), 400
+    if area < 0:
+        return json.dumps(
+            {"status": "error", "message": "Некорректная площадка"}, ensure_ascii=False
+        ), 400
+    if area != CONTROL_AREA_ALL and not can_manage_area(roomid, area):
+        return json.dumps(
+            {"status": "error", "message": "Нет прав на эту площадку"}, ensure_ascii=False
+        ), 403
+    if area == CONTROL_AREA_ALL and not can_manage_room(roomid):
+        return json.dumps(
+            {"status": "error", "message": "Нет прав на эту комнату"}, ensure_ascii=False
+        ), 403
+
+    actor = current_user()
+    if request.method == "DELETE":
+        revoke_control_link(roomid, area, actor)
+        return json.dumps({"status": "ok", "area": area, "url": None}, ensure_ascii=False)
+
+    token = issue_control_link(roomid, area, actor)
+    url = control_link_url(roomid, area, token)
+    return json.dumps(
+        {"status": "ok", "area": area, "url": url, "token": token}, ensure_ascii=False
     )
 
 
@@ -4155,6 +4463,18 @@ def ensure_tournament_tables():
                 area        INTEGER NOT NULL,
                 userid      INTEGER NOT NULL,
                 assigned_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (roomid, area)
+            )
+        ''')
+        # Ссылка управления площадкой: ключ в адресе, который открывает пульт
+        # тому, кому его передали. area = 0 — ключ на комнату целиком.
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS control_links (
+                roomid     INTEGER NOT NULL,
+                area       INTEGER NOT NULL,
+                token      TEXT NOT NULL,
+                created_by INTEGER,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (roomid, area)
             )
         ''')

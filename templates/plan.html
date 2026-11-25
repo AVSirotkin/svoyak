@@ -69,7 +69,23 @@
             <a class="btn btn-primary btn-sm" href="/room/{{ roomid }}">Пульт площадки</a>
             <a class="btn btn-outline-secondary btn-sm" href="/view/{{ roomid }}">Просмотр</a>
             <a class="btn btn-outline-secondary btn-sm" href="/plan/{{ roomid }}/questions">Вопросы по боям</a>
+            {% if manage %}
+            <button type="button" class="btn btn-outline-secondary btn-sm"
+                    onclick="controlLink(0)">Ссылка управления комнатой</button>
+            {% if control_links.get(0) %}
+            <button type="button" class="btn btn-link btn-sm text-danger p-0"
+                    onclick="revokeControlLink(0)">отключить</button>
+            {% endif %}
+            {% endif %}
         </div>
+        {% if manage and control_links.get(0) %}
+        <div class="mt-2">
+            <input class="form-control form-control-sm control-link-input" data-area="0"
+                   readonly value="{{ request.host_url.rstrip('/') }}{{ control_links.get(0) }}">
+            <div class="form-text">Кто откроет эту ссылку, тот и ведёт свободную посадку.
+                Перевыпуск отключает старую ссылку.</div>
+        </div>
+        {% endif %}
     </div>
 </div>
 {% elif plan.errors %}
@@ -275,6 +291,21 @@
                         </option>
                         {% endfor %}
                     </select>
+                    {% if manage %}
+                    {% set link = control_links.get(queue.table) %}
+                    <div class="mt-2 small">
+                        <button type="button" class="btn btn-link btn-sm p-0"
+                                onclick="controlLink({{ queue.table }})">
+                            {% if link %}Ссылка управления (перевыпустить){% else %}Ссылка управления{% endif %}
+                        </button>
+                        {% if link %}
+                        <button type="button" class="btn btn-link btn-sm p-0 ms-2 text-danger"
+                                onclick="revokeControlLink({{ queue.table }})">отключить</button>
+                        <input class="form-control form-control-sm mt-1 control-link-input"
+                               data-area="{{ queue.table }}" readonly value="{{ request.host_url.rstrip('/') }}{{ link }}">
+                        {% endif %}
+                    </div>
+                    {% endif %}
                 </div>
             </div>
             {% endfor %}
@@ -431,6 +462,45 @@
         } else {
             alert(data.message || "Не удалось провести жеребьёвку");
         }
+    }
+
+    // Ссылка управления площадкой: ключ в адресе открывает пульт тому, кому
+    // её передали. Перевыпуск отключает прежнюю ссылку.
+    async function controlLink(area) {
+        const response = await fetch('/api/plan/{{ roomid }}/control-link', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+            body: JSON.stringify({area: Number(area) || 0})
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.status !== 'ok') {
+            alert(data.message || 'Не удалось подготовить ссылку управления');
+            return;
+        }
+        const url = new URL(data.url, window.location.origin).href;
+        try {
+            await navigator.clipboard.writeText(url);
+            alert('Ссылка управления скопирована:\n\n' + url +
+                '\n\nПередайте её ведущему. Старая ссылка на эту площадку больше не работает.');
+        } catch (error) {
+            prompt('Ссылка управления (скопируйте):', url);
+        }
+        document.location.reload();
+    }
+
+    async function revokeControlLink(area) {
+        if (!confirm('Отключить ссылку управления? У кого она есть, потеряет доступ.')) return;
+        const response = await fetch('/api/plan/{{ roomid }}/control-link', {
+            method: 'DELETE',
+            headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+            body: JSON.stringify({area: Number(area) || 0})
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.status !== 'ok') {
+            alert(data.message || 'Не удалось отключить ссылку');
+            return;
+        }
+        document.location.reload();
     }
 
     // Назначение ведущего площадки: организатор выбирает человека из списка.
