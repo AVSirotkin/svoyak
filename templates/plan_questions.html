@@ -126,6 +126,11 @@
                 Повтор боя {{ binding.replay_of }}: поставлен из пульта, остальные бои
                 сдвинулись на один вперёд.
             </div>
+            {% elif binding.source == 'console' %}
+            <div class="text-muted mt-1" style="font-size: .85em">
+                Бой взят в пульте из раскладки пакета, остальные бои сдвинулись
+                на один вперёд.
+            </div>
             {% endif %}
         </div>
         {% endif %}

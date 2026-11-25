@@ -1979,50 +1979,47 @@ async function initLayoutPicker() {
 async function loadLayoutBattle() {
     const select = document.getElementById('layoutPickSelect');
     if (!select || !select.value) return;
-    const [layoutid, part] = select.value.split(':');
+    const picked = select.value.split(':');
+    const layoutid = Number(picked[0]);
+    const part = Number(picked[1]);
     const option = select.options[select.selectedIndex];
-    if (!confirm('Взять в текущий бой:\n' + option.textContent +
-                 '\n\nПрогресс текущего боя сохранится, номер боя не изменится.')) {
-        select.value = '';
-        return;
-    }
-    let data = null;
-    try {
-        const response = await Offline.fetchWithTimeout(
-            '/api/room/' + gameState.roomId + '/layouts/' + layoutid + '/part/' + part,
-            { cache: 'no-store' });
-        if (!response.ok) throw new Error('нет ответа');
-        data = await response.json();
-    } catch (error) {
-        alert('Не удалось взять бой из раскладки: нет связи');
-        select.value = '';
-        return;
-    }
-    const topics = (data && data.topics) || [];
-    if (!topics.length) {
-        alert('В этой раскладке нет тем для боя');
+    if (!confirm('Взять в текущий бой:\n' + option.textContent + '\n\n' +
+                 'Бой запишется в план, запланированные бои сдвинутся на один ' +
+                 'вперёд. Прогресс текущего боя сохранится.')) {
         select.value = '';
         return;
     }
     saveGame();
-    const localId = 'layout:' + layoutid + ':' + part;
-    let entry = packages.find((pkg) => pkg.localId === localId);
-    if (!entry) {
-        entry = {localId: localId, serverId: null, name: '', topics: []};
-        packages.push(entry);
+    let data = null;
+    try {
+        const response = await Offline.fetchWithTimeout(
+            '/api/plan/' + gameState.roomId + '/battle',
+            { method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({layoutid: layoutid, part: part}) });
+        data = await response.json().catch(() => ({}));
+        if (!response.ok || data.status !== 'ok') {
+            throw new Error((data && data.message) || 'нет ответа сервера');
+        }
+    } catch (error) {
+        alert('Не удалось записать бой в план: ' +
+              ((error && error.message) ? error.message : 'нет связи'));
+        select.value = '';
+        return;
     }
-    entry.name = '📐 ' + data.name + ' («' + data.package + '»)';
-    entry.topics = topics;
-    entry.fromLayout = true;
-    localStorage.removeItem(getPackageStateKey(localId));
-    savePackagesToLocalStorage();
-    // Тот же бой могли взять повторно: сбрасываем, иначе темы не пересоберутся.
-    if (currentPackageLocalId === localId) currentPackageLocalId = null;
-    switchPackage(localId);
-    renderPackageSelector();
-    updatePackageInfo();
     select.value = '';
-    refreshBattleHeard();
+    // План сверяется по серверному номеру боя: он и есть настоящий.
+    if (Number(data.gameindex) !== Number(gameindex)) {
+        alert('Сервер поставил бой в бой ' + data.gameindex + ', а пульт был на бое ' +
+              gameindex + '. Пульт переходит на бой ' + data.gameindex + '.');
+        switchMatch(Number(data.gameindex));
+    }
+    planBattle = data.battle || null;
+    applyPlanPackage();
+    scheduleReplaysRefresh();
+    if (data.replay_of) {
+        alert('Это повтор боя ' + data.replay_of + ': план так и запишет.');
+    }
 }
 
 function pkgNavPrev() {    const themesPerGame = parseInt(document.getElementById('themesPerGameInput')?.value) || 6;

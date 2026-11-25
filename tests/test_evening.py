@@ -354,6 +354,110 @@ class SpreadTests(EveningBase):
         self.assertIsNone(self.plan_battle(5))
 
 
+class ConsoleLayoutPlanTests(EveningBase):
+    """Бой из раскладки, взятый в пульте, виден в плане и сдвигает бои."""
+
+    def setUp(self):
+        super().setUp()
+        self.odd = [0, 2, 4, 6, 8, 10]
+        self.even = [1, 3, 5, 7, 9, 11]
+        self.assign(1, self.first_id, self.first_layout, 0, self.odd)
+        self.assign(2, self.first_id, self.first_layout, 1, self.even)
+        self.assign(3, self.second_id, self.second_layout, 0, self.odd)
+
+    def play(self, gameindex, names=('Аня', 'Боря', 'Вова', 'Гоша')):
+        conn = db()
+        try:
+            for position, name in enumerate(names, 1):
+                conn.execute(
+                    "INSERT INTO results (roomid, gameindex, playerid, name, score, position, "
+                    "points, gamenumber) VALUES (?, ?, NULL, ?, ?, ?, 2.0, ?)",
+                    (self.room, gameindex, name, 10 * position, float(position), gameindex))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def pick(self, layoutid, part):
+        return self.holder.post(
+            BASE + '/api/plan/%d/battle' % self.room,
+            json={'layoutid': layoutid, 'part': part})
+
+    def topics_of_plan(self, gameindex):
+        plan = self.plan_battle(gameindex)
+        return [theme['topic'] for theme in plan['topics']]
+
+    def test_picked_battle_lands_in_plan(self):
+        self.play(1)
+        response = self.pick(self.second_layout, 1)
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        data = json.loads(response.get_data(as_text=True))
+        self.assertTrue(data['shifted'])
+        self.assertEqual(data['gameindex'], 2)
+        self.assertIsNone(data['replay_of'])
+        self.assertEqual(self.topics_of_plan(2),
+                         ['Пакет %sВторой, тема %s' % (self.suffix, number)
+                          for number in (2, 4, 6, 8, 10, 12)])
+
+    def test_planned_battles_shift_forward(self):
+        self.play(1)
+        self.pick(self.second_layout, 1)
+        # Что было боем 2, стало боем 3; что было боем 3, стало боем 4.
+        self.assertEqual(self.topics_of_plan(3),
+                         ['Пакет %sПервый, тема %s' % (self.suffix, number)
+                          for number in (2, 4, 6, 8, 10, 12)])
+        self.assertEqual(self.topics_of_plan(4),
+                         ['Пакет %sВторой, тема %s' % (self.suffix, number)
+                          for number in (1, 3, 5, 7, 9, 11)])
+
+    def test_plan_page_shows_the_fact(self):
+        self.play(1)
+        self.pick(self.second_layout, 1)
+        text = self.plan_page(5)
+        self.assertIn('Бой взят в пульте из раскладки пакета', text)
+        self.assertIn('сдвинулись', text)
+
+    def test_console_calls_it_layout_battle(self):
+        self.play(1)
+        self.pick(self.second_layout, 1)
+        plan = self.console_plan()
+        self.assertTrue(plan['name'].startswith('Раскладка, бой 2: Пакет Второй'),
+                        plan['name'])
+
+    def test_replay_of_played_battle_is_marked(self):
+        # Бой 1 сыгран; берём в бой 2 те же темы — это повтор боя 1.
+        self.play(1)
+        response = self.pick(self.first_layout, 0)
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        data = json.loads(response.get_data(as_text=True))
+        self.assertEqual(data['replay_of'], 1)
+        self.assertTrue(data['battle']['name'].startswith('Повтор боя 1:'),
+                        data['battle']['name'])
+        self.assertIn('Повтор боя 1', self.plan_page(5))
+
+    def test_same_battle_twice_does_not_shift(self):
+        self.play(1)
+        self.pick(self.second_layout, 1)
+        before = self.topics_of_plan(3)
+        response = self.pick(self.second_layout, 1)
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertFalse(json.loads(response.get_data(as_text=True))['shifted'])
+        # Сдвига не было: соседний бой остался тем же.
+        self.assertEqual(self.topics_of_plan(3), before)
+
+    def test_repeat_points_at_the_first_battle(self):
+        # Бой 1 сыгран, и те же темы сыграны ещё раз в бою 2.
+        self.play(1)
+        self.pick(self.first_layout, 0)
+        self.play(2)
+        response = self.pick(self.first_layout, 0)
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        data = json.loads(response.get_data(as_text=True))
+        self.assertEqual(data['replay_of'], 1, 'повтор должен указывать на первый бой')
+
+    def test_unknown_part_is_refused(self):
+        self.assertEqual(self.pick(self.second_layout, 7).status_code, 404)
+
+
 class ConsoleLayoutTests(EveningBase):
     """Пульт: взять в текущий бой бой из раскладки."""
 
