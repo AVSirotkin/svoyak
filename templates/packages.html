@@ -32,11 +32,11 @@
         {% if mine_only %}все пакеты{% else %}только мои{% endif %}
     </a>
     <span class="ms-auto"></span>
-    <button class="btn btn-sm btn-primary" type="button" data-bs-toggle="collapse"
-            data-bs-target="#upload-package">Загрузить пакет</button>
+    <button class="btn btn-sm btn-primary" type="button" id="upload-toggle"
+            onclick="toggleUpload()">Загрузить пакет</button>
 </div>
 
-<div class="collapse mb-3" id="upload-package">
+<div class="collapse mb-3 {% if upload_open %}show{% endif %}" id="upload-package">
     <div class="card">
         <div class="card-body">
             <div class="text-muted small mb-2">
@@ -150,7 +150,26 @@
 
 {% block scripts %}
 <script>
-    function init_page() {}
+    function init_page() {
+        var panel = document.getElementById('upload-package');
+        var button = document.getElementById('upload-toggle');
+        if (panel && button && panel.classList.contains('show')) {
+            button.textContent = 'Скрыть форму';
+        }
+    }
+
+    // Bootstrap на странице подключён только стилями, поэтому панель
+    // раскрываем сами: кнопка должна работать и без бандла.
+    function toggleUpload() {
+        var panel = document.getElementById('upload-package');
+        if (!panel) return;
+        panel.classList.toggle('show');
+        var button = document.getElementById('upload-toggle');
+        if (button) {
+            button.textContent = panel.classList.contains('show')
+                ? 'Скрыть форму' : 'Загрузить пакет';
+        }
+    }
 
     function uploadPackage() {
         var file = document.getElementById('upload-file').files[0];

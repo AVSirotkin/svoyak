@@ -295,6 +295,25 @@ class LibraryPageTests(unittest.TestCase):
         response = site.app.test_client().get(BASE + '/packages')
         self.assertEqual(response.status_code, 302)
 
+    def test_upload_panel_is_there_and_hidden(self):
+        # Панель загрузки есть всегда, но по умолчанию свёрнута.
+        text = self.owner.get(BASE + '/packages').get_data(as_text=True)
+        self.assertIn('id="upload-package"', text)
+        self.assertIn('id="upload-file"', text)
+        self.assertNotIn('id="upload-package" class="collapse mb-3 show"', text)
+        # Кнопка раскрывает панель своим скриптом: Bootstrap на странице только
+        # стилями, и data-bs-toggle ничего бы не сделал.
+        self.assertIn('onclick="toggleUpload()"', text)
+        self.assertNotIn('data-bs-toggle', text)
+        self.assertIn('function toggleUpload()', text)
+
+    def test_upload_panel_opens_by_link(self):
+        # Без скрипта панель открывается ссылкой: загрузка не должна зависеть
+        # от того, сработал ли JS.
+        text = self.owner.get(BASE + '/packages?upload=1').get_data(as_text=True)
+        self.assertIn('collapse mb-3 show', text)
+        self.assertIn("'Скрыть форму'", text)
+
     def test_owner_sees_own_package_with_content(self):
         page = self.owner.get(BASE + '/packages')
         self.assertEqual(page.status_code, 200, page.get_data(as_text=True))

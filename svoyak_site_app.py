@@ -5700,6 +5700,9 @@ def PackagesPage():
     return render_template(
         "packages.html", items=items, query=query, pending=pending, me=user,
         mine_only=mine_only, roles=package_library.ROLE_TITLES,
+        # Панель загрузки можно открыть ссылкой: на случай, если на странице
+        # не сработал скрипт, загрузить пакет всё равно можно.
+        upload_open=request.args.get("upload") == "1",
         title="Библиотека пакетов",
     )
 
