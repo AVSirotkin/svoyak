@@ -354,5 +354,79 @@ class SpreadTests(EveningBase):
         self.assertIsNone(self.plan_battle(5))
 
 
+class ConsoleLayoutTests(EveningBase):
+    """Пульт: взять в текущий бой бой из раскладки."""
+
+    def list_layouts(self):
+        response = self.holder.get(BASE + '/api/room/%d/layouts' % self.room)
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        return json.loads(response.get_data(as_text=True))['packages']
+
+    def layout_part(self, layoutid, part):
+        return self.holder.get(
+            BASE + '/api/room/%d/layouts/%d/part/%d' % (self.room, layoutid, part))
+
+    def test_room_layouts_are_listed(self):
+        packages = self.list_layouts()
+        self.assertEqual(len(packages), 2)
+        names = {item['name'] for item in packages}
+        self.assertIn('Пакет Первый ' + self.suffix, names)
+        layouts = packages[0]['layouts']
+        self.assertEqual(len(layouts), 1)
+        self.assertEqual(layouts[0]['name'], 'Чёт/нечет')
+        self.assertEqual([part['size'] for part in layouts[0]['parts']], [6, 6])
+        # Названия тем идут вместе с боем: ведущему видно, что он берёт.
+        self.assertEqual(layouts[0]['parts'][0]['titles'][0],
+                         'Пакет %sПервый, тема 1' % self.suffix)
+
+    def test_layout_part_returns_themes(self):
+        response = self.layout_part(self.first_layout, 0)
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        data = json.loads(response.get_data(as_text=True))
+        self.assertEqual(data['part'], 0)
+        self.assertEqual(data['name'], 'Чёт/нечет · бой 1')
+        self.assertEqual(len(data['topics']), 6)
+        self.assertEqual([theme['topic'] for theme in data['topics']],
+                         ['Пакет %sПервый, тема %s' % (self.suffix, number)
+                          for number in (1, 3, 5, 7, 9, 11)])
+
+    def test_second_part_is_the_even_battle(self):
+        data = json.loads(self.layout_part(self.first_layout, 1).get_data(as_text=True))
+        self.assertEqual([theme['topic'] for theme in data['topics']],
+                         ['Пакет %sПервый, тема %s' % (self.suffix, number)
+                          for number in (2, 4, 6, 8, 10, 12)])
+
+    def test_unknown_part_is_not_found(self):
+        self.assertEqual(self.layout_part(self.first_layout, 5).status_code, 404)
+
+    def test_foreign_layout_is_not_found(self):
+        # Раскладка пакета, которого в комнате нет, пульту не нужна.
+        conn = db()
+        try:
+            layoutid = conn.execute(
+                "SELECT layoutid FROM package_layouts WHERE libraryid NOT IN "
+                "(SELECT libraryid FROM packages WHERE roomid = ?) LIMIT 1",
+                (self.room,)).fetchone()
+        finally:
+            conn.close()
+        if layoutid is None:
+            self.skipTest('в базе нет чужой раскладки')
+        response = self.layout_part(layoutid[0], 0)
+        self.assertEqual(response.status_code, 404)
+
+    def test_console_has_layout_picker(self):
+        text = self.holder.get(BASE + '/room/%d' % self.room).get_data(as_text=True)
+        self.assertIn('id="layoutPickRow"', text)
+        self.assertIn('id="layoutPickSelect"', text)
+        self.assertIn('onchange="loadLayoutBattle()"', text)
+        self.assertIn('async function initLayoutPicker()', text)
+        self.assertIn('async function loadLayoutBattle()', text)
+
+    def test_console_warns_when_battle_numbers_diverge(self):
+        text = self.holder.get(BASE + '/room/%d' % self.room).get_data(as_text=True)
+        self.assertIn('function showGameindexMismatch(', text)
+        self.assertIn('showGameindexMismatch(serverGameindex, localNext)', text)
+
+
 if __name__ == '__main__':
     unittest.main()

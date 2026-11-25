@@ -3568,6 +3568,96 @@ def SvoyakNewMainPage(roomid):
                            gameindex = gameindex, rules = rules,
                            plan_battle = plan_battle, free_seating = free_seating)
 
+
+@app.route('/api/room/<int:roomid>/layouts', subdomain="svoyak", methods=["GET"])
+@api_room_access_required
+def RoomLayouts(roomid):
+    """Раскладки пакетов комнаты: бои, на которые пакет уже разрезан.
+
+    Пульт показывает их списком: ведущий может взять не только бой из плана,
+    но и любой бой раскладки — например, чтобы повторить старый бой.
+    """
+    conn = get_db_connection()
+    try:
+        packages = []
+        for package in room_packages(conn, roomid):
+            libraryid = package.get("libraryid")
+            if not libraryid:
+                continue
+            try:
+                rows = package_library.package_layouts(conn, libraryid)
+            except sqlite3.Error:
+                rows = []
+            if not rows:
+                continue
+            data = conn.execute("SELECT data FROM packages WHERE packageid = ?",
+                                (package["packageid"],)).fetchone()
+            topics = package_library.package_topics(data["data"]) if data is not None else []
+            layouts = []
+            for row in rows:
+                parts = []
+                for index, part in enumerate(row.get("parts") or []):
+                    titles = [package_library.theme_title(topics[theme])
+                              for theme in part if isinstance(theme, int)
+                              and 0 <= theme < len(topics)]
+                    parts.append({"index": index, "size": len(part), "titles": titles})
+                layouts.append({"layoutid": row["layoutid"], "name": row["name"],
+                                "preset": row.get("preset"), "parts": parts})
+            packages.append({"packageid": package["packageid"],
+                             "name": package["name"], "layouts": layouts})
+    finally:
+        conn.close()
+    return json.dumps({"status": "ok", "packages": packages}, ensure_ascii=False)
+
+
+@app.route('/api/room/<int:roomid>/layouts/<int:layoutid>/part/<int:part>',
+           subdomain="svoyak", methods=["GET"])
+@api_room_access_required
+def RoomLayoutPart(roomid, layoutid, part):
+    """Темы одного боя раскладки — их пульт ставит в текущий бой."""
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT libraryid, name, parts FROM package_layouts WHERE layoutid = ? "
+            "AND deleted_at IS NULL", (layoutid,)).fetchone()
+        if row is None:
+            return json.dumps({"status": "error", "message": "Такой раскладки нет"},
+                              ensure_ascii=False), 404
+        # Раскладка чужого пакета в этой комнате не нужна.
+        packages = room_packages(conn, roomid)
+        package = next((item for item in packages
+                        if item.get("libraryid") == row["libraryid"]), None)
+        if package is None:
+            return json.dumps({"status": "error", "message": "Пакета нет в комнате"},
+                              ensure_ascii=False), 404
+        try:
+            parts = json.loads(row["parts"] or "[]")
+        except (TypeError, ValueError):
+            parts = []
+        if not isinstance(parts, list) or not 0 <= part < len(parts):
+            return json.dumps({"status": "error", "message": "Такого боя в раскладке нет"},
+                              ensure_ascii=False), 404
+        data = conn.execute("SELECT data FROM packages WHERE packageid = ?",
+                            (package["packageid"],)).fetchone()
+        topics = package_library.package_topics(data["data"]) if data is not None else []
+        themes = [topics[theme] for theme in parts[part]
+                  if isinstance(theme, int) and 0 <= theme < len(topics)]
+        if not themes:
+            return json.dumps({"status": "error", "message": "В пакете нет этих тем"},
+                              ensure_ascii=False), 400
+        payload = {
+            "status": "ok",
+            "layoutid": layoutid,
+            "part": part,
+            "name": "%s · бой %s" % (row["name"], part + 1),
+            "package": package["name"],
+            "themes": [package_library.theme_title(theme) for theme in themes],
+            "topics": themes,
+        }
+    finally:
+        conn.close()
+    return json.dumps(payload, ensure_ascii=False)
+
 @app.route('/fullroom2/<int:roomid>', subdomain = "svoyak")
 @room_access_required
 def SvoyakNewMainPage2(roomid):
