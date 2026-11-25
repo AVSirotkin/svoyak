@@ -1470,6 +1470,103 @@ def theme_layouts(conn):
     return list(best.values())
 
 
+def protocol_is_empty(payload):
+    """Протокол ничего не описывает: ни игроков, ни отметок, ни счёта, бой не закончен.
+
+    Так выглядит заготовка следующего боя: пульт перешёл к бою 11, темы остались
+    от боя 10, места за столом ещё пустые. Сохранять такое нечего.
+    """
+    if payload.get("finished") or protocol_has_scores(payload):
+        return False
+    if payload.get("marks"):
+        return False
+    for player in payload.get("players") or []:
+        if isinstance(player, dict) and str(player.get("name") or "").strip():
+            return False
+    return True
+
+
+def protocol_has_scores(payload):
+    """В протоколе есть счёт: бой шёл, даже если отметку «закончен» не поставили."""
+    scores = payload.get("scores")
+    if isinstance(scores, dict):
+        values = scores.values()
+    elif isinstance(scores, list):
+        values = scores
+    else:
+        return False
+    for value in values:
+        try:
+            if float(value):
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
+def played_battles(conn, strict=False):
+    """{(roomid, gameindex)} — бои, которые действительно играли.
+
+    Поводом считать бой состоявшимся служат результаты, запись в журнале
+    «save game result» или непустой протокол. Пустой протокол — заготовка
+    следующего боя (темы прошлого боя, места ещё пустые), а не бой: именно
+    из-за неё в истории пакета появлялся бой, которого не было.
+
+    strict — только явные признаки: результаты, журнал, «закончен» или счёт.
+    Без strict хватает и протокола с игроками или отметками: бой идёт сейчас,
+    и для подсказки «эта тема уже игралась» этого достаточно.
+    """
+    played = set()
+    try:
+        for row in conn.execute("SELECT DISTINCT roomid, gameindex FROM results"):
+            try:
+                played.add((int(row[0]), int(row[1])))
+            except (TypeError, ValueError):
+                continue
+    except sqlite3.OperationalError:
+        pass
+    for roomid, gameindex in legacy_layouts(conn):
+        try:
+            played.add((int(roomid), int(gameindex)))
+        except (TypeError, ValueError):
+            continue
+    try:
+        rows = conn.execute(
+            "SELECT roomid, gameindex, payload FROM game_protocols").fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    for row in rows:
+        payload = load_json(row["payload"])
+        if protocol_is_empty(payload):
+            continue
+        if strict and not (payload.get("finished") or protocol_has_scores(payload)
+                           or payload.get("marks")):
+            continue
+        try:
+            played.add((int(row["roomid"]), int(row["gameindex"])))
+        except (TypeError, ValueError):
+            continue
+    return played
+
+
+def played_layouts(conn, strict=False):
+    """Раскладки состоявшихся боёв.
+
+    В обычном режиме берём все раскладки: для подсказки «эта тема уже игралась»
+    хватает и плана, и протокола — бой раскладывают прямо сейчас.
+
+    В strict остаются только бои с результатом, записью в журнале или явными
+    признаками игры (закончен, счёт, отметки). Так история пакета не показывает
+    бой, которого не было: пульт мог сохранить заготовку следующего боя с темами
+    прошлого и пустыми местами.
+    """
+    if not strict:
+        return theme_layouts(conn)
+    played = played_battles(conn, strict=True)
+    return [layout for layout in theme_layouts(conn)
+            if (layout["roomid"], layout["gameindex"]) in played]
+
+
 def library_signatures(conn, libraryid):
     """Подписи всех тем, которые есть в пакетах этой записи библиотеки."""
     signatures = set()
@@ -1491,7 +1588,7 @@ def library_usage(conn, libraryid, mode=EXPOSURE_HALL):
     marks = battle_marks(conn)
     cache = {}
     usage = []
-    for layout in sorted(theme_layouts(conn),
+    for layout in sorted(played_layouts(conn, strict=True),
                          key=lambda item: (item["roomid"], item["gameindex"]),
                          reverse=True):
         themes = [theme for theme in layout["themes"]
@@ -1574,7 +1671,8 @@ def played_themes(conn):
     пакета. by_title отмечает, что сама запись боя вопросов не сохранила.
     """
     items = []
-    for layout in theme_layouts(conn):
+    # Только состоявшиеся бои: заготовка следующего боя не делает темы сыгранными.
+    for layout in played_layouts(conn):
         by_title = layout["source"] == "log"
         for theme in layout["themes"]:
             signature = theme_signature(theme)

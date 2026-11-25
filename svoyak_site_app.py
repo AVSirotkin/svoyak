@@ -2924,6 +2924,19 @@ def PlanGameProtocol(roomid, gameindex):
                 payload[key] = default
         if placeholder or previous_payload.get("placeholder"):
             payload["placeholder"] = True
+        # Заготовка следующего боя (пустые места, те же темы) ничего не описывает:
+        # не заводим бой, которого не было. Уже существующий бой так не чистим —
+        # обнулить сыгранный бой ведущий вправе.
+        if existing is None and not placeholder and package_library.protocol_is_empty(payload):
+            has_results = conn.execute(
+                "SELECT 1 FROM results WHERE roomid = ? AND gameindex = ? LIMIT 1",
+                (roomid, gameindex),
+            ).fetchone()
+            if has_results is None:
+                conn.execute("COMMIT")
+                return json.dumps(
+                    {"status": "ok", "skipped": "empty", "revision": 0},
+                    ensure_ascii=False)
         raw = json.dumps(payload, ensure_ascii=False)
         if len(raw) > 4 * 1024 * 1024:
             conn.execute("ROLLBACK")

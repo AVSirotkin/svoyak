@@ -525,6 +525,10 @@ class ThemeIdentityTests(unittest.TestCase):
         self.conn.execute(
             "INSERT INTO game_questions (roomid, gameindex, packageid, payload) VALUES (?, ?, ?, ?)",
             (9600, 1, packageid, json.dumps({"themes": [second]}, ensure_ascii=False)))
+        self.conn.execute(
+            "INSERT INTO results (roomid, gameindex, playerid, name, score, position, "
+            "points, gamenumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (9600, 1, None, 'Игрок', 100, 1, 1, 1))
         places = package_library.theme_use_by_index(self.conn, data)
         self.assertEqual(places[0]["exact"], [])
         self.assertEqual(places[1]["exact"], ["комната 9600, бой 1"])
@@ -805,6 +809,12 @@ class ConsoleLayoutTests(unittest.TestCase):
         self.assertEqual(places[0]["exact"], ["комната 9801, бой 1"])
         libraryid = conn.execute("SELECT libraryid FROM packages WHERE packageid = ?",
                                  (packageid,)).fetchone()[0]
+        # В историю бой попадает, когда сыгран: у раскладки из пульта появился результат.
+        conn.execute(
+            "INSERT INTO results (roomid, gameindex, playerid, name, score, position, "
+            "points, gamenumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (self.ROOM, 1, None, 'Игрок', 100, 1, 1, 1))
+        conn.commit()
         usage = package_library.library_usage(conn, libraryid)
         conn.close()
         self.assertEqual(len(usage), 1)
@@ -1216,6 +1226,140 @@ class LegacyLogTests(unittest.TestCase):
                    if (layout["roomid"], layout["gameindex"]) == (self.ROOM, 1)]
         self.assertEqual(len(layouts), 1)
         self.assertEqual(layouts[0]["source"], "plan")
+
+
+class PhantomBattleTests(unittest.TestCase):
+    """Заготовка следующего боя не считается сыгранным боем.
+
+    Пульт, перейдя к следующему бою, один раз сохранял его с темами прошлого и
+    пустыми местами. В истории пакета появлялся бой, которого не было (комната
+    482, бой 11).
+    """
+
+    def setUp(self):
+        package_library.reset_caches()
+        site.DB_PATH = WORK_DB
+        self.client = self.registered()
+        self.roomid = 9700 + int(uuid.uuid4().hex[:2], 16)
+        suffix = uuid.uuid4().hex[:6]
+        titles = ["Тема %s-%s" % (index, suffix) for index in range(1, 7)]
+        conn = db()
+        add_room(conn, self.roomid, self.client.userid)
+        packageid = add_package(conn, self.roomid, "Пакет " + suffix, titles)
+        row = conn.execute("SELECT libraryid, data FROM packages WHERE packageid = ?",
+                           (packageid,)).fetchone()
+        self.libraryid = row[0]
+        self.themes = json.loads(row[1])["topics"]
+        conn.commit()
+        conn.close()
+
+    def registered(self):
+        client = site.app.test_client()
+        login = 'ph_' + uuid.uuid4().hex[:8]
+        response = client.post(BASE + '/register', data={
+            'login': login, 'name': 'Бой ' + login,
+            'password': 'secret123', 'password2': 'secret123'})
+        self.assertEqual(response.status_code, 302, response.get_data(as_text=True))
+        conn = db()
+        userid = conn.execute("SELECT userid FROM users WHERE login = ?",
+                              (login,)).fetchone()[0]
+        conn.commit()
+        conn.close()
+        client.userid = userid
+        return client
+
+    def save_protocol(self, gameindex, **kwargs):
+        body = {"themes": self.themes, "marks": {},
+                "players": [], "scores": {}, "finished": False}
+        body.update(kwargs)
+        return self.client.post(
+            BASE + '/api/plan/%d/game/%d/protocol' % (self.roomid, gameindex), json=body)
+
+    def add_result(self, gameindex):
+        conn = db()
+        conn.execute(
+            "INSERT INTO results (roomid, gameindex, playerid, name, score, position, "
+            "points, gamenumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (self.roomid, gameindex, None, 'Игрок', 100, 1, 1, gameindex))
+        conn.commit()
+        conn.close()
+
+    def played_games(self):
+        conn = db()
+        try:
+            return sorted(gameindex for roomid, gameindex
+                          in package_library.played_battles(conn)
+                          if roomid == self.roomid)
+        finally:
+            conn.close()
+
+    def usage_games(self):
+        conn = db()
+        try:
+            return sorted(item["gameindex"]
+                          for item in package_library.library_usage(conn, self.libraryid)
+                          if item["roomid"] == self.roomid)
+        finally:
+            conn.close()
+
+    def test_empty_draft_is_not_saved(self):
+        response = self.save_protocol(1, players=[{"name": "", "place": 1},
+                                                  {"name": "", "place": 2}])
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(json.loads(response.get_data(as_text=True)).get("skipped"), "empty")
+        conn = db()
+        row = conn.execute("SELECT 1 FROM game_protocols WHERE roomid = ? AND gameindex = ?",
+                           (self.roomid, 1)).fetchone()
+        conn.close()
+        self.assertIsNone(row)
+        self.assertEqual(self.played_games(), [])
+
+    def test_played_battle_is_saved_and_visible(self):
+        response = self.save_protocol(
+            1, finished=True, players=[{"name": "Игрок", "place": 1}],
+            scores={"1": 100}, marks={"0:1": "plus"})
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.add_result(1)
+        package_library.reset_caches()
+        self.assertEqual(self.played_games(), [1])
+        self.assertEqual(self.usage_games(), [1])
+
+    def test_draft_does_not_create_battle_in_history(self):
+        # Бой 1 сыгран, а бой 2 — та же раскладка с пустыми местами.
+        self.save_protocol(1, finished=True, players=[{"name": "Игрок", "place": 1}],
+                           scores={"1": 100})
+        self.add_result(1)
+        self.save_protocol(2, players=[{"name": "", "place": 1}])
+        package_library.reset_caches()
+        self.assertEqual(self.played_games(), [1])
+        self.assertEqual(self.usage_games(), [1])
+
+    def test_seating_without_result_is_not_in_history(self):
+        # Игроков посадили, но бой ещё не закончен: подсказки это знают,
+        # а в истории пакета боя пока нет.
+        self.save_protocol(1, players=[{"name": "Игрок", "place": 1}])
+        package_library.reset_caches()
+        self.assertEqual(self.played_games(), [1])
+        self.assertEqual(self.usage_games(), [])
+
+    def test_scores_mean_the_game_was_played(self):
+        # Отметку «закончен» не поставили, но счёт есть — бой состоялся.
+        self.save_protocol(1, players=[{"name": "Игрок", "place": 1}],
+                           scores={"1": 200})
+        package_library.reset_caches()
+        self.assertEqual(self.played_games(), [1])
+
+    def test_clearing_existing_battle_still_works(self):
+        self.save_protocol(1, finished=True, players=[{"name": "Игрок", "place": 1}],
+                           scores={"1": 100})
+        response = self.save_protocol(1, players=[{"name": "", "place": 1}])
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertNotIn("skipped", json.loads(response.get_data(as_text=True)))
+        conn = db()
+        row = conn.execute("SELECT payload FROM game_protocols "
+                           "WHERE roomid = ? AND gameindex = ?", (self.roomid, 1)).fetchone()
+        conn.close()
+        self.assertIsNotNone(row)
 
 
 if __name__ == '__main__':

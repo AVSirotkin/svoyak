@@ -2908,6 +2908,13 @@ function queueProtocol(mid, options) {
     if (!mid) return;
     const key = Number(mid);
     const payload = protocolPayload(mid);
+    // Заготовка следующего боя: ни игроков, ни отметок, ни счёта, бой не начат.
+    // Такое состояние не отправляем, иначе в истории появляется бой, которого не было.
+    if (!payload.finished && !Object.keys(payload.marks || {}).length
+            && !Object.keys(payload.scores || {}).some((id) => Number(payload.scores[id]))
+            && !(payload.players || []).some((player) => String(player.name || '').trim())) {
+        return;
+    }
     const signature = protocolSignature(payload);
     // force — только для позиции указателя и якорных событий: обычный повтор
     // того же состояния на сервер не уходит.
