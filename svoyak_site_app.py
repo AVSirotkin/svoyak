@@ -1960,8 +1960,13 @@ def room_packages(conn, roomid):
     return [dict(row) for row in rows]
 
 
-def free_seating_games(conn, roomid):
-    """Бои комнаты со свободной посадкой: их видно по результатам и протоколам."""
+def free_seating_games(conn, roomid, extra=0):
+    """Бои комнаты со свободной посадкой: подряд, от первого до будущих.
+
+    Бои в свободной посадке нумеруются по порядку игры, поэтому в плане они
+    идут без пропусков. extra — сколько боёв показать сверх следующего
+    несыгранного: вечер разкладывают заранее, а не по одному бою.
+    """
     indexes = set()
     for table in ("results", "game_protocols", "game_questions"):
         try:
@@ -1978,11 +1983,14 @@ def free_seating_games(conn, roomid):
             if index > 0:
                 indexes.add(index)
     last = max(indexes) if indexes else 0
+    try:
+        extra = max(0, int(extra or 0))
+    except (TypeError, ValueError):
+        extra = 0
     # Последний бой ещё не сыгран — его тоже надо показать, чтобы было куда
     # разложить темы заранее.
-    indexes.add(last + 1)
     return [{"gameindex": index, "name": "Бой %s" % index, "stage": "—",
-             "table": "—", "order": index} for index in sorted(indexes)]
+             "table": "—", "order": index} for index in range(1, last + 2 + extra)]
 
 
 def room_package_for_themes(conn, packages, themes):
@@ -2015,9 +2023,11 @@ def PlanQuestionsPage(roomid):
             return redirect(f"/init/{roomid}", code=302)
         plan = build_room_plan(conn, roomid)
         free_seating = plan is None
+        extra = request.args.get("extra", type=int) or 0
+        extra = max(0, min(extra, 60))
         if free_seating:
             # Свободная посадка: сетки нет, бои нумеруются по порядку игры.
-            games = free_seating_games(conn, roomid)
+            games = free_seating_games(conn, roomid, extra)
         else:
             games = [{"gameindex": game.gameindex, "name": game.name,
                       "stage": game.stage, "table": game.table, "order": game.order}
@@ -2119,6 +2129,7 @@ def PlanQuestionsPage(roomid):
         "plan_questions.html", roomid=roomid, overview=overview, games=games,
         free_seating=free_seating, packages=packages, assigned=assigned, started=started,
         package_layouts=package_layouts, package_presets=package_presets,
+        extra=extra,
         theme_use=theme_use, title=f"Вопросы турнира {roomid}",
     )
 
@@ -3470,6 +3481,49 @@ def SvoyakMainPage(roomid):
     ActivePalayers = []
     return render_template("SvoyakRoom.html", roomid = roomid, Players = all_players, gameindex = gameindex)
 
+def plan_battle_payload(conn, roomid, gameindex):
+    """Темы боя из плана в том виде, в каком их ждёт пульт. None, если бой не разложен."""
+    try:
+        payload = room_questions(conn, roomid, gameindex)
+    except sqlite3.Error:
+        return None
+    if not payload or not payload.get("themes"):
+        return None
+    package_name = ""
+    if payload.get("packageid"):
+        row = conn.execute("SELECT name FROM packages WHERE packageid = ?",
+                           (payload["packageid"],)).fetchone()
+        package_name = row["name"] if row is not None else ""
+    # Повтор сыгранного боя: ведущему важно видеть, откуда взялись темы.
+    if payload.get("replay_of"):
+        prefix = "Повтор боя %s: " % payload["replay_of"]
+    else:
+        prefix = "План: "
+    return {
+        "key": "%s:%s" % (roomid, gameindex),
+        "gameindex": gameindex,
+        "packageid": payload.get("packageid"),
+        "name": prefix + (package_name or "темы боя"),
+        "layoutid": payload.get("layoutid"),
+        "part": payload.get("part"),
+        "replay_of": payload.get("replay_of"),
+        "topics": payload["themes"],
+    }
+
+
+@app.route('/api/room/<int:roomid>/battle/<int:gameindex>/plan', subdomain="svoyak",
+           methods=["GET"])
+@api_room_access_required
+def RoomBattlePlan(roomid, gameindex):
+    """Темы боя по плану: пульт спрашивает их, когда переходит к следующему бою."""
+    conn = get_db_connection()
+    try:
+        battle = plan_battle_payload(conn, roomid, gameindex)
+    finally:
+        conn.close()
+    return json.dumps({"status": "ok", "battle": battle}, ensure_ascii=False)
+
+
 @app.route('/room/<int:roomid>', subdomain = "svoyak")
 @room_access_required(allow_finished=True)
 def SvoyakNewMainPage(roomid):
@@ -3491,32 +3545,10 @@ def SvoyakNewMainPage(roomid):
 
     # Темы боя по раскладке организатора: план турнира уже знает, что играют в
     # этом бою, и пульту не надо собирать шесть тем из тридцати шести руками.
-    plan_battle = None
-    try:
-        payload = room_questions(conn, roomid, gameindex)
-    except sqlite3.Error:
-        payload = None
-    if payload and payload.get("themes"):
-        package_name = ""
-        if payload.get("packageid"):
-            row = conn.execute("SELECT name FROM packages WHERE packageid = ?",
-                               (payload["packageid"],)).fetchone()
-            package_name = row["name"] if row is not None else ""
-        # Повтор сыгранного боя: ведущему важно видеть, откуда взялись темы.
-        if payload.get("replay_of"):
-            prefix = "Повтор боя %s: " % payload["replay_of"]
-        else:
-            prefix = "План: "
-        plan_battle = {
-            "key": "%s:%s" % (roomid, gameindex),
-            "gameindex": gameindex,
-            "packageid": payload.get("packageid"),
-            "name": prefix + (package_name or "темы боя"),
-            "layoutid": payload.get("layoutid"),
-            "part": payload.get("part"),
-            "replay_of": payload.get("replay_of"),
-            "topics": payload["themes"],
-        }
+    plan_battle = plan_battle_payload(conn, roomid, gameindex)
+    # В сетке пульт ведёт бои по жеребьёвке, и подставлять темы из плана на
+    # каждом переходе нельзя: там раскладка живёт в другом пульте.
+    free_seating = build_room_plan(conn, roomid) is None
     conn.close()
 
     rules = get_room_rules(roomid)
@@ -3524,7 +3556,8 @@ def SvoyakNewMainPage(roomid):
     #     rules["brackets"] = json.load(fo)    
 
     return render_template("FullRoom.html", roomid = roomid, Players = all_players,
-                           gameindex = gameindex, rules = rules, plan_battle = plan_battle)
+                           gameindex = gameindex, rules = rules,
+                           plan_battle = plan_battle, free_seating = free_seating)
 
 @app.route('/fullroom2/<int:roomid>', subdomain = "svoyak")
 @room_access_required

@@ -695,6 +695,8 @@ let one_game_block_array = [];
 let player_name_drag = null;
 // Пакет, который организатор разложил на этот бой: темы уже выбраны в плане.
 let planBattle = {{ (plan_battle or none)|tojson }};
+// Свободная посадка: бои идут по порядку, и темы каждого боя знает план.
+const freeSeating = {{ 'true' if free_seating else 'false' }};
 let gameindex = {{gameindex}};
 let editModeActive = false;
 
@@ -964,10 +966,65 @@ function applyPlanPackage() {
 }
 
 // ============================================================
+// ПЕРЕХОД К СЛЕДУЮЩЕМУ БОЮ: ТЕМЫ ИЗ ПЛАНА
+// ============================================================
+async function fetchPlanBattle(index) {
+    try {
+        const response = await Offline.fetchWithTimeout(
+            '/api/room/' + gameState.roomId + '/battle/' + index + '/plan',
+            { cache: 'no-store' });
+        if (!response.ok) return { ok: false, battle: null };
+        const data = await response.json().catch(() => ({}));
+        return { ok: true, battle: (data && data.battle) || null };
+    } catch (error) {
+        return { ok: false, battle: null };
+    }
+}
+
+// Бой уже начали за столом: отметки, счёт или посаженные игроки. Такой бой
+// темами из плана не перекладываем — иначе потеряются отметки.
+function battleHasProgress() {
+    if (gameState.gameFinished) return true;
+    const answers = gameState.answers || [];
+    for (let i = 0; i < answers.length; i++) {
+        const row = answers[i] || [];
+        for (let j = 0; j < row.length; j++) {
+            if (row[j] === true || row[j] === false) return true;
+        }
+    }
+    if ((gameState.scores || []).some((value) => Number(value))) return true;
+    return (gameData.players || []).some((name) => String(name || '').trim());
+}
+
+// Пульт перешёл к следующему бою: если организатор разложил его в плане, темы
+// берём оттуда. Если бой не разложен, чужой план прошлого боя в нём не держим,
+// но и не стираем пакет, который ведущий загрузил сам.
+async function applyPlanForCurrentBattle() {
+    if (battleHasProgress()) return null;
+    const result = await fetchPlanBattle(gameindex);
+    if (!result.ok) return null;   // нет связи — оставляем как есть
+    if (!result.battle) {
+        if (planBattle && currentPackageLocalId
+                && String(currentPackageLocalId).startsWith('plan:')) {
+            planBattle = null;
+            switchPackage(null);
+        }
+        planBattle = null;
+        return null;
+    }
+    planBattle = result.battle;
+    const localId = applyPlanPackage();
+    if (localId) {
+        syncQuestionsToBlocksFromPackage(0, false);
+        refreshThemesListIfOpen();
+    }
+    return localId;
+}
+
+// ============================================================
 // ПОВТОР СЫГРАННОГО БОЯ (свободная посадка)
 // ============================================================
 let replayTimer = null;
-
 function scheduleReplaysRefresh() {
     if (replayTimer) clearTimeout(replayTimer);
     replayTimer = setTimeout(refreshReplays, 400);
@@ -3254,6 +3311,11 @@ function switchMatch(newMatchId) {
 
     loadGame(gameindex);
     loadProtocolFromServer();
+    // Свободная посадка: у следующего боя свой пакет и своя раскладка.
+    if (freeSeating) {
+        applyPlanForCurrentBattle();
+    }
+    scheduleReplaysRefresh();
 
     update_weight();
     redrawBrackets();

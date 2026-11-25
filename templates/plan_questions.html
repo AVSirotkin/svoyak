@@ -31,6 +31,15 @@
     Свободная посадка: сетки боёв нет, бои идут по порядку. Нумерация здесь — та же,
     что в протоколах: ведущий вносит темы боя заранее, а сайт по ним считает,
     кто мог их слышать.
+    <div class="mt-2 d-flex gap-2 align-items-center flex-wrap">
+        <span class="text-muted">Разложить вперёд:</span>
+        {% for horizon in [0, 5, 11, 17, 23] %}
+        <a class="btn btn-sm {% if extra == horizon %}btn-secondary{% else %}btn-outline-secondary{% endif %}"
+           title="{% if horizon %}показать ещё {{ horizon }} боёв сверх следующего{% else %}только следующий бой{% endif %}"
+           href="?extra={{ horizon }}">{% if horizon %}+{{ horizon }}{% else %}по ходу{% endif %}</a>
+        {% endfor %}
+        <span class="text-muted">боёв в плане: {{ games|length }}</span>
+    </div>
 </div>
 {% endif %}
 
