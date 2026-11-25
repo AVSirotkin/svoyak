@@ -794,6 +794,8 @@ function playerHeard(name) {
 function scheduleBattleHeard() {
     if (battleHeardTimer) clearTimeout(battleHeardTimer);
     battleHeardTimer = setTimeout(() => { battleHeardTimer = null; refreshBattleHeard(); }, 250);
+    // Посадили других игроков — совет о повторе считается по ним же.
+    scheduleReplaysRefresh();
 }
 
 async function refreshBattleHeard() {
@@ -1042,7 +1044,10 @@ async function refreshReplays() {
     const box = document.getElementById('replayBox');
     const list = document.getElementById('replayList');
     if (!box || !list) return;
-    const names = (active || []).map((player) => player && player.name).filter(Boolean);
+    // Считаем по тем, кого посадили в этот бой, а не по всей комнате:
+    // повторять бой можно, только если его не слышал никто из сидящих.
+    const names = (gameData.players || [])
+        .map((name) => (name || '').trim()).filter(Boolean);
     if (!names.length) {
         box.style.display = 'none';
         list.innerHTML = '';

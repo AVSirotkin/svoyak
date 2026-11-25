@@ -222,6 +222,22 @@ class ReplayCandidateTests(ReplayBase):
         self.assertFalse(data['free_seating'])
         self.assertEqual(data['replays'], [])
 
+    def test_console_asks_about_the_seated_players(self):
+        """Совет считается по посаженным в бой, а не по всей комнате.
+
+        Иначе подсказка пропадает: в комнате всегда кто-то слышал любой бой.
+        """
+        text = self.holder.get(BASE + '/room/%d' % self.room).get_data(as_text=True)
+        self.assertIn('// Считаем по тем, кого посадили в этот бой', text)
+        body = text.split('async function refreshReplays()', 1)[1].split('\n}', 1)[0]
+        self.assertIn('gameData.players', body)
+        self.assertNotIn('(active || [])', body)
+
+    def test_seating_refreshes_the_hint(self):
+        text = self.holder.get(BASE + '/room/%d' % self.room).get_data(as_text=True)
+        body = text.split('function scheduleBattleHeard()', 1)[1].split('\n}', 1)[0]
+        self.assertIn('scheduleReplaysRefresh();', body)
+
 
 class ReplayInsertTests(ReplayBase):
     """Постановка повтора в текущий бой и сдвиг плана."""
