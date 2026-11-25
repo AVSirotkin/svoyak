@@ -74,6 +74,13 @@
             </div>
             <div id="activeplayers" class="players-grid"></div>
             <p class="text-muted" style="margin-top:8px;">🪑 на плашке — не сажать игрока в этот бой</p>
+            <!-- Свободная посадка: бой, которого не слышал никто из посаженных,
+                 можно сыграть ещё раз — запланированные бои сдвинутся вперёд. -->
+            <div id="replayBox" style="display:none;margin-top:8px;padding:6px 8px;
+                 border:1px dashed var(--gray-300, #d0d5dd);border-radius:8px;">
+                <div class="small" style="font-weight:600;">Можно повторить</div>
+                <div id="replayList"></div>
+            </div>
             <div class="flex gap-8 mt-12">
                 <input placeholder="Удалить игрока" id="remove_player" data-type="remove" data-suggest="active"
                        autocomplete="off" autocapitalize="off" spellcheck="false"
@@ -687,7 +694,7 @@ let active = [];
 let one_game_block_array = [];
 let player_name_drag = null;
 // Пакет, который организатор разложил на этот бой: темы уже выбраны в плане.
-const planBattle = {{ (plan_battle or none)|tojson }};
+let planBattle = {{ (plan_battle or none)|tojson }};
 let gameindex = {{gameindex}};
 let editModeActive = false;
 
@@ -948,9 +955,113 @@ function applyPlanPackage() {
     // Раскладку могли поменять: старое состояние этого пакета больше не годится.
     localStorage.removeItem(getPackageStateKey(localId));
     savePackagesToLocalStorage();
+    // Тот же пакет мог быть уже выбран (например, бой только что заменили):
+    // сбрасываем текущий, иначе темы не пересоберутся.
+    if (currentPackageLocalId === localId) currentPackageLocalId = null;
     switchPackage(localId);
     renderPackageSelector();
     return localId;
+}
+
+// ============================================================
+// ПОВТОР СЫГРАННОГО БОЯ (свободная посадка)
+// ============================================================
+let replayTimer = null;
+
+function scheduleReplaysRefresh() {
+    if (replayTimer) clearTimeout(replayTimer);
+    replayTimer = setTimeout(refreshReplays, 400);
+}
+
+async function refreshReplays() {
+    const box = document.getElementById('replayBox');
+    const list = document.getElementById('replayList');
+    if (!box || !list) return;
+    const names = (active || []).map((player) => player && player.name).filter(Boolean);
+    if (!names.length) {
+        box.style.display = 'none';
+        list.innerHTML = '';
+        return;
+    }
+    const params = new URLSearchParams();
+    params.set('players', names.join(','));
+    let data = null;
+    try {
+        const response = await Offline.fetchWithTimeout(
+            '/api/plan/' + gameState.roomId + '/replays?' + params.toString(),
+            { cache: 'no-store' });
+        if (!response.ok) return;
+        data = await response.json();
+    } catch (error) {
+        return;
+    }
+    const replays = (data && data.replays) || [];
+    if (!data || !data.free_seating || !replays.length) {
+        box.style.display = 'none';
+        list.innerHTML = '';
+        return;
+    }
+    list.innerHTML = '';
+    replays.forEach((item) => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:8px;' +
+            'justify-content:space-between;margin-top:4px;flex-wrap:wrap;';
+        const text = document.createElement('div');
+        text.className = 'small';
+        const label = item.package
+            ? ' («' + item.package + '», тем: ' + item.themes + ')'
+            : '';
+        text.textContent = 'Бой ' + item.gameindex +
+            ' можно повторить: сидящие не слышали его' + label;
+        const button = document.createElement('button');
+        button.className = 'btn btn-sm btn-outline-primary';
+        button.textContent = 'Поставить в этот бой';
+        button.onclick = () => insertReplay(item.gameindex);
+        row.append(text, button);
+        list.appendChild(row);
+    });
+    box.style.display = 'block';
+}
+
+async function insertReplay(source) {
+    const question = 'Поставить бой ' + source + ' в этот бой?\n' +
+        'Запланированные бои сдвинутся на один вперёд, текущий бой начнётся заново.';
+    if (!confirm(question)) return;
+    let data = null;
+    try {
+        const response = await fetch('/api/plan/' + gameState.roomId + '/replay', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+            body: JSON.stringify({source: source})
+        });
+        data = await response.json().catch(() => ({}));
+        if (!response.ok || !data || data.status !== 'ok') {
+            alert((data && data.message) || 'Не удалось поставить повтор боя');
+            return;
+        }
+    } catch (error) {
+        alert('Нет связи: повтор боя не поставлен');
+        return;
+    }
+    // Номер боя решает сервер: он сдвинул план и знает, какой бой свободен.
+    gameindex = Number(data.gameindex) || gameindex;
+    document.getElementById('game').textContent = `🎯 Игра ${gameindex}`;
+    planBattle = {
+        key: gameState.roomId + ':' + data.gameindex,
+        gameindex: data.gameindex,
+        packageid: null,
+        name: data.name || 'Повтор боя ' + source,
+        layoutid: null,
+        part: null,
+        replayOf: data.source,
+        topics: data.themes || []
+    };
+    const localId = applyPlanPackage();
+    if (localId) {
+        syncQuestionsToBlocksFromPackage(0, false);
+        refreshThemesListIfOpen();
+    }
+    refreshReplays();
 }
 
 function savePackagesToLocalStorage() {
@@ -3216,6 +3327,8 @@ function remove_from_active(name) {
 function UpdateActivePlayer(list) {
     const div = document.getElementById('activeplayers');
     div.innerHTML = '';
+    // Посадили игроков — спрашиваем, какой сыгранный бой они не слышали.
+    scheduleReplaysRefresh();
     list.forEach(p => {
         const blocked = one_game_block_array.includes(p.name);
         const tag = document.createElement('span');
@@ -4417,6 +4530,8 @@ function init_page() {
     setTimeout(redrawBrackets, 500);
     updateQuestionCard();
     refreshBattleHeard();
+    // Игроки могли остаться с прошлого раза: подсказка о повторе нужна сразу.
+    scheduleReplaysRefresh();
 
     // Обратный отсчёт «отправка через N с» обновляем раз в секунду, но только
     // пока есть что отправлять в ограниченном режиме.

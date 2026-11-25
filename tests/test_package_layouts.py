@@ -300,7 +300,7 @@ class PlanAndConsoleTests(LayoutBase):
         page = self.holder.get(BASE + '/room/%d' % self.room)
         text = page.get_data(as_text=True)
         self.assertEqual(page.status_code, 200)
-        self.assertIn('const planBattle = null', text)
+        self.assertIn('let planBattle = null', text)
 
     def test_second_part_of_layout_is_assigned(self):
         packageid = self.take_to_room()

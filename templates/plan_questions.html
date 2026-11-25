@@ -69,6 +69,12 @@
                 и сохраните: протокол при этом не тронется.
             </div>
             {% endif %}
+            {% if binding.replay_of %}
+            <div class="text-muted mt-1" style="font-size: .85em">
+                Повтор боя {{ binding.replay_of }}: поставлен из пульта, остальные бои
+                сдвинулись на один вперёд.
+            </div>
+            {% endif %}
         </div>
         {% endif %}
 

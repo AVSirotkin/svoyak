@@ -2070,6 +2070,7 @@ def PlanQuestionsPage(roomid):
                     "indexes": payload.get("indexes") or [],
                     "layoutid": payload.get("layoutid"),
                     "part": payload.get("part"),
+                    "replay_of": payload.get("replay_of"),
                     "source": "plan",
                 }
                 continue
@@ -2136,6 +2137,107 @@ def battle_themes_for(conn, roomid, gameindex):
     return []
 
 
+def protocol_payload(conn, roomid, gameindex):
+    """Протокол боя как словарь. Пустой словарь, если протокола нет."""
+    try:
+        row = conn.execute(
+            "SELECT payload FROM game_protocols WHERE roomid = ? AND gameindex = ?",
+            (roomid, gameindex)).fetchone()
+    except sqlite3.Error:
+        return {}
+    if row is None:
+        return {}
+    return package_library.load_json(row["payload"])
+
+
+def next_free_seating_game(conn, roomid):
+    """Бой, который откроет пульт: следующий за последним сыгранным."""
+    try:
+        row = conn.execute(
+            "SELECT MAX(gameindex) FROM results WHERE roomid = ?", (roomid,)).fetchone()
+    except sqlite3.Error:
+        return 1
+    try:
+        last = int((row[0] if row is not None else 0) or 0)
+    except (TypeError, ValueError):
+        last = 0
+    return last + 1
+
+
+def battle_summary(conn, roomid, gameindex):
+    """Что известно о бое: пакет, темы и кто в нём играл."""
+    payload = room_questions(conn, roomid, gameindex) or {}
+    protocol = protocol_payload(conn, roomid, gameindex)
+    themes = [theme for theme in battle_themes_for(conn, roomid, gameindex)
+              if isinstance(theme, dict)]
+    package = payload.get("package") or protocol.get("package") or ""
+    packageid = payload.get("packageid")
+    if packageid is None:
+        # Темы могли прийти из протокола старого пульта: пакет опознаём по ним.
+        try:
+            packageid = room_package_for_themes(conn, room_packages(conn, roomid), themes)
+        except sqlite3.Error:
+            packageid = None
+    if packageid is not None and not package:
+        row = conn.execute("SELECT name FROM packages WHERE packageid = ?",
+                           (packageid,)).fetchone()
+        package = row["name"] if row is not None else ""
+    try:
+        players = [row["name"] for row in conn.execute(
+            "SELECT DISTINCT name FROM results WHERE roomid = ? AND gameindex = ? "
+            "AND name <> '' ORDER BY name", (roomid, gameindex))]
+    except sqlite3.Error:
+        players = []
+    return {
+        "gameindex": gameindex,
+        "package": package,
+        "packageid": packageid,
+        "themes": themes,
+        "titles": [package_library.theme_title(theme) for theme in themes],
+        "players": players,
+    }
+
+
+def replay_candidates(conn, roomid, names):
+    """Сыгранные бои, которых не слышал никто из посаженных игроков.
+
+    Повторять бой можно, если новые участники его не слышали. Считаем по той
+    же памяти о прослушанном, что и пометки «⚠» у игроков: точные темы, темы с
+    поправленным текстом и темы, опознанные по названиям. Бои, которые ещё не
+    сыграны, в подсказку не попадают: их нечего повторять.
+    """
+    names = [str(name).strip() for name in (names or []) if str(name).strip()]
+    if not names:
+        return []
+    heard = package_library.heard_before(conn, roomid, names)
+    heard_places = set()
+    for items in heard.values():
+        for item in items:
+            heard_places.add(item.get("place") or "")
+    try:
+        played = package_library.played_battles(conn, strict=True)
+    except sqlite3.Error:
+        played = set()
+    target = next_free_seating_game(conn, roomid)
+    candidates = []
+    for (room, index) in sorted(played):
+        if room != roomid or index >= target:
+            continue
+        if package_library.place_name(roomid, index) in heard_places:
+            continue
+        summary = battle_summary(conn, roomid, index)
+        if not summary["themes"]:
+            continue
+        candidates.append({
+            "gameindex": index,
+            "package": summary["package"],
+            "themes": len(summary["themes"]),
+            "titles": summary["titles"],
+            "players": summary["players"],
+        })
+    return candidates
+
+
 @app.route('/api/plan/<int:roomid>/heard', subdomain="svoyak", methods=["GET"])
 @api_room_access_required
 def PlanHeard(roomid):
@@ -2181,6 +2283,125 @@ def PlanHeard(roomid):
         # Пометки по всем темам пакета: ведущий видит их и в списке тем, и в бою.
         "themes": {str(index): value for index, value in enumerate(usage)},
         "players": heard,
+    }, ensure_ascii=False)
+
+
+@app.route('/api/plan/<int:roomid>/replays', subdomain="svoyak", methods=["GET"])
+@api_room_access_required
+def PlanReplays(roomid):
+    """Сыгранные бои, которые можно повторить прямо сейчас.
+
+    Свободная посадка: игроков сажают прямо перед боем, и удачный бой можно
+    сыграть ещё раз — другими людьми. Подсказка называет бои, которых никто из
+    посаженных не слышал. В сетке такого нет: бои там распределены жеребьёвкой.
+    """
+    names = [name.strip() for name in (request.args.get("players") or "").split(",")
+             if name.strip()]
+    conn = get_db_connection()
+    try:
+        if build_room_plan(conn, roomid) is not None:
+            return json.dumps({"status": "ok", "free_seating": False, "replays": []},
+                              ensure_ascii=False)
+        candidates = replay_candidates(conn, roomid, names)
+        target = next_free_seating_game(conn, roomid)
+    finally:
+        conn.close()
+    return json.dumps({"status": "ok", "free_seating": True, "gameindex": target,
+                       "replays": candidates}, ensure_ascii=False)
+
+
+@app.route('/api/plan/<int:roomid>/replay', subdomain="svoyak", methods=["POST"])
+@api_login_or_open_room
+def PlanReplayInsert(roomid):
+    """Повторить сыгранный бой в этом бою, сдвинув запланированные на бой вперёд."""
+    if not can_manage_room(roomid):
+        return json.dumps({"status": "error", "message": "Нет прав на эту комнату"},
+                          ensure_ascii=False), 403
+    ensure_tournament_tables()
+    data = request.get_json(silent=True) or {}
+    try:
+        source = int(data.get("source"))
+    except (TypeError, ValueError):
+        return json.dumps({"status": "error", "message": "Не указан бой для повтора"},
+                          ensure_ascii=False), 400
+    user = current_user()
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        if build_room_plan(conn, roomid) is not None:
+            conn.execute("ROLLBACK")
+            return json.dumps({"status": "error",
+                               "message": "Повтор боя есть только в свободной посадке"},
+                              ensure_ascii=False), 409
+        target = next_free_seating_game(conn, roomid)
+        summary = battle_summary(conn, roomid, source)
+        if source >= target or not summary["themes"]:
+            conn.execute("ROLLBACK")
+            return json.dumps({"status": "error",
+                               "message": "Бой %s ещё не сыгран — повторять нечего"
+                                          % source}, ensure_ascii=False), 409
+        # Начатый бой сдвигать нельзя: его протокол привязан к номеру.
+        started = []
+        for row in conn.execute(
+                "SELECT gameindex, payload FROM game_protocols "
+                "WHERE roomid = ? AND gameindex >= ?", (roomid, target)).fetchall():
+            if not package_library.protocol_is_empty(
+                    package_library.load_json(row["payload"])):
+                started.append(row["gameindex"])
+        if started:
+            conn.execute("ROLLBACK")
+            return json.dumps({
+                "status": "error",
+                "message": "Бой %s уже начат: закончите его или очистите, "
+                           "и повтор станет возможен" % min(started),
+            }, ensure_ascii=False), 409
+        # Пустые заготовки будущих боёв не нужны: их темы — вчерашний бой.
+        conn.execute("DELETE FROM game_protocols WHERE roomid = ? AND gameindex >= ?",
+                     (roomid, target))
+        # План сдвигается на бой вперёд: что было боем N, станет N+1.
+        # Сверху вниз, иначе обновление наткнётся на уже занятый номер.
+        rows = conn.execute(
+            "SELECT gameindex FROM game_questions WHERE roomid = ? AND gameindex >= ? "
+            "ORDER BY gameindex DESC", (roomid, target)).fetchall()
+        for row in rows:
+            conn.execute(
+                "UPDATE game_questions SET gameindex = ? WHERE roomid = ? AND gameindex = ?",
+                (row["gameindex"] + 1, roomid, row["gameindex"]))
+        packageid = summary["packageid"]
+        if packageid is not None:
+            known = conn.execute(
+                "SELECT 1 FROM packages WHERE packageid = ? AND roomid = ?",
+                (packageid, roomid)).fetchone()
+            if known is None:
+                packageid = None
+        payload = {
+            "themes": summary["themes"],
+            "package": summary["package"],
+            "replay_of": source,
+        }
+        conn.execute(
+            "INSERT OR REPLACE INTO game_questions (roomid, gameindex, packageid, payload, "
+            "updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)",
+            (roomid, target, packageid, json.dumps(payload, ensure_ascii=False)))
+        log_game_events(roomid, "replay inserted",
+                        {"gameindex": target, "source": source,
+                         "by": user["name"] if user else None}, conn=conn)
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+    return json.dumps({
+        "status": "ok",
+        "gameindex": target,
+        "source": source,
+        "package": summary["package"],
+        "themes": summary["themes"],
+        "name": "Повтор: " + (summary["package"] or "бой %s" % source),
     }, ensure_ascii=False)
 
 
@@ -3281,13 +3502,19 @@ def SvoyakNewMainPage(roomid):
             row = conn.execute("SELECT name FROM packages WHERE packageid = ?",
                                (payload["packageid"],)).fetchone()
             package_name = row["name"] if row is not None else ""
+        # Повтор сыгранного боя: ведущему важно видеть, откуда взялись темы.
+        if payload.get("replay_of"):
+            prefix = "Повтор боя %s: " % payload["replay_of"]
+        else:
+            prefix = "План: "
         plan_battle = {
             "key": "%s:%s" % (roomid, gameindex),
             "gameindex": gameindex,
             "packageid": payload.get("packageid"),
-            "name": "План: " + (package_name or "темы боя"),
+            "name": prefix + (package_name or "темы боя"),
             "layoutid": payload.get("layoutid"),
             "part": payload.get("part"),
+            "replay_of": payload.get("replay_of"),
             "topics": payload["themes"],
         }
     conn.close()
