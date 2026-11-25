@@ -1097,6 +1097,9 @@ async function insertReplay(source) {
     const question = 'Поставить бой ' + source + ' в этот бой?\n' +
         'Запланированные бои сдвинутся на один вперёд, текущий бой начнётся заново.';
     if (!confirm(question)) return;
+    // Сброс отметок и посадку игроков надо довезти до сервера: иначе он
+    // увидит старый протокол и откажет в сдвиге.
+    await flushBeforePlanChange();
     let data = null;
     try {
         const response = await fetch('/api/plan/' + gameState.roomId + '/replay', {
@@ -1130,6 +1133,8 @@ async function insertReplay(source) {
     if (localId) {
         syncQuestionsToBlocksFromPackage(0, false);
         refreshThemesListIfOpen();
+        // Повтор встал в план: протокол этого боя начинается заново.
+        saveGame();
     }
     refreshReplays();
 }
@@ -1981,6 +1986,17 @@ async function initLayoutPicker() {
     roomLayoutsLoaded = true;
 }
 
+// План меняется на сервере: сначала досылаем свои правки боя (сброшенные
+// отметки, посадку), иначе сервер проверит старый протокол и откажет.
+async function flushBeforePlanChange() {
+    if (typeof Offline === 'undefined' || !Offline.pending()) return;
+    try {
+        await Offline.flush(true);
+    } catch (error) {
+        // Нет связи — пусть ответит сам запрос, там и покажем причину.
+    }
+}
+
 async function loadLayoutBattle() {
     const select = document.getElementById('layoutPickSelect');
     if (!select || !select.value) return;
@@ -1990,11 +2006,12 @@ async function loadLayoutBattle() {
     const option = select.options[select.selectedIndex];
     if (!confirm('Взять в текущий бой:\n' + option.textContent + '\n\n' +
                  'Бой запишется в план, запланированные бои сдвинутся на один ' +
-                 'вперёд. Прогресс текущего боя сохранится.')) {
+                 'вперёд. Посаженные игроки останутся на местах.')) {
         select.value = '';
         return;
     }
     saveGame();
+    await flushBeforePlanChange();
     let data = null;
     try {
         const response = await Offline.fetchWithTimeout(
@@ -2021,13 +2038,16 @@ async function loadLayoutBattle() {
     }
     planBattle = data.battle || null;
     applyPlanPackage();
+    // Новые темы сразу уходят в протокол: по нему бой видят другие.
+    saveGame();
     scheduleReplaysRefresh();
     if (data.replay_of) {
         alert('Это повтор боя ' + data.replay_of + ': план так и запишет.');
     }
 }
 
-function pkgNavPrev() {    const themesPerGame = parseInt(document.getElementById('themesPerGameInput')?.value) || 6;
+function pkgNavPrev() {
+    const themesPerGame = parseInt(document.getElementById('themesPerGameInput')?.value) || 6;
     const newStart = Math.max(0, currentGameStartIndex - themesPerGame);
     if (newStart === currentGameStartIndex) return;
     if (!confirm('Перейти к предыдущему бою? Прогресс текущего боя будет сохранён.')) return;

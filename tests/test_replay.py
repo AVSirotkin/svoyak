@@ -321,7 +321,42 @@ class ReplayInsertTests(ReplayBase):
             conn.close()
         response = self.insert(1)
         self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
-        self.assertIn('уже начат', json.loads(response.get_data(as_text=True))['message'])
+        message = json.loads(response.get_data(as_text=True))['message']
+        self.assertIn('уже идёт', message)
+        self.assertIn('отметки', message)
+
+    def test_seated_players_do_not_block_insert(self):
+        """Посаженные игроки — не прогресс: темы такого боя меняют перед игрой."""
+        conn = db()
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO game_protocols (roomid, gameindex, payload, revision) "
+                "VALUES (?, ?, ?, 1)",
+                (self.room, 2, json.dumps({"players": [{"name": "Аня"}, {"name": "Боря"}],
+                                           "marks": {}, "scores": {}},
+                                          ensure_ascii=False)))
+            conn.commit()
+        finally:
+            conn.close()
+        response = self.insert(1)
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(self.stored(2)['payload']['replay_of'], 1)
+
+    def test_scores_block_insert(self):
+        conn = db()
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO game_protocols (roomid, gameindex, payload, revision) "
+                "VALUES (?, ?, ?, 1)",
+                (self.room, 2, json.dumps({"players": [{"name": "Аня"}],
+                                           "scores": {"Аня": 10}},
+                                          ensure_ascii=False)))
+            conn.commit()
+        finally:
+            conn.close()
+        response = self.insert(1)
+        self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
+        self.assertIn('счёт', json.loads(response.get_data(as_text=True))['message'])
 
     def test_empty_draft_does_not_block_insert(self):
         conn = db()

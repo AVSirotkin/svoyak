@@ -2330,25 +2330,41 @@ def PlanReplays(roomid):
                        "replays": candidates}, ensure_ascii=False)
 
 
+def protocol_progress(payload):
+    """Чем бой уже занят: отметки, счёт или «закончен». Пустая строка — ничем.
+
+    Посаженные игроки прогрессом не считаются: в свободной посадке их сажают
+    до выбора тем, и заменить темы такого боя — обычное дело, а не потеря.
+    """
+    if payload.get("finished"):
+        return "признак «бой закончен»"
+    if package_library.protocol_has_scores(payload):
+        return "счёт"
+    if payload.get("marks"):
+        return "отметки"
+    return ""
+
+
 def insert_plan_battle(conn, roomid, target, packageid, package_name, themes,
                        indexes=None, layoutid=None, part=None, replay_of=None,
                        source=None):
     """Поставить бой в план на номер target, сдвинув запланированное на бой вперёд.
 
     Работает внутри уже открытой транзакции. Возвращает (True, payload) либо
-    (False, причина) — начатый бой сдвигать нельзя, его протокол привязан
-    к номеру.
+    (False, причина) — бой, который уже идёт (есть отметки или счёт), сдвигать
+    нельзя: его протокол привязан к номеру.
     """
     started = []
     for row in conn.execute(
             "SELECT gameindex, payload FROM game_protocols "
             "WHERE roomid = ? AND gameindex >= ?", (roomid, target)).fetchall():
-        if not package_library.protocol_is_empty(
-                package_library.load_json(row["payload"])):
-            started.append(row["gameindex"])
+        reason = protocol_progress(package_library.load_json(row["payload"]))
+        if reason:
+            started.append((row["gameindex"], reason))
     if started:
-        return False, ("Бой %s уже начат: закончите его или очистите, "
-                       "и сдвиг станет возможен" % min(started))
+        index, reason = min(started)
+        return False, ("Бой %s уже идёт: в нём есть %s. Закончите его или нажмите "
+                       "«Очистить бой», и сдвиг станет возможен" % (index, reason))
     # Пустые заготовки будущих боёв не нужны: их темы — вчерашний бой.
     conn.execute("DELETE FROM game_protocols WHERE roomid = ? AND gameindex >= ?",
                  (roomid, target))

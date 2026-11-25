@@ -1259,7 +1259,9 @@ class PhantomBattleTests(unittest.TestCase):
         package_library.reset_caches()
         site.DB_PATH = WORK_DB
         self.client = self.registered()
-        self.roomid = 9700 + int(uuid.uuid4().hex[:2], 16)
+        # Широкий диапазон: на двух знаках номера комнат иногда совпадали,
+        # и протокол прошлого теста попадал в соседний.
+        self.roomid = 20000 + int(uuid.uuid4().hex[:5], 16)
         suffix = uuid.uuid4().hex[:6]
         titles = ["Тема %s-%s" % (index, suffix) for index in range(1, 7)]
         conn = db()
