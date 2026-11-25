@@ -189,6 +189,72 @@
 {% endif %}
 
 {% if access.content %}
+<div class="card mb-3" id="layouts">
+    <div class="card-header fw-semibold">Раскладки на бои</div>
+    <div class="card-body">
+        <div class="small text-muted mb-2">
+            Раскладка — это пакет, разложенный по боям: какие темы играют в первом
+            бою, какие во втором. В плане турнира для боя выбирается раскладка и
+            номер боя, и пульт получает готовые темы — отмечать их руками не нужно.
+        </div>
+        {% for preset in presets %}
+        <div class="small mb-1">
+            <strong>{{ preset.name }}</strong> — {{ preset.parts | length }} боёв{% if preset.parts %}
+            по {{ preset.parts[0] | length }}{% endif %}. <span class="text-muted">{{ preset.hint }}</span>
+        </div>
+        {% endfor %}
+        {% if access.can_edit %}
+        <div class="row g-2 align-items-end mt-2 mb-3">
+            <div class="col-md-5">
+                <label class="form-label small mb-1">Готовая раскладка</label>
+                <select class="form-select form-select-sm" id="layoutPreset">
+                    {% for preset in presets %}
+                    <option value="{{ preset.key }}">{{ preset.name }} ({{ preset.parts | length }} боёв)</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small mb-1">Название</label>
+                <input class="form-control form-control-sm" id="layoutName"
+                       placeholder="как у пресета">
+            </div>
+            <div class="col-md-3">
+                <button class="btn btn-sm btn-primary w-100" onclick="saveLayout()">Сохранить раскладку</button>
+            </div>
+        </div>
+        {% endif %}
+        {% for layout in layouts %}
+        <div class="border rounded p-2 mb-2">
+            <div class="d-flex justify-content-between align-items-start gap-2">
+                <div>
+                    <strong>{{ layout.name }}</strong>
+                    <span class="badge bg-light text-dark border">{{ layout.battles }} боёв</span>
+                    <span class="text-muted small">{{ layout.sizes | join('+') }} тем</span>
+                    {% if layout.created_by %}<span class="text-muted small">· {{ layout.created_by }}</span>{% endif %}
+                </div>
+                {% if access.can_edit %}
+                <button class="btn btn-sm btn-outline-danger"
+                        onclick="deleteLayout({{ layout.layoutid }})">Удалить</button>
+                {% endif %}
+            </div>
+            <details class="mt-1">
+                <summary class="small text-muted">показать бои</summary>
+                {% for part in layout.view %}
+                <div class="small mt-1">
+                    <span class="text-muted">Бой {{ loop.index }}:</span>
+                    {% for item in part %}
+                    <span class="pkg-chip" title="тема №{{ item.index + 1 }}">{{ item.title }}</span>
+                    {% endfor %}
+                </div>
+                {% endfor %}
+            </details>
+        </div>
+        {% else %}
+        <div class="small text-muted">Раскладок пока нет.</div>
+        {% endfor %}
+    </div>
+</div>
+
 <div class="card mb-3">
     <div class="card-header fw-semibold">Состав пакета</div>
     <div class="card-body">
@@ -565,8 +631,34 @@
         }
     }
 
-    async function deletePackage() {
-        if (!confirm('Удалить пакет? Он исчезнет у всех, кроме администратора.')) {
+    async function saveLayout() {
+        const preset = document.getElementById('layoutPreset');
+        const nameInput = document.getElementById('layoutName');
+        if (!preset || !preset.value) {
+            alert('Нет доступных пресетов');
+            return;
+        }
+        const data = await postJson('/api/packages/library/' + packageId + '/layouts', {
+            preset: preset.value,
+            name: nameInput ? nameInput.value.trim() : ''
+        });
+        if (data) {
+            document.location.reload();
+        }
+    }
+
+    async function deleteLayout(layoutid) {
+        if (!confirm('Удалить раскладку? Бои, разложенные ею, останутся как есть.')) {
+            return;
+        }
+        const data = await postJson(
+            '/api/packages/library/' + packageId + '/layouts/' + layoutid + '/delete', {});
+        if (data) {
+            document.location.reload();
+        }
+    }
+
+    async function deletePackage() {        if (!confirm('Удалить пакет? Он исчезнет у всех, кроме администратора.')) {
             return;
         }
         const data = await postJson('/api/packages/library/' + packageId + '/delete', {});

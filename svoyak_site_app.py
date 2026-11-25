@@ -2023,6 +2023,24 @@ def PlanQuestionsPage(roomid):
                       "stage": game.stage, "table": game.table, "order": game.order}
                      for game in plan.games]
         packages = room_packages(conn, roomid)
+        # Раскладки пакетов: готовый набор тем на бой, чтобы не отмечать шесть
+        # тем из тридцати шести руками. Пакет без раскладок сюда не попадает.
+        package_layouts = {}
+        for package in packages:
+            libraryid = package.get("libraryid")
+            if not libraryid:
+                continue
+            try:
+                rows = package_library.package_layouts(conn, libraryid)
+            except sqlite3.Error:
+                rows = []
+            if not rows:
+                continue
+            data = package_library.current_package_data(conn, libraryid)
+            topics = package_library.package_topics(data) if data else []
+            package_layouts[str(package["packageid"])] = [
+                dict(row, view=package_library.layout_parts_view(row, topics))
+                for row in rows]
         layouts = {}
         try:
             for layout in package_library.theme_layouts(conn):
@@ -2037,6 +2055,9 @@ def PlanQuestionsPage(roomid):
                 assigned[game["gameindex"]] = {
                     "packageid": payload.get("packageid"),
                     "topics": [theme.get("topic") for theme in payload.get("themes") or []],
+                    "indexes": payload.get("indexes") or [],
+                    "layoutid": payload.get("layoutid"),
+                    "part": payload.get("part"),
                     "source": "plan",
                 }
                 continue
@@ -2084,6 +2105,7 @@ def PlanQuestionsPage(roomid):
     return render_template(
         "plan_questions.html", roomid=roomid, overview=overview, games=games,
         free_seating=free_seating, packages=packages, assigned=assigned, started=started,
+        package_layouts=package_layouts,
         theme_use=theme_use, title=f"Вопросы турнира {roomid}",
     )
 
@@ -2180,7 +2202,7 @@ def PlanQuestionsSave(roomid):
     conn = get_tx_connection()
     try:
         # Пакет и выбранные темы — только чтение, до каких-либо изменений.
-        chosen, packageid, package_name, source_file = [], None, "", None
+        chosen, chosen_indexes, packageid, package_name, source_file = [], [], None, "", None
         if theme_indexes:
             try:
                 packageid = int(data.get("packageid"))
@@ -2215,6 +2237,7 @@ def PlanQuestionsSave(roomid):
                     continue
                 if 0 <= index < len(topics):
                     chosen.append(topics[index])
+                    chosen_indexes.append(index)
             if not chosen:
                 return json.dumps(
                     {"status": "error", "message": "Ни одной темы не выбрано"},
@@ -2313,6 +2336,11 @@ def PlanQuestionsSave(roomid):
             "themes": chosen,
             "package": package_name,
             "source_file": source_file,
+            # Номера тем в пакете: по ним видно, какая это часть раскладки,
+            # и не приходится опознавать темы по названиям.
+            "indexes": chosen_indexes,
+            "layoutid": data.get("layoutid"),
+            "part": data.get("part"),
         }
         conn.execute(
             "INSERT OR REPLACE INTO game_questions (roomid, gameindex, packageid, payload, updated_at) "
@@ -3228,11 +3256,36 @@ def SvoyakNewMainPage(roomid):
         gameindex = gi["max(gameindex)"] + 1
     ActivePalayers = []
 
+    # Темы боя по раскладке организатора: план турнира уже знает, что играют в
+    # этом бою, и пульту не надо собирать шесть тем из тридцати шести руками.
+    plan_battle = None
+    try:
+        payload = room_questions(conn, roomid, gameindex)
+    except sqlite3.Error:
+        payload = None
+    if payload and payload.get("themes"):
+        package_name = ""
+        if payload.get("packageid"):
+            row = conn.execute("SELECT name FROM packages WHERE packageid = ?",
+                               (payload["packageid"],)).fetchone()
+            package_name = row["name"] if row is not None else ""
+        plan_battle = {
+            "key": "%s:%s" % (roomid, gameindex),
+            "gameindex": gameindex,
+            "packageid": payload.get("packageid"),
+            "name": "План: " + (package_name or "темы боя"),
+            "layoutid": payload.get("layoutid"),
+            "part": payload.get("part"),
+            "topics": payload["themes"],
+        }
+    conn.close()
+
     rules = get_room_rules(roomid)
     # with open("12-2-azart.json", "rt", encoding="UTF8") as fo:
     #     rules["brackets"] = json.load(fo)    
 
-    return render_template("FullRoom.html", roomid = roomid, Players = all_players, gameindex = gameindex, rules = rules)
+    return render_template("FullRoom.html", roomid = roomid, Players = all_players,
+                           gameindex = gameindex, rules = rules, plan_battle = plan_battle)
 
 @app.route('/fullroom2/<int:roomid>', subdomain = "svoyak")
 @room_access_required
@@ -5439,6 +5492,20 @@ def PackagePage(libraryid):
         if access["can_grant_host"]:
             grantable = [dict(row) for row in conn.execute(
                 "SELECT userid, name, login FROM users ORDER BY name")]
+        # Раскладки на бои: пресеты считаем по действующей ревизии, сохранённые
+        # раскладки показываем с названиями тем.
+        presets, layouts_view = [], []
+        if access["content"]:
+            data_json = package_library.current_package_data(conn, libraryid)
+            topics = package_library.package_topics(data_json) if data_json else []
+            presets = package_library.layout_presets(topics, 6)
+            presets = [dict(preset,
+                            view=package_library.layout_parts_view(
+                                {"parts": preset["parts"]}, topics))
+                       for preset in presets]
+            layouts_view = [
+                dict(layout, view=package_library.layout_parts_view(layout, topics))
+                for layout in package_library.package_layouts(conn, libraryid)]
     finally:
         conn.close()
     return render_template(
@@ -5446,7 +5513,7 @@ def PackagePage(libraryid):
         themes=themes, similar=similar, mode=mode, access=access, rooms=rooms,
         rejected=rejected, managed=managed, revisions=revisions, rights=rights,
         holders=holders, theme_names=theme_names, grantable=grantable,
-        grant_rooms=grant_rooms,
+        grant_rooms=grant_rooms, presets=presets, layouts=layouts_view,
         context_room=context_room, roles=package_library.ROLE_TITLES,
         me=user, title="Пакет «%s»" % (entry["name"] if entry else ""),
     )
@@ -5710,6 +5777,103 @@ def PackageRevision(libraryid):
     finally:
         conn.close()
     return json.dumps({"status": "ok", "revision": revision}, ensure_ascii=False)
+
+
+@app.route('/api/packages/library/<int:libraryid>/layouts', subdomain="svoyak",
+           methods=["POST"])
+@login_required
+def PackageLayoutSave(libraryid):
+    """Раскладка пакета по боям: из готового пресета или своим списком тем.
+
+    Раскладка — это бои пакета по порядку: [номера тем первого боя, второго, …].
+    Пакет ЭК на 36 тем с пресетом «как есть» даёт шесть боёв по шесть тем.
+    """
+    user = current_user()
+    data = request.get_json(silent=True) or {}
+    preset_key = str(data.get("preset") or "").strip()
+    name = str(data.get("name") or "").strip()
+    parts = data.get("parts")
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        package_library.ensure_library(conn)
+        access = package_library.package_access(conn, libraryid, user)
+        if access is None:
+            conn.execute("ROLLBACK")
+            return json.dumps({"status": "error", "message": "Пакета нет"},
+                              ensure_ascii=False), 404
+        if not access["can_edit"]:
+            conn.execute("ROLLBACK")
+            return json.dumps({"status": "error", "message": "Нет прав на правку"},
+                              ensure_ascii=False), 403
+        if preset_key:
+            data_json = package_library.current_package_data(conn, libraryid)
+            topics = package_library.package_topics(data_json) if data_json else []
+            presets = {item["key"]: item for item in
+                       package_library.layout_presets(topics, 6)}
+            preset = presets.get(preset_key)
+            if preset is None:
+                conn.execute("ROLLBACK")
+                return json.dumps({"status": "error", "message": "Такого пресета нет"},
+                                  ensure_ascii=False), 400
+            parts = preset["parts"]
+            name = name or preset["name"]
+        try:
+            layoutid = package_library.save_layout(
+                conn, libraryid, name, parts, user=user, preset=preset_key or None)
+        except ValueError as error:
+            conn.execute("ROLLBACK")
+            return json.dumps({"status": "error", "message": str(error)},
+                              ensure_ascii=False), 400
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+    return json.dumps({"status": "ok", "layoutid": layoutid}, ensure_ascii=False)
+
+
+@app.route('/api/packages/library/<int:libraryid>/layouts/<int:layoutid>/delete',
+           subdomain="svoyak", methods=["POST"])
+@login_required
+def PackageLayoutDelete(libraryid, layoutid):
+    """Раскладку убираем мягко: бои, разложенные ею, не трогаем."""
+    user = current_user()
+    conn = get_tx_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        package_library.ensure_library(conn)
+        access = package_library.package_access(conn, libraryid, user)
+        if access is None:
+            conn.execute("ROLLBACK")
+            return json.dumps({"status": "error", "message": "Пакета нет"},
+                              ensure_ascii=False), 404
+        if not access["can_edit"]:
+            conn.execute("ROLLBACK")
+            return json.dumps({"status": "error", "message": "Нет прав на правку"},
+                              ensure_ascii=False), 403
+        row = conn.execute(
+            "SELECT libraryid FROM package_layouts WHERE layoutid = ? AND deleted_at IS NULL",
+            (layoutid,)).fetchone()
+        if row is None or int(row["libraryid"]) != libraryid:
+            conn.execute("ROLLBACK")
+            return json.dumps({"status": "error", "message": "Раскладки нет"},
+                              ensure_ascii=False), 404
+        package_library.delete_layout(conn, layoutid)
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        conn.close()
+    return json.dumps({"status": "ok"}, ensure_ascii=False)
 
 
 @app.route('/api/packages/library/<int:libraryid>/delete', subdomain="svoyak",

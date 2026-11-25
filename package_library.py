@@ -561,6 +561,7 @@ def ensure_library(conn):
         changed = add_column(conn, "packages", "libraryid", "INTEGER") or changed
         changed = add_column(conn, "packages", "revision", "INTEGER") or changed
     ensure_battle_marks(conn)
+    ensure_layouts(conn)
     changed = backfill(conn) or changed
     changed = ensure_rights(conn) or changed
     changed = ensure_revisions(conn) or changed
@@ -1011,6 +1012,210 @@ def package_revisions(conn, libraryid):
             "themes": len(package_topics(row[5])),
         })
     return items
+
+
+def ensure_layouts(conn):
+    """Раскладки пакета: как его темы разложены по боям."""
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS package_layouts ("
+        " layoutid INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " libraryid INTEGER NOT NULL,"
+        " name TEXT NOT NULL,"
+        " preset TEXT,"
+        " parts TEXT NOT NULL,"
+        " created_by TEXT,"
+        " created_at TEXT DEFAULT CURRENT_TIMESTAMP,"
+        " updated_at TEXT DEFAULT CURRENT_TIMESTAMP,"
+        " deleted_at TEXT)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_layout_library ON package_layouts(libraryid)")
+
+
+def theme_rounds(topics):
+    """Раунды пакета: подряд идущие темы с одинаковым stage.
+
+    Пакет ЭК размечает раунды сам («Кубок 1/8 финала. Первый раунд»), и по этой
+    разметке видно, где кончается один бой ЭК. Пакет без stage раундов не имеет.
+    """
+    rounds = []
+    for index, topic in enumerate(topics):
+        stage = theme_stage(topic)
+        if stage and rounds and rounds[-1][0] == stage:
+            rounds[-1][1].append(index)
+        else:
+            rounds.append([stage, [index]])
+    if not any(stage for stage, _ in rounds):
+        return []
+    return [indexes for _, indexes in rounds]
+
+
+def theme_stage(topic):
+    """Подпись раунда из поля stage: строка или список строк."""
+    stage = (topic or {}).get("stage")
+    if isinstance(stage, (list, tuple)):
+        return " · ".join(str(item).strip() for item in stage if str(item).strip())
+    return str(stage or "").strip()
+
+
+def theme_blocks(topics, per_game=6):
+    """Бои ЭК: [(индексы тем, раунды)]. По stage, иначе по две игры подряд."""
+    size = max(1, int(per_game or 6)) * 2
+    rounds = theme_rounds(topics)
+    if rounds:
+        blocks, current, total = [], [], 0
+        for round_indexes in rounds:
+            if current and total + len(round_indexes) > size:
+                blocks.append(current)
+                current, total = [], 0
+            current.append(list(round_indexes))
+            total += len(round_indexes)
+        if current:
+            blocks.append(current)
+        return [([index for group in block for index in group], block) for block in blocks]
+    indexes = list(range(len(topics)))
+    chunks = [indexes[start:start + size] for start in range(0, len(indexes), size)]
+    return [(chunk, [chunk]) for chunk in chunks]
+
+
+def layout_presets(topics, per_game=6):
+    """Готовые раскладки: как есть, чёт/нечет, по половине раунда.
+
+    «Как есть» режет пакет подряд по шесть тем. Две другие работают внутри
+    боя ЭК (обычно 12 тем): чётные темы в один бой, нечётные в другой, либо
+    первая половина каждого раунда в первый бой, вторая — во второй.
+    """
+    per_game = max(1, int(per_game or 6))
+    if not topics:
+        return []
+    indexes = list(range(len(topics)))
+    presets = [{
+        "key": "flat",
+        "name": "Как есть",
+        "hint": "Темы подряд, по %s в бой." % per_game,
+        "parts": [indexes[start:start + per_game]
+                  for start in range(0, len(indexes), per_game)],
+    }]
+    rounds = theme_rounds(topics)
+    alternate, halves = [], []
+    for block_indexes, block_rounds in theme_blocks(topics, per_game):
+        if len(block_indexes) < 2:
+            continue
+        alternate.append([index for position, index in enumerate(block_indexes)
+                          if position % 2 == 0])
+        alternate.append([index for position, index in enumerate(block_indexes)
+                          if position % 2 == 1])
+        if rounds:
+            first, second = [], []
+            for round_indexes in block_rounds:
+                half = (len(round_indexes) + 1) // 2
+                first.extend(round_indexes[:half])
+                second.extend(round_indexes[half:])
+            if first and second:
+                halves.append(first)
+                halves.append(second)
+    if alternate:
+        presets.append({
+            "key": "alternate",
+            "name": "Чёт/нечет",
+            "hint": "В каждом бое ЭК нечётные темы — в первый бой, чётные — во второй.",
+            "parts": alternate,
+        })
+    if halves:
+        presets.append({
+            "key": "halves",
+            "name": "По половине раунда",
+            "hint": "В каждом раунде первая половина тем — в первый бой, вторая — во второй.",
+            "parts": halves,
+        })
+    return presets
+
+
+def clean_layout_parts(parts):
+    """Раскладка в виде списка списков номеров тем: без пустых частей и мусора."""
+    cleaned = []
+    for part in parts or []:
+        indexes = []
+        for index in part or []:
+            try:
+                indexes.append(int(index))
+            except (TypeError, ValueError):
+                continue
+        if indexes:
+            cleaned.append(indexes)
+    return cleaned
+
+
+def save_layout(conn, libraryid, name, parts, user=None, preset=None):
+    """Создаёт раскладку или обновляет одноимённую у того же пакета."""
+    ensure_layouts(conn)
+    cleaned = clean_layout_parts(parts)
+    if not cleaned:
+        raise ValueError("в раскладке нет тем")
+    author = user.get("name") if isinstance(user, dict) else user
+    name = str(name or "").strip() or "Раскладка"
+    payload = json.dumps(cleaned, ensure_ascii=False)
+    row = conn.execute(
+        "SELECT layoutid FROM package_layouts WHERE libraryid = ? AND name = ? "
+        "AND deleted_at IS NULL", (libraryid, name)).fetchone()
+    if row is not None:
+        conn.execute(
+            "UPDATE package_layouts SET parts = ?, preset = ?, "
+            "updated_at = CURRENT_TIMESTAMP WHERE layoutid = ?",
+            (payload, preset, row["layoutid"]))
+        return row["layoutid"]
+    cursor = conn.execute(
+        "INSERT INTO package_layouts (libraryid, name, preset, parts, created_by) "
+        "VALUES (?, ?, ?, ?, ?)", (libraryid, name, preset, payload, author))
+    return cursor.lastrowid
+
+
+def delete_layout(conn, layoutid):
+    ensure_layouts(conn)
+    cursor = conn.execute(
+        "UPDATE package_layouts SET deleted_at = CURRENT_TIMESTAMP "
+        "WHERE layoutid = ? AND deleted_at IS NULL", (layoutid,))
+    return cursor.rowcount > 0
+
+
+def package_layouts(conn, libraryid):
+    """Раскладки пакета: имя, пресет, бои и номера тем в них."""
+    ensure_layouts(conn)
+    rows = conn.execute(
+        "SELECT layoutid, name, preset, parts, created_by, created_at, updated_at "
+        "FROM package_layouts WHERE libraryid = ? AND deleted_at IS NULL "
+        "ORDER BY layoutid", (libraryid,)).fetchall()
+    layouts = []
+    for row in rows:
+        # load_json годится только для словарей, а раскладка — список списков.
+        try:
+            raw_parts = json.loads(row["parts"] or "[]")
+        except (TypeError, ValueError):
+            raw_parts = []
+        parts = clean_layout_parts(raw_parts if isinstance(raw_parts, list) else [])
+        layouts.append({
+            "layoutid": int(row["layoutid"]),
+            "name": row["name"] or "",
+            "preset": row["preset"] or "",
+            "parts": parts,
+            "battles": len(parts),
+            "sizes": [len(part) for part in parts],
+            "created_by": row["created_by"] or "",
+            "created_at": str(row["created_at"] or "")[:16],
+            "updated_at": str(row["updated_at"] or "")[:16],
+        })
+    return layouts
+
+
+def layout_parts_view(layout, topics):
+    """Раскладка с названиями тем: для страницы пакета и плана турнира."""
+    parts = []
+    for part in layout["parts"]:
+        parts.append([{
+            "index": index,
+            "title": theme_title(topics[index]) if 0 <= index < len(topics) else "",
+        } for index in part])
+    return parts
 
 
 def add_revision(conn, libraryid, data, note=None, created_by=None, name=None,

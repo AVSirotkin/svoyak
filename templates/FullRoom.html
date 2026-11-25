@@ -686,6 +686,8 @@ const gameState = {
 let active = [];
 let one_game_block_array = [];
 let player_name_drag = null;
+// Пакет, который организатор разложил на этот бой: темы уже выбраны в плане.
+const planBattle = {{ (plan_battle or none)|tojson }};
 let gameindex = {{gameindex}};
 let editModeActive = false;
 
@@ -923,6 +925,32 @@ function loadPackagesFromLocalStorage() {
         packages = raw ? JSON.parse(raw) : [];
         if (!Array.isArray(packages)) packages = [];
     } catch (e) { packages = []; }
+}
+
+// Пакет из плана турнира: темы этого боя выбрал организатор. Пульт принимает
+// его как обычный локальный пакет, поэтому дальше всё работает как с файлом.
+function applyPlanPackage() {
+    if (!planBattle || !Array.isArray(planBattle.topics) || !planBattle.topics.length) {
+        return null;
+    }
+    const localId = 'plan:' + (planBattle.key || planBattle.gameindex);
+    // Пакеты прошлых боёв из плана в списке не держим: темы другого боя только мешают.
+    packages = packages.filter((pkg) => !String(pkg.localId).startsWith('plan:')
+        || pkg.localId === localId);
+    let entry = packages.find((pkg) => pkg.localId === localId);
+    if (!entry) {
+        entry = {localId: localId, serverId: null, name: planBattle.name, topics: []};
+        packages.push(entry);
+    }
+    entry.name = planBattle.name;
+    entry.topics = planBattle.topics;
+    entry.fromPlan = true;
+    // Раскладку могли поменять: старое состояние этого пакета больше не годится.
+    localStorage.removeItem(getPackageStateKey(localId));
+    savePackagesToLocalStorage();
+    switchPackage(localId);
+    renderPackageSelector();
+    return localId;
 }
 
 function savePackagesToLocalStorage() {
@@ -4312,11 +4340,19 @@ function init_page() {
     document.getElementById('game').textContent = `🎯 Игра ${gameindex}`;
 
     loadPackagesFromLocalStorage();
+    // Раскладка из плана важнее последнего выбранного пакета: темы боя уже выбраны.
+    const planPkgId = applyPlanPackage();
     const lastPkgId = localStorage.getItem(getCurrentPkgKey());
-    if (lastPkgId && packages.find(p => p.localId === lastPkgId)) {
+    if (planPkgId) {
+        // switchPackage уже вызван внутри applyPlanPackage.
+    } else if (lastPkgId && !String(lastPkgId).startsWith('plan:')
+            && packages.find(p => p.localId === lastPkgId)) {
         switchPackage(lastPkgId);
-    } else if (packages.length > 0) {
-        switchPackage(packages[0].localId);
+    } else {
+        // Пакет прошлого боя из плана не подставляем: это темы другого боя.
+        const fallback = packages.find(p => !String(p.localId).startsWith('plan:'))
+            || packages[0];
+        if (fallback) switchPackage(fallback.localId);
     }
     renderPackageSelector();
 

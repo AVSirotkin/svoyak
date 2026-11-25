@@ -86,6 +86,11 @@
                         </option>
                         {% endfor %}
                     </select>
+                    <label class="form-label small mb-1 mt-2">Раскладка</label>
+                    <select class="form-select form-select-sm layout-select" disabled>
+                        <option value="">— по номерам —</option>
+                    </select>
+                    <div class="small text-muted mt-1 layout-hint"></div>
                 </div>
                 <div class="col-md-7">
                     <label class="form-label small mb-1">Темы</label>
@@ -116,6 +121,8 @@
     const THEME_USE = {{ theme_use|tojson }};
     // Что уже разложено по боям: пакет и темы.
     const ASSIGNED = {{ assigned|tojson }};
+    // Раскладки пакетов: { packageid: [{layoutid, name, parts, view}] }.
+    const LAYOUTS = {{ package_layouts|tojson }};
 
     async function loadPackage(packageid) {
         if (CACHE[packageid]) return CACHE[packageid];
@@ -141,13 +148,14 @@
         return String(stage == null ? '' : stage).trim();
     }
 
-    function renderThemes(list, topics, selected, usage) {
+    function renderThemes(list, topics, selected, usage, selectedIndexes) {
         if (!topics.length) {
             list.innerHTML = '<span class="text-muted small">В пакете нет тем</span>';
             list.dataset.themes = '[]';
             return;
         }
         const chosen = new Set(selected || []);
+        const chosenIndexes = new Set(selectedIndexes || []);
         usage = usage || [];
         let lastStage = null;
         list.innerHTML = topics.map((topic, index) => {
@@ -190,7 +198,7 @@
             return `${group}
             <label class="theme-item${places.length || near.length ? ' played' : ''}">
                 <input class="form-check-input me-2 theme-check" type="checkbox" value="${index}"
-                       ${chosen.has(topic.topic) ? 'checked' : ''}>
+                       ${chosen.has(topic.topic) || chosenIndexes.has(index) ? 'checked' : ''}>
                 <span class="text-muted">#${index + 1}</span>
                 ${topic.topic}
                 <span class="text-muted small">· ${(topic.questions || []).length} вопр.</span>
@@ -199,17 +207,68 @@
         }).join('');
     }
 
-    async function fillGame(card, selectedTopics) {
+    function fillLayouts(card, packageid, selectedLayout) {
+        const select = card.querySelector('.layout-select');
+        const hint = card.querySelector('.layout-hint');
+        if (!select) return;
+        select.innerHTML = '<option value="">— по номерам —</option>';
+        select.disabled = true;
+        const layouts = LAYOUTS[String(packageid)] || [];
+        if (!layouts.length) {
+            if (hint) {
+                hint.textContent = 'У пакета нет раскладок: отметьте темы руками или соберите раскладку на странице пакета.';
+            }
+            return;
+        }
+        select.disabled = false;
+        layouts.forEach((layout) => {
+            (layout.parts || []).forEach((part, index) => {
+                const option = document.createElement('option');
+                option.value = layout.layoutid + ':' + index;
+                option.dataset.themes = JSON.stringify(part);
+                option.textContent = `${layout.name} · бой ${index + 1} (${part.length} тем)`;
+                select.appendChild(option);
+            });
+        });
+        if (selectedLayout && selectedLayout.layoutid != null) {
+            const value = selectedLayout.layoutid + ':' + (selectedLayout.part || 0);
+            if (Array.from(select.options).some((item) => item.value === value)) {
+                select.value = value;
+            }
+        }
+        if (hint) hint.textContent = 'Выберите бой из раскладки — темы отметятся сами.';
+    }
+
+    function applyLayout(card) {
+        const select = card.querySelector('.layout-select');
+        const option = select && select.options[select.selectedIndex];
+        if (!option || !option.value) return;
+        let indexes = [];
+        try {
+            indexes = JSON.parse(option.dataset.themes || '[]');
+        } catch (error) {
+            indexes = [];
+        }
+        const wanted = new Set(indexes.map(Number));
+        card.querySelectorAll('.theme-check').forEach((box) => {
+            box.checked = wanted.has(Number(box.value));
+        });
+    }
+
+    async function fillGame(card, selectedTopics, selectedIndexes, selectedLayout) {
         const select = card.querySelector('.package-select');
         const list = card.querySelector('.theme-list');
         if (!select.value) {
             list.innerHTML = '<span class="text-muted small">Сначала выберите пакет</span>';
+            fillLayouts(card, '');
             return;
         }
         list.innerHTML = '<span class="text-muted small">Загружаю…</span>';
         try {
             const topics = await loadPackage(select.value);
-            renderThemes(list, topics, selectedTopics || [], THEME_USE[select.value] || []);
+            renderThemes(list, topics, selectedTopics || [],
+                         THEME_USE[select.value] || [], selectedIndexes || []);
+            fillLayouts(card, select.value, selectedLayout);
         } catch (error) {
             list.innerHTML = '<span class="text-danger small">Не удалось загрузить пакет</span>';
         }
@@ -220,9 +279,16 @@
         if (!select) return;
 
         select.addEventListener('change', () => fillGame(card, []));
+        const layoutSelect = card.querySelector('.layout-select');
+        if (layoutSelect) {
+            layoutSelect.addEventListener('change', () => applyLayout(card));
+        }
         if (select.value) {
             const binding = ASSIGNED[card.dataset.game];
-            fillGame(card, binding ? binding.topics : []);
+            fillGame(card, binding ? binding.topics : [],
+                     binding ? binding.indexes : [],
+                     binding && binding.layoutid != null
+                         ? {layoutid: binding.layoutid, part: binding.part} : null);
         }
     });
 
@@ -232,10 +298,18 @@
         const gameindex = Number(card.dataset.game);
 
         let themes = [];
+        let layoutid = null;
+        let part = null;
         if (!clear) {
             if (!select.value) {
                 alert('Выберите пакет');
                 return;
+            }
+            const layoutSelect = card.querySelector('.layout-select');
+            if (layoutSelect && layoutSelect.value) {
+                const pieces = layoutSelect.value.split(':');
+                layoutid = Number(pieces[0]);
+                part = Number(pieces[1]);
             }
             themes = Array.from(card.querySelectorAll('.theme-check:checked')).map((box) => Number(box.value));
             if (!themes.length) {
@@ -286,6 +360,8 @@
                     gameindex: gameindex,
                     packageid: select.value ? Number(select.value) : null,
                     themes: themes,
+                    layoutid: layoutid,
+                    part: part,
                     force: Boolean(force),
                     ack_heard: Boolean(ackHeard)
                 })
