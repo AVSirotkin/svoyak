@@ -778,6 +778,9 @@ function scheduleBattleHeard() {
 }
 
 async function refreshBattleHeard() {
+    // Автономный режим: пометки «слышал» приходят с сервера, поэтому не
+    // спрашиваем его вовсе — подсветки просто не будет, бой это не блокирует.
+    if (typeof Offline !== 'undefined' && Offline.isAutonomous()) return;
     const segments = (gameState.themeSources || []).filter(
         (segment) => segment && segment.themeIndices && segment.themeIndices.length);
     const seated = gameData.players.map((name) => (name || '').trim()).filter(Boolean);
@@ -2394,7 +2397,10 @@ function prevQuestion() {
         updateQuestionInfo();
         updateQuestionCard();
         refreshTable();
-        saveGame();
+        // Это только позиция указателя: сохраняем локально, на сервер
+        // отправим отдельно и не чаще раза в 5 минут.
+        saveLocal();
+        schedulePointerSync();
     }
 }
 
@@ -2418,13 +2424,18 @@ function nextQuestion() {
         updateQuestionInfo();
         updateQuestionCard();
         refreshTable();
-        saveGame();
+        // Это только позиция указателя: сохраняем локально, на сервер
+        // отправим отдельно и не чаще раза в 5 минут.
+        saveLocal();
+        schedulePointerSync();
     } else {
         gameState.gameFinished = true;
         showGameOver();
         updateQuestionInfo();
         updateQuestionCard();
         saveGame();
+        // Завершение боя — якорное событие: уходит вне окна частоты.
+        Offline.flush(true);
     }
 }
 
@@ -2643,7 +2654,8 @@ function toggleHalfMinus() {
 function toggleKeyboard() {
     const checkbox = document.getElementById('keyboardToggle');
     gameState.keyboardEnabled = checkbox.checked;
-    saveGame();
+    // Настройка пульта, а не состояние боя: на сервер не уходит.
+    saveLocal();
 }
 
 function recalculateScores() {
@@ -2767,12 +2779,19 @@ function getCurrentMatchId() {
     return gameindex || 1;
 }
 
+// Локальное сохранение состояния боя на этом устройстве. Выполняется всегда:
+// переключение боя, просмотр и перезагрузка страницы не должны терять работу,
+// но и поводом что-то отправить они не являются.
+function saveLocal(mid) {
+    matchStorage.saveMatchState(gameState.roomId, mid || getCurrentMatchId(), gameState, gameData);
+}
+
 function saveGame() {
-    const mid = getCurrentMatchId();
-    matchStorage.saveMatchState(gameState.roomId, mid, gameState, gameData);
+    saveLocal();
     // То же состояние уходит в протокол: по нему организатор видит, что
     // происходит на площадке, а бой можно продолжить на другом устройстве.
-    queueProtocol(mid);
+    // Отправляется только настоящее изменение состояния.
+    queueProtocol(getCurrentMatchId());
 }
 
 // Какие игры уже отправили темы: текст вопросов гоняем один раз за сеанс.
@@ -2852,23 +2871,81 @@ function protocolPayload(mid) {
     return payload;
 }
 
-// Последний отправленный протокол по каждому бою: если состояние не
-// изменилось, новую ревизию не гоним. Иначе загрузка страницы чинила бой
-// на сервере без всяких правок, плодя ревизии и конфликты.
+// Значимое состояние боя: если оно не изменилось, событие синхронизации не
+// создаётся. Указатель, режим, клиент и ревизия — служебные, в подпись не входят.
+function layoutSignature() {
+    return (gameData.questionBlocks || []).map((block) => [
+        block.theme || '',
+        (block.questions || []).map((question) => [
+            Number(question.value) || 0,
+            question.text || '',
+            question.answer || ''
+        ])
+    ]);
+}
+
+function protocolSignature(payload) {
+    const marks = Object.keys(payload.marks || {}).sort()
+        .map((key) => [key, String(payload.marks[key])]);
+    const players = (payload.players || [])
+        .map((player) => [player.playerid, String(player.name || ''), player.place]);
+    const scores = Object.keys(payload.scores || {}).sort()
+        .map((id) => [id, Number(payload.scores[id]) || 0]);
+    return JSON.stringify({
+        marks: marks,
+        players: players,
+        scores: scores,
+        halfMinus: !!payload.halfMinus,
+        finished: !!payload.finished,
+        layout: layoutSignature()
+    });
+}
+
+// Последняя отправленная (или поставленная в очередь) подпись по каждому бою.
 const protocolLastPayload = {};
 
-function queueProtocol(mid) {
+function queueProtocol(mid, options) {
     if (!mid) return;
+    const key = Number(mid);
     const payload = protocolPayload(mid);
-    const signature = JSON.stringify(Object.assign({}, payload, {base_revision: undefined}));
-    if (protocolLastPayload[Number(mid)] === signature) return;
-    protocolLastPayload[Number(mid)] = signature;
+    const signature = protocolSignature(payload);
+    // force — только для позиции указателя и якорных событий: обычный повтор
+    // того же состояния на сервер не уходит.
+    if (!(options && options.force) && protocolLastPayload[key] === signature) return;
+    protocolLastPayload[key] = signature;
     Offline.enqueue('protocol', payload);
+}
+
+// Указатель — не значимое изменение: сам по себе он события не создаёт.
+// Но бой должно быть можно продолжить на другом устройстве, поэтому позицию
+// досылаем не чаще раза в 5 минут и при уходе со страницы.
+const POINTER_SYNC_MS = 5 * 60 * 1000;
+let pointerTimer = null;
+
+function schedulePointerSync() {
+    if (Offline.mode() === 'autonomous') return;   // автономная — ни одного события
+    if (pointerTimer) return;
+    pointerTimer = setTimeout(() => {
+        pointerTimer = null;
+        queueProtocol(getCurrentMatchId(), {force: true});
+    }, POINTER_SYNC_MS);
+}
+
+function syncPointerNow() {
+    if (Offline.mode() === 'autonomous') return;
+    if (pointerTimer) {
+        clearTimeout(pointerTimer);
+        pointerTimer = null;
+    }
+    queueProtocol(getCurrentMatchId(), {force: true});
+    Offline.flush(true);
 }
 
 // Перенос боя на другое устройство: серверный протокол новее локального —
 // значит, бой вели не здесь. Берём серверную версию.
 async function loadProtocolFromServer() {
+    // Автономный режим: серверную версию не запрашиваем, работаем своей.
+    if (Offline.isAutonomous()) return;
     const mid = getCurrentMatchId();
     try {
         const response = await Offline.fetchWithTimeout(
@@ -2974,11 +3051,14 @@ function applyProtocol(protocol) {
     updateQuestionCard();
     renderScoreCards();
     if (gameState.gameFinished) showGameOver(); else showResetGameOver();
-    saveGame();
+    // Только что прочитанное с сервера состояние обратно не отправляем.
+    saveLocal();
 }
 
 function switchMatch(newMatchId) {
-    saveGame();
+    // Сохраняем уходящий бой локально: его правки уже в очереди, и повторная
+    // отправка того же состояния на сервер не нужна.
+    saveLocal();
     // Из турнирной сетки id матча приходит строкой ("4"), из-за чего
     // "4" + 1 давало "41" в прогнозе и заголовке игры.
     const numericId = Number(newMatchId);
@@ -3160,7 +3240,7 @@ async function FillPositions() {
         assigned, one_game_block_array, Number(gameindex) || 1
     );
 
-    if (Offline.isOnline()) {
+    if (Offline.isOnline() && !Offline.isAutonomous()) {
         try {
             const response = await Offline.fetchWithTimeout('/fillpositions/{{roomid}}', {
                 method: 'POST',
@@ -3269,6 +3349,8 @@ function AddResult() {
 
     gameState.gameFinished = true;
     saveGame();
+    // Результат боя — якорное событие: уходит сразу, вне окна частоты.
+    Offline.flush(true);
     // Блокировка действует на один бой — после сохранения снимаем её.
     one_game_block_array = [];
     UpdateActivePlayer(active);
@@ -3278,7 +3360,7 @@ function AddResult() {
 }
 
 async function GetGameHistoryArray() {
-    if (Offline.isOnline()) {
+    if (Offline.isOnline() && !Offline.isAutonomous()) {
         try {
             const r = await Offline.fetchWithTimeout("/gameresult/{{roomid}}", {
                 headers: { 'Accept': 'application/json' }
@@ -3323,7 +3405,7 @@ function renderWeights(rows) {
 }
 
 async function update_weight() {
-    if (Offline.isOnline()) {
+    if (Offline.isOnline() && !Offline.isAutonomous()) {
         try {
             const response = await Offline.fetchWithTimeout('/weigth/{{roomid}}', {
                 method: 'POST',
@@ -3724,7 +3806,7 @@ async function fetchPredictions() {
     const assigned = [1, 2, 3, 4].map((index) => ({
         name: (document.getElementById(`player${index}`)?.value || '').trim()
     }));
-    if (Offline.isOnline()) {
+    if (Offline.isOnline() && !Offline.isAutonomous()) {
         try {
             const response = await Offline.fetchWithTimeout('/predictgames/{{roomid}}/3', {
                 method: 'POST',
@@ -3826,7 +3908,9 @@ async function redrawBrackets() {
         if (typeof rules.brackets === 'string') rules.brackets = JSON.parse(rules.brackets);
         const container = document.getElementById('current-bracket');
         if (container) container.classList.remove('bracketless');
-        const activePlayers = await fetch('/activeplayers/{{roomid}}').then(r => r.json());
+        const activePlayers = Offline.isAutonomous()
+            ? Offline.getActivePlayers()
+            : await fetch('/activeplayers/{{roomid}}').then(r => r.json());
         rememberHeard(activePlayers);
         const playerNames = activePlayers.map(p => p.name);
         const gameArray = await GetGameHistoryArray();
@@ -4111,6 +4195,28 @@ function Info() {
 // ============================================================
 // 21. ИНИЦИАЛИЗАЦИЯ
 // ============================================================
+// Что уже лежит на устройстве: в автономной работе сервер не поможет, поэтому
+// проверяем пакеты, темы боя и списки игроков до отключения.
+function autonomousReport() {
+    const lines = [];
+    lines.push(packages.length
+        ? '· пакетов на устройстве: ' + packages.length
+        : '⚠ пакетов на устройстве нет — темы загрузить будет неоткуда');
+    const blocks = (gameData.questionBlocks || []).length;
+    lines.push(blocks
+        ? '· тем у боя ' + gameindex + ': ' + blocks
+        : '⚠ у боя ' + gameindex + ' нет тем — откройте бой до отключения');
+    const seated = (gameData.players || []).filter(Boolean).length;
+    lines.push(seated
+        ? '· игроков в бою: ' + seated
+        : '· игроки не посажены — посадите до отключения');
+    const roomPlayers = Offline.getActivePlayers().length;
+    lines.push(roomPlayers
+        ? '· игроков в списке комнаты: ' + roomPlayers
+        : '· список игроков комнаты пуст');
+    return lines.join('\n');
+}
+
 function init_page() {
     gameindex = {{gameindex}};
     // Если на устройстве есть неотправленные бои, следующий номер не должен с ними совпасть.
@@ -4128,6 +4234,9 @@ function init_page() {
     renderPackageSelector();
 
     loadGame(gameindex);
+    // Уход со страницы: позицию указателя досылаем. Слушатель ставим до
+    // Offline.init(), иначе его досылка очереди успеет сработать раньше.
+    window.addEventListener('pagehide', syncPointerNow);
     // Игроки, история и очередь отправки берутся из локального состояния;
     // если сервер доступен, оно обновится в фоне.
     Offline.init();
@@ -4137,10 +4246,30 @@ function init_page() {
     const modeSelect = document.getElementById('syncModeSelect');
     if (modeSelect) {
         modeSelect.value = Offline.mode();
-        modeSelect.addEventListener('change', () => {
-            SvoyakSync.setMode(Number({{roomid}}), 0, modeSelect.value);
-            saveGame();             // новый режим уйдёт вместе с протоколом
-            Offline.flush(true);    // и сразу, даже если выбрали автономный
+        modeSelect.addEventListener('change', async () => {
+            const next = modeSelect.value;
+            const previous = Offline.mode();
+            if (next === previous) return;
+            if (next === 'autonomous') {
+                // Пока связь есть, доводим дела: досылаем накопленное и
+                // подтягиваем свежие списки — дальше устройство само по себе.
+                await Offline.flush(true);
+                await Offline.syncFromServer(true);
+                update_weight();
+                const agreed = confirm(
+                    'Автономный режим: пульт перестаёт обращаться к серверу.\n\n' +
+                    autonomousReport() +
+                    '\n\nОстанется только кнопка «Синхронизировать». Включить?');
+                if (!agreed) {
+                    modeSelect.value = previous;
+                    return;
+                }
+            }
+            SvoyakSync.setMode(Number({{roomid}}), 0, next);
+            // Смена режима — якорное событие: сервер должен узнать режим.
+            queueProtocol(getCurrentMatchId(), {force: true});
+            Offline.flush(true);
+            Offline.refreshStatus();
         });
     }
     update_weight();
@@ -4163,6 +4292,12 @@ function init_page() {
     setTimeout(redrawBrackets, 500);
     updateQuestionCard();
     refreshBattleHeard();
+
+    // Обратный отсчёт «отправка через N с» обновляем раз в секунду, но только
+    // пока есть что отправлять в ограниченном режиме.
+    setInterval(() => {
+        if (Offline.pending() && Offline.mode() === 'limited') Offline.refreshStatus();
+    }, 1000);
 }
 
 // Глобальные функции для HTML
@@ -4633,6 +4768,11 @@ const Offline = (() => {
     const roomId = Number({{roomid}});
     const STATE_KEY = 'svoyak_room_' + roomId + '_state_v1';
     const OUTBOX_KEY = 'svoyak_room_' + roomId + '_outbox_v1';
+    // Синхронный режим отправляет после паузы, ограниченный — не чаще раза
+    // в минуту от последней попытки, автономный — только по кнопке.
+    const SYNC_DELAY = 1200;
+    const LIMITED_INTERVAL = 60000;
+    const MAX_BACKOFF = 240000;
     let state = loadState();
     let outbox = loadOutbox();
     let online = navigator.onLine;
@@ -4641,6 +4781,8 @@ const Offline = (() => {
     let timer = null;
     let flushTimer = null;
     let lastFlush = null;
+    let lastAttempt = null;
+    let failureDelay = 0;
     let lastError = '';
 
     function loadState() {
@@ -4716,8 +4858,8 @@ const Offline = (() => {
         banner.classList.toggle('is-autonomous', online && pending === 0 && current === 'autonomous');
         banner.classList.toggle('is-ok', online && pending === 0 && current !== 'autonomous');
         // Кнопка не исчезает, а прячется: иначе строка меняла бы высоту.
-        retry.style.visibility = online && pending === 0 ? 'hidden' : 'visible';
-        retry.textContent = current === 'autonomous' ? 'Отправить' : 'Повторить';
+        retry.style.visibility = online && pending === 0 && current !== 'autonomous' ? 'hidden' : 'visible';
+        retry.textContent = current === 'autonomous' ? 'Синхронизировать' : 'Повторить';
         if (!online) {
             text.textContent = pending
                 ? 'Нет связи с сервером. Работаем локально, ' + pending + ' ' +
@@ -4726,18 +4868,28 @@ const Offline = (() => {
             return;
         }
         if (pending) {
-            text.textContent = (flushing ? 'Отправляю: ' : 'Не отправлено: ') + pending +
-                ' · ' + title + ' режим' + (lastError ? ' · ' + lastError : '');
+            const count = pending + ' ' + plural(pending, 'изменение', 'изменения', 'изменений');
+            if (current === 'autonomous') {
+                text.textContent = 'Автономно · ' + count + ' только на этом устройстве';
+                return;
+            }
+            const left = nextSendIn();
+            const countdown = left !== null && left > 0
+                ? ' · отправка через ' + Math.ceil(left / 1000) + ' с'
+                : '';
+            text.textContent = (flushing ? 'Отправляю: ' : 'Не отправлено: ') + count + countdown +
+                (lastError ? ' · ' + lastError : '');
             return;
         }
         if (current === 'autonomous') {
-            text.textContent = 'Автономный режим · изменения остаются на этом устройстве';
+            text.textContent = 'Автономно · изменений нет · данные только на этом устройстве' +
+                (clockText(lastFlush) ? ' · синхронизировано в ' + clockText(lastFlush) : '');
             return;
         }
         const when = clockText(lastFlush);
         text.textContent = when
-            ? 'Сохранено в ' + when + ' · ' + title + ' режим'
-            : 'Синхронизация включена · ' + title + ' режим';
+            ? 'Изменений нет · отправлено ' + when + ' · ' + title + ' режим'
+            : 'Изменений нет · ' + title + ' режим';
     }
 
     function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
@@ -4768,7 +4920,12 @@ const Offline = (() => {
         return true;
     }
 
-    function noteFailure() {
+    function noteFailure(withBackoff) {
+        // Растим паузу только на настоящих сбоях отправки: «сервер не
+        // ответил» — повод подождать, а не долбить его каждой правкой.
+        if (withBackoff !== false) {
+            failureDelay = Math.min(MAX_BACKOFF, failureDelay ? failureDelay * 2 : LIMITED_INTERVAL);
+        }
         setOnline(false);
     }
 
@@ -4776,6 +4933,16 @@ const Offline = (() => {
     // ограниченный — не чаще раза в минуту, автономный — только по кнопке.
     function mode() {
         return SvoyakSync.getMode(roomId, 0);
+    }
+
+    // Сколько осталось до следующей отправки: нужно для строки статуса,
+    // чтобы ведущий видел «отправка через 40 с», а не просто «не отправлено».
+    function nextSendIn() {
+        if (mode() !== 'limited' || !outbox.length) return null;
+        const since = lastAttempt ? Date.now() - lastAttempt : Infinity;
+        const windowLeft = Math.max(0, LIMITED_INTERVAL - since);
+        const backoffLeft = failureDelay ? Math.max(0, failureDelay - (Date.now() - (lastAttempt || 0))) : 0;
+        return Math.max(windowLeft, backoffLeft);
     }
 
     function schedule(delay) {
@@ -4789,13 +4956,21 @@ const Offline = (() => {
             updateBanner();
             return;
         }
-        let wait = delay;
-        if (wait === undefined) {
+        let wait;
+        if (delay !== undefined) {
+            wait = delay;
+        } else {
             if (current === 'sync') {
-                wait = 1200;
+                wait = SYNC_DELAY;
             } else {
-                const since = lastFlush ? Date.now() - lastFlush : Infinity;
-                wait = Math.max(0, 60000 - since);
+                // Окно считается от попытки, а не от успеха: иначе после
+                // ошибки ограничение исчезало и правки уходили подряд.
+                const since = lastAttempt ? Date.now() - lastAttempt : Infinity;
+                wait = Math.max(0, LIMITED_INTERVAL - since);
+            }
+            if (failureDelay) {
+                const sinceAttempt = lastAttempt ? Date.now() - lastAttempt : failureDelay;
+                wait = Math.max(wait, failureDelay - sinceAttempt);
             }
         }
         flushTimer = setTimeout(() => flush(), wait);
@@ -4804,6 +4979,11 @@ const Offline = (() => {
 
     async function check() {
         if (checking) return;
+        // Автономный режим не ждёт сервера вообще: пинг — это тоже запрос.
+        if (mode() === 'autonomous') {
+            scheduleCheck();
+            return;
+        }
         checking = true;
         try {
             const response = await fetchWithTimeout('/api/ping', { cache: 'no-store' }, 4000);
@@ -4818,6 +4998,7 @@ const Offline = (() => {
 
     function scheduleCheck() {
         clearTimeout(timer);
+        if (mode() === 'autonomous') return;
         timer = setTimeout(check, online ? 30000 : 8000);
     }
 
@@ -4963,6 +5144,7 @@ const Offline = (() => {
         if (mode() === 'autonomous' && !force) { updateBanner(); return; }
         flushing = true;
         lastError = '';
+        lastAttempt = Date.now();
         updateBanner();
         while (outbox.length) {
             const op = outbox[0];
@@ -4970,13 +5152,14 @@ const Offline = (() => {
             try {
                 response = await send(op);
             } catch (error) {
-                noteFailure();
+                noteFailure(true);
                 break;
             }
             if (response.ok) {
                 outbox.shift();
                 saveOutbox();
                 lastFlush = Date.now();
+                failureDelay = 0;
                 if (op.type === 'saveGame') {
                     try {
                         const rows = await response.json();
@@ -5030,6 +5213,7 @@ const Offline = (() => {
             }
             op.attempts = (op.attempts || 0) + 1;
             lastError = 'ошибка сервера ' + response.status;
+            failureDelay = Math.min(MAX_BACKOFF, failureDelay ? failureDelay * 2 : LIMITED_INTERVAL);
             if (op.attempts >= 3) {
                 outbox.shift();
                 saveOutbox();
@@ -5044,7 +5228,9 @@ const Offline = (() => {
         if (online && outbox.length === 0) await syncFromServer();
     }
 
-    async function syncFromServer() {
+    async function syncFromServer(force) {
+        // В автономном режиме сервер не спрашиваем: решение принимается здесь.
+        if (mode() === 'autonomous' && !force) return;
         try {
             const [playersResponse, historyResponse] = await Promise.all([
                 fetchWithTimeout('/activeplayers/' + roomId, { cache: 'no-store' }),
@@ -5064,7 +5250,7 @@ const Offline = (() => {
             redrawBrackets();
             update_weight();
         } catch (error) {
-            noteFailure();
+            noteFailure(false);
         }
     }
 
@@ -5078,7 +5264,7 @@ const Offline = (() => {
         if (navigator.onLine) {
             online = true;
             await flush();
-            if (!outbox.length) await syncFromServer();
+            if (!outbox.length && mode() !== 'autonomous') await syncFromServer();
         } else {
             online = false;
             updateBanner();
@@ -5086,19 +5272,28 @@ const Offline = (() => {
         }
     }
 
+    // Кнопка в строке статуса: «Повторить» в обычных режимах и
+    // «Синхронизировать» в автономном (там это единственный выход в сеть).
     function retry() {
+        if (mode() === 'autonomous') {
+            flush(true);
+            return;
+        }
         check();
         if (online) flush(true);
     }
 
     return {
-        init, retry, flush, check, schedule, mode,
+        init, retry, flush, check, schedule, mode, nextSendIn,
+        refreshStatus: updateBanner,
+        isAutonomous: () => mode() === 'autonomous',
         isOnline: () => online,
         isFlushing: () => flushing,
         pending: () => outbox.length,
         getActivePlayers, setActivePlayers,
         getResults, getResultsMap, getNextGameindex,
         setResultsFromServer, saveGameLocal, deleteGameLocal,
+        syncFromServer,
         enqueue, fetchWithTimeout
     };
 })();

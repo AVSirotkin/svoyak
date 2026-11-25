@@ -307,7 +307,7 @@
             <div class="panel-controls">
                 <span class="note" id="protocolStatus"></span>
                 <button class="icon-btn" id="protocolSendBtn"
-                        title="Отправить протокол на сервер сейчас"
+                        title="Синхронизировать сейчас: отправить протокол на сервер"
                         onclick="sendProtocolNow()">📤</button>
                 <button class="icon-btn" id="protocolHistoryBtn" title="История протокола: вернуть затёртые отметки" onclick="showProtocolHistory()">🕘</button>
                 <button class="icon-btn" id="toggleViewBtn" title="Сейчас вертикально — переключить на горизонтально">⇅</button>
@@ -575,18 +575,27 @@ function renderSyncStatus(state) {
         setStatus('нет связи · ' + state.pending + ' в очереди', 'bad');
         return;
     }
+    if (state.error) {
+        // 401/403 — нет прав на площадку, 5xx — сервер не принял.
+        setStatus(state.error, 'bad');
+        return;
+    }
     if (state.mode === 'autonomous') {
         setStatus('автономно · ' + state.pending + ' ' + changes(state.pending), 'warn');
         return;
     }
     if (state.pending) {
-        setStatus('не отправлено: ' + state.pending + ' · ' + state.modeTitle, 'warn');
+        const left = sync.nextSendIn();
+        const countdown = left !== null && left > 0
+            ? ' · отправка через ' + Math.ceil(left / 1000) + ' с'
+            : '';
+        setStatus('не отправлено: ' + state.pending + ' ' + changes(state.pending) + countdown, 'warn');
         return;
     }
     const stamp = state.lastSync
         ? timeOf(state.lastSync)
         : shortStamp(PROTOCOL && PROTOCOL.updated_at);
-    setStatus((stamp ? 'сохранено ' + stamp : 'синхронизация включена') +
+    setStatus((stamp ? 'изменений нет · отправлено ' + stamp : 'изменений нет') +
         ' · ' + state.modeTitle, '');
 }
 
@@ -727,10 +736,68 @@ function protocolPayload() {
     return payload;
 }
 
-function saveProtocol() {
+function saveProtocol(options) {
     if (!GAMEINDEX || conflictNote) return;
     rememberLocally();
-    sync.enqueue('protocol', protocolPayload());
+    const payload = protocolPayload();
+    const signature = protocolSignature(payload);
+    // Переключение боя, просмотр и движение указателя не меняют состояние —
+    // значит, и события синхронизации не создают.
+    if (!(options && options.force) && lastSignature === signature) return;
+    lastSignature = signature;
+    sync.enqueue('protocol', payload);
+}
+
+// Значимое состояние боя: то же правило, что в комнате. Указатель, режим,
+// клиент и ревизия в подпись не входят.
+function protocolSignature(payload) {
+    const marks = Object.keys(payload.marks || {}).sort()
+        .map(function (key) { return [key, String(payload.marks[key])]; });
+    const players = (payload.players || []).map(function (player) {
+        return [player.playerid, String(player.name || ''), player.place];
+    });
+    const scores = Object.keys(payload.scores || {}).sort()
+        .map(function (id) { return [id, Number(payload.scores[id]) || 0]; });
+    const topics = (TOPICS || []).map(function (topic) {
+        return [topic.topic || '', (topic.questions || []).map(function (question) {
+            return [Number(question.value) || 0, question.text || '', question.answer || ''];
+        })];
+    });
+    return JSON.stringify({
+        marks: marks,
+        players: players,
+        scores: scores,
+        halfMinus: !!payload.halfMinus,
+        finished: !!payload.finished,
+        placeholder: !!payload.placeholder,
+        topics: topics
+    });
+}
+
+let lastSignature = '';
+
+// Указатель — не значимое изменение: сам по себе события не создаёт, но
+// позицию досылаем не чаще раза в 5 минут и при уходе со страницы.
+const POINTER_SYNC_MS = 5 * 60 * 1000;
+let pointerTimer = null;
+
+function schedulePointerSync() {
+    if (sync.mode() === 'autonomous') return;
+    if (pointerTimer) return;
+    pointerTimer = setTimeout(function () {
+        pointerTimer = null;
+        saveProtocol({force: true});
+    }, POINTER_SYNC_MS);
+}
+
+function syncPointerNow() {
+    if (sync.mode() === 'autonomous') return;
+    if (pointerTimer) {
+        clearTimeout(pointerTimer);
+        pointerTimer = null;
+    }
+    saveProtocol({force: true});
+    sync.flush(true);
 }
 
 // ============================================================
@@ -1213,7 +1280,9 @@ function prevQuestion() {
         updateQuestionInfo();
         updateQuestionCard();
         refreshTable();
-        saveGame();
+        // Только позиция указателя: локально сохраняем, на сервер — редко.
+        scheduleSave();
+        schedulePointerSync();
     }
 }
 
@@ -1238,13 +1307,17 @@ function nextQuestion() {
         updateQuestionInfo();
         updateQuestionCard();
         refreshTable();
-        saveGame();
+        // Только позиция указателя: локально сохраняем, на сервер — редко.
+        scheduleSave();
+        schedulePointerSync();
     } else {
         gameState.gameFinished = true;
         showGameOver();
         updateQuestionInfo();
         updateQuestionCard();
         saveGame();
+        // Завершение боя — якорное событие: уходит вне окна частоты.
+        sync.flush(true);
     }
 }
 
@@ -1784,7 +1857,15 @@ function init_page() {
     paintViewButton();
 
     initSyncMode();
+    // Уход со страницы: позицию указателя досылаем. Слушатель ставим до
+    // sync.init(), иначе его досылка очереди успеет сработать раньше.
+    window.addEventListener('pagehide', syncPointerNow);
     sync.init();
+
+    // Обратный отсчёт «отправка через N с» — пока есть что отправлять.
+    setInterval(function () {
+        if (sync.pending() && sync.mode() === 'limited') sync.refreshStatus();
+    }, 1000);
 
     restoreCollapseStates();
     document.querySelectorAll('.panel-expand').forEach(btn => {

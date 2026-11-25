@@ -1,9 +1,17 @@
 // Синхронизация пультов: режим работы, очередь изменений и сообщения.
 //
 // Режимы:
-//   sync       — сохраняем через секунду после правки (как раньше);
-//   limited    — не чаще раза в минуту, плюс принудительно на важных шагах;
-//   autonomous — ничего не отправляем, всё живёт на этом устройстве.
+//   sync       — сохраняем через секунду после правки;
+//   limited    — не чаще раза в минуту от последней попытки, плюс
+//                принудительно на важных шагах (результат боя, смена режима,
+//                уход со страницы);
+//   autonomous — полная изоляция: ни отправок, ни пинга. Всё живёт на этом
+//                устройстве и уходит только по кнопке «Синхронизировать».
+//
+// Событие синхронизации создаёт только значимое изменение состояния боя.
+// Переключение боя, просмотр, движение указателя и повторное применение
+// серверного протокола ничего не отправляют. После сбоев пауза растёт
+// (1 → 2 → 4 минуты), чтобы не долбить сервер.
 //
 // Очередь переживает перезагрузку страницы: изменения лежат в localStorage
 // и уходят, когда связь появится. Один и тот же модуль используют оба пульта.
@@ -18,6 +26,8 @@
     };
     const DEFAULT_MODE = 'sync';
     const SYNC_DELAY = 1200;      // пауза после последней правки в синхронном режиме
+    const LIMITED_INTERVAL = 60000;   // окно ограниченного режима
+    const MAX_BACKOFF = 240000;   // после сбоев не долбим сервер чаще раза в 4 минуты
     const PING_TIMEOUT = 4000;
     const SEND_TIMEOUT = 10000;
 
@@ -140,6 +150,8 @@
         let checkTimer = null;
         let timer = null;
         let lastSync = null;
+        let lastAttempt = null;
+        let failureDelay = 0;
         let error = '';
         let banner = null;
 
@@ -234,6 +246,11 @@
 
         async function check() {
             if (checking) return;
+            // Автономный режим не ждёт сервера: ни отправки, ни пинга.
+            if (isAutonomous()) {
+                scheduleCheck();
+                return;
+            }
             checking = true;
             try {
                 const response = await fetchWithTimeout('/api/ping', {cache: 'no-store'}, PING_TIMEOUT);
@@ -248,28 +265,52 @@
 
         function scheduleCheck() {
             clearTimeout(checkTimer);
+            if (isAutonomous()) return;
             checkTimer = setTimeout(check, online ? 30000 : 8000);
         }
 
         // Когда отправлять: синхронный — после паузы, ограниченный — не чаще
-        // раза в минуту, автономный — только по кнопке.
+        // раза в минуту от последней попытки, автономный — только по кнопке.
+        // Автономный вообще не трогает сервер: ни отправки, ни пинга.
+        function isAutonomous() {
+            return mode === 'autonomous';
+        }
+
+        function nextSendIn() {
+            if (mode !== 'limited' || !outbox.length) return null;
+            const since = lastAttempt ? Date.now() - lastAttempt : Infinity;
+            const windowLeft = Math.max(0, LIMITED_INTERVAL - since);
+            const backoffLeft = failureDelay
+                ? Math.max(0, failureDelay - (Date.now() - (lastAttempt || 0)))
+                : 0;
+            return Math.max(windowLeft, backoffLeft);
+        }
+
         function schedule(delay) {
             clearTimeout(timer);
             if (!outbox.length) {
                 publish();
                 return;
             }
-            if (mode === 'autonomous') {
+            if (isAutonomous()) {
                 publish();
                 return;
             }
-            let wait = delay;
-            if (wait === undefined) {
+            let wait;
+            if (delay !== undefined) {
+                wait = delay;
+            } else {
                 if (mode === 'sync') {
                     wait = SYNC_DELAY;
                 } else {
-                    const since = lastSync ? Date.now() - lastSync : Infinity;
-                    wait = Math.max(0, MODES.limited.interval - since);
+                    // Окно считается от попытки, а не от успеха: иначе после
+                    // ошибки ограничение исчезало и правки уходили подряд.
+                    const since = lastAttempt ? Date.now() - lastAttempt : Infinity;
+                    wait = Math.max(0, LIMITED_INTERVAL - since);
+                }
+                if (failureDelay) {
+                    const sinceAttempt = lastAttempt ? Date.now() - lastAttempt : failureDelay;
+                    wait = Math.max(wait, failureDelay - sinceAttempt);
                 }
             }
             timer = setTimeout(() => flush(), wait);
@@ -307,17 +348,19 @@
                 publish();
                 return;
             }
-            if (mode === 'autonomous' && !force) {
+            if (isAutonomous() && !force) {
                 publish();
                 return;
             }
-            if (!online && !force) {
+            // Автономный режим не ждёт сервера вообще: пинг — это тоже запрос.
+            if (!online && !force && !isAutonomous()) {
                 check();
                 publish();
                 return;
             }
             flushing = true;
             error = '';
+            lastAttempt = Date.now();
             publish();
             while (outbox.length) {
                 const op = outbox[0];
@@ -326,6 +369,7 @@
                     result = await send(op);
                 } catch (failure) {
                     error = 'нет связи';
+                    failureDelay = Math.min(MAX_BACKOFF, failureDelay ? failureDelay * 2 : LIMITED_INTERVAL);
                     setOnline(false);
                     break;
                 }
@@ -337,6 +381,7 @@
                     outbox.shift();
                     saveOutbox();
                     lastSync = Date.now();
+                    failureDelay = 0;
                     if (!online) setOnline(true);
                     onSent(op, result.data);
                     continue;
@@ -350,6 +395,7 @@
                 }
                 op.attempts = (op.attempts || 0) + 1;
                 error = 'ошибка сервера ' + result.status;
+                failureDelay = Math.min(MAX_BACKOFF, failureDelay ? failureDelay * 2 : LIMITED_INTERVAL);
                 if (op.attempts >= 3) {
                     outbox.shift();
                     saveOutbox();
@@ -368,8 +414,16 @@
             if (!MODES[next] || next === mode) return;
             mode = next;
             setMode(roomid, area, next);
-            // Смена режима — событие: сообщаем серверу сразу, если есть связь.
-            if (next !== 'autonomous' && outbox.length) {
+            if (next === 'autonomous') {
+                // Автономный — полная изоляция: ни отправок, ни пинга.
+                clearTimeout(timer);
+                clearTimeout(checkTimer);
+                publish();
+                return;
+            }
+            // Выход из автономного: сразу досылаем накопленное и снова пингуем.
+            scheduleCheck();
+            if (outbox.length) {
                 schedule(0);
             } else {
                 publish();
@@ -407,7 +461,9 @@
             status: status,
             mode: () => mode,
             setMode: changeMode,
-            clientId: clientId
+            clientId: clientId,
+            nextSendIn: nextSendIn,
+            refreshStatus: publish
         };
     }
 
